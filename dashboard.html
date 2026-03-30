@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panamax Tonnage Tracker — Arrow Geneva</title>
+<style>
+  /* ── Design: Industrial terminal, dark, data-dense ── */
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg:         #0d0f13;
+    --bg2:        #141720;
+    --bg3:        #1c2030;
+    --border:     #252a3a;
+    --border2:    #2e3550;
+    --text:       #c8cfe0;
+    --text-dim:   #5a6380;
+    --text-bright:#e8edf8;
+    --accent:     #3d7eff;
+    --accent2:    #00c896;
+    --warn:       #f5a623;
+    --danger:     #e04545;
+    --mono:       'IBM Plex Mono', monospace;
+    --sans:       'IBM Plex Sans', sans-serif;
+    --radius:     4px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  .header-title {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-bright);
+    letter-spacing: 0.5px;
+  }
+  .header-subtitle {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+  }
+  .header-stats {
+    margin-left: auto;
+    display: flex;
+    gap: 24px;
+  }
+  .stat {
+    text-align: right;
+  }
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--accent2);
+  }
+  .stat-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  /* ── Layout ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    height: calc(100vh - 50px);
+  }
+
+  /* ── Left panel: Inbox ── */
+  .panel-inbox {
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+  }
+  .panel-title {
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel-title .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent2);
+    box-shadow: 0 0 6px var(--accent2);
+  }
+
+  .inbox-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    gap: 10px;
+    overflow: hidden;
+  }
+
+  textarea#rawInput {
+    flex: 1;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.6;
+    padding: 12px;
+    resize: none;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  textarea#rawInput:focus { border-color: var(--accent); }
+  textarea#rawInput::placeholder { color: var(--text-dim); }
+
+  .inbox-controls {
+    display: flex;
+    gap: 8px;
+  }
+
+  button {
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    padding: 8px 14px;
+    transition: all 0.15s;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    flex: 1;
+  }
+  .btn-primary:hover { background: #5590ff; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-secondary {
+    background: var(--bg3);
+    color: var(--text);
+    border: 1px solid var(--border2);
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Preview parsed JSON */
+  .preview-box {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    max-height: 180px;
+    overflow-y: auto;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .preview-box.has-content { color: var(--accent2); border-color: var(--accent2); }
+  .preview-box.has-error   { color: var(--danger);  border-color: var(--danger); }
+
+  /* ── Right panel: Tonnage Board ── */
+  .panel-board {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .board-toolbar {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg2);
+  }
+
+  .filter-group {
+    display: flex;
+    gap: 4px;
+  }
+  .filter-pill {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--border2);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .filter-pill:hover  { border-color: var(--accent); color: var(--accent); }
+  .filter-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .spacer { flex: 1; }
+
+  .search-input {
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 5px 10px;
+    outline: none;
+    width: 180px;
+  }
+  .search-input:focus { border-color: var(--accent); }
+
+  /* ── Vessel Table ── */
+  .table-wrapper {
+    flex: 1;
+    overflow: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  thead th {
+    background: var(--bg2);
+    padding: 8px 10px;
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    border-bottom: 1px solid var(--border2);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  thead th.col-p6 {
+    color: var(--accent2);
+    border-bottom-color: var(--accent2);
+  }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  tbody tr:hover { background: var(--bg3); }
+
+  td {
+    padding: 9px 10px;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  .td-vessel {
+    font-family: var(--mono);
+    font-weight: 500;
+    color: var(--text-bright);
+    font-size: 11px;
+  }
+  .td-source {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .td-specs {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .td-port {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--warn);
+  }
+  .td-date {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text);
+  }
+  .td-eta {
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+  .td-eta .onw-badge {
+    font-size: 9px;
+    background: rgba(245,166,35,0.12);
+    color: var(--warn);
+    border: 1px solid rgba(245,166,35,0.3);
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 4px;
+  }
+  .td-bod {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .td-p6 {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .td-p6 .bid  { color: var(--accent2); }
+  .td-p6 .offer { color: var(--accent); }
+  .td-p6 .sep  { color: var(--text-dim); margin: 0 3px; }
+  .td-route {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .status-badge {
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .status-OPEN     { background: rgba(0,200,150,0.12); color: var(--accent2); border: 1px solid rgba(0,200,150,0.25); }
+  .status-FIXED    { background: rgba(61,126,255,0.12); color: var(--accent);  border: 1px solid rgba(61,126,255,0.25); }
+  .status-FAILED   { background: rgba(224,69,69,0.12); color: var(--danger);  border: 1px solid rgba(224,69,69,0.25); }
+  .status-WITHDRAWN{ background: rgba(90,99,128,0.12); color: var(--text-dim); border: 1px solid var(--border2); }
+
+  /* Scrubber indicator */
+  .scrubber-yes { color: var(--accent2); font-size: 9px; }
+  .scrubber-no  { color: var(--text-dim); font-size: 9px; }
+  .scrubber-unk { color: var(--border2);  font-size: 9px; }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .empty-state .icon { font-size: 32px; margin-bottom: 12px; opacity: 0.3; }
+
+  /* Warning dot */
+  .warn-dot {
+    display: inline-block;
+    width: 5px; height: 5px;
+    background: var(--warn);
+    border-radius: 50%;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div>
+    <div class="header-title">▸ PANAMAX TONNAGE TRACKER</div>
+    <div class="header-subtitle">Arrow Shipbroking — Geneva Atlantic Desk</div>
+  </div>
+  <div class="header-stats">
+    <div class="stat">
+      <div class="stat-value" id="statOpen">0</div>
+      <div class="stat-label">Open</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="statFixed">0</div>
+      <div class="stat-label">Fixed</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="statTotal">0</div>
+      <div class="stat-label">Total</div>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ── Left: Inbox ── -->
+  <aside class="panel-inbox">
+    <div class="panel-title">
+      <span class="dot"></span>
+      WhatsApp Inbox
+    </div>
+    <div class="inbox-area">
+      <textarea id="rawInput" placeholder="Paste one or more WhatsApp tonnage messages here.
+
+Separate multiple messages with a blank line.
+
+Example:
+QUADRA - MV SAKIZAYA MIRACLE (81/17) GOA 31 MARCH / ETA 25 APR ONW
+BOD ABT 1250/240
+= ECSA FH: Claims seeing 20k multiple times vs 21,500 (p6: 16,700 vs 18k)"></textarea>
+
+      <div id="previewBox" class="preview-box">
+— parsed output will appear here —
+      </div>
+
+      <div class="inbox-controls">
+        <button class="btn-primary" id="btnParse" onclick="handleParse()">Parse</button>
+        <button class="btn-primary" id="btnAdd" onclick="handleAdd()" disabled style="background:var(--accent2)">Add to Board</button>
+        <button class="btn-secondary" onclick="handleClear()">Clear</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Right: Board ── -->
+  <main class="panel-board">
+    <div class="board-toolbar">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-right:4px;">STATUS</span>
+      <div class="filter-group" id="statusFilters">
+        <button class="filter-pill active" data-filter="ALL"  onclick="setFilter('ALL')">All</button>
+        <button class="filter-pill"        data-filter="OPEN" onclick="setFilter('OPEN')">Open</button>
+        <button class="filter-pill"        data-filter="FIXED" onclick="setFilter('FIXED')">Fixed</button>
+        <button class="filter-pill"        data-filter="FAILED" onclick="setFilter('FAILED')">Failed</button>
+      </div>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin:0 4px 0 12px;">ROUTE</span>
+      <div class="filter-group" id="routeFilters">
+        <button class="filter-pill active" data-route="ALL"     onclick="setRoute('ALL')">All</button>
+        <button class="filter-pill"        data-route="ECSA FH" onclick="setRoute('ECSA FH')">ECSA FH</button>
+        <button class="filter-pill"        data-route="ECSA TA" onclick="setRoute('ECSA TA')">ECSA TA</button>
+        <button class="filter-pill"        data-route="USG FH"  onclick="setRoute('USG FH')">USG FH</button>
+      </div>
+      <div class="spacer"></div>
+      <input class="search-input" id="searchInput" placeholder="Search vessel / owner..." oninput="renderTable()">
+    </div>
+
+    <div class="table-wrapper">
+      <table id="vesselTable">
+        <thead>
+          <tr>
+            <th>Vessel</th>
+            <th>Source</th>
+            <th>Specs</th>
+            <th>SCR</th>
+            <th>Position</th>
+            <th>Open</th>
+            <th>ETA ECSA</th>
+            <th>BOD (IFO/MDO)</th>
+            <th class="col-p6">P6 Bid</th>
+            <th class="col-p6">P6 Offer</th>
+            <th>Route</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="vesselBody"></tbody>
+      </table>
+      <div id="emptyState" class="empty-state">
+        <div class="icon">⬡</div>
+        <div>No vessels on board yet.<br>Paste a WhatsApp message in the inbox to get started.</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Inline parser (same logic as src/parser.js, bundled for standalone HTML) -->
+<script>
+// ─── Parser (inlined) ─────────────────────────────────────────────────────────
+const MONTH_MAP = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+const CURRENT_YEAR = new Date().getFullYear();
+
+function parseRate(str) {
+  if (!str) return null;
+  const s = str.replace(/,/g,'').trim().toLowerCase();
+  const kMatch = s.match(/^(\d+(?:\.\d+)?)k$/);
+  if (kMatch) return Math.round(parseFloat(kMatch[1])*1000);
+  const plain = parseFloat(s);
+  return isNaN(plain) ? null : plain;
+}
+
+function parseDate(str) {
+  if (!str) return null;
+  const clean = str.trim().toLowerCase().replace(/[.,]/g,'');
+  const match = clean.match(/(\d{1,2})\s+([a-z]+)(?:\s+(\d{4}))?/);
+  if (!match) return null;
+  const day = parseInt(match[1],10);
+  const month = MONTH_MAP[match[2].slice(0,3)];
+  const year = match[3] ? parseInt(match[3],10) : CURRENT_YEAR;
+  if (!month) return null;
+  return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+}
+
+function detectScrubber(text) {
+  if (/\bscr(ubber)?\b|\+s\b/i.test(text)) return true;
+  return null;
+}
+
+function parseVesselLine(line) {
+  const result = {source:null,vessel_name:null,dwt:null,build_year:null,scrubber:null,
+    current_position:null,open_date:null,eta_ecsa:null,eta_type:null,delivery_basis:null};
+  const dashIdx = line.indexOf(' - ');
+  if (dashIdx !== -1) { result.source = line.slice(0,dashIdx).trim(); line = line.slice(dashIdx+3); }
+  const sizeMatch = line.match(/\((\d+)\/(\d{2,4})\)/);
+  if (sizeMatch) {
+    const dwtRaw = parseInt(sizeMatch[1],10);
+    result.dwt = dwtRaw < 1000 ? dwtRaw*1000 : dwtRaw;
+    const yearRaw = parseInt(sizeMatch[2],10);
+    result.build_year = yearRaw < 100 ? 2000+yearRaw : yearRaw;
+    line = line.replace(sizeMatch[0],'').trim();
+  }
+  result.scrubber = detectScrubber(line);
+  const etaMatch = line.match(/\/\s*ETA\s+(.+)$/i);
+  if (etaMatch) {
+    const etaStr = etaMatch[1].trim();
+    const onw = /\bonw\b/i.test(etaStr);
+    result.eta_type = onw ? 'ONW' : 'EXACT';
+    result.eta_ecsa = parseDate(etaStr.replace(/\bonw\b/gi,'').trim());
+    line = line.slice(0, line.indexOf('/')).trim();
+  }
+  line = line.replace(/^M[VT]\s+/i,'').trim();
+  const deliveryMatch = line.match(/\b(APS\s+\w+|DLOSP|PASSING\s+\w+|SANTOS|PARANAGUA)\b/i);
+  if (deliveryMatch) { result.delivery_basis = deliveryMatch[1].toUpperCase(); line = line.replace(deliveryMatch[0],'').replace(/\s{2,}/g,' ').trim(); }
+  const datePattern = /(\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*)/gi;
+  const allDates = [...line.matchAll(datePattern)];
+  if (allDates.length > 0) {
+    const lastDate = allDates[allDates.length-1];
+    result.open_date = parseDate(lastDate[0]);
+    const beforeDate = line.slice(0,lastDate.index).trim();
+    const parts = beforeDate.split(/\s+/).filter(Boolean);
+    if (parts.length >= 1) { result.current_position = parts[parts.length-1]; result.vessel_name = parts.slice(0,parts.length-1).join(' ')||beforeDate; }
+  } else {
+    const parts = line.trim().split(/\s+/).filter(Boolean);
+    if (parts.length>1 && /^[A-Z]+$/.test(parts[parts.length-1]) && parts[parts.length-1].length<=5) {
+      result.current_position = parts[parts.length-1]; result.vessel_name = parts.slice(0,parts.length-1).join(' ');
+    } else { result.vessel_name = line.trim()||null; }
+  }
+  if (result.vessel_name) result.vessel_name = result.vessel_name.replace(/^\s*[-/]\s*|\s*[-/]\s*$/g,'').trim();
+  return result;
+}
+
+function parseBODLine(line) {
+  const match = line.match(/BOD\s+(?:ABT\s+)?(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/i);
+  if (!match) return {bod_ifo:null,bod_mdo:null};
+  return {bod_ifo:parseFloat(match[1]),bod_mdo:parseFloat(match[2])};
+}
+
+function parseMarketColourLine(line) {
+  line = line.replace(/^[=\s]+/,'').trim();
+  let route = null;
+  const colonIdx = line.indexOf(':');
+  if (colonIdx !== -1) { route = line.slice(0,colonIdx).trim().toUpperCase(); line = line.slice(colonIdx+1).trim(); }
+  const multipleTimes = /multiple\s+times/i.test(line);
+  let p6_bid=null, p6_offer=null;
+  const p6Match = line.match(/\(\s*p6\s*:\s*([0-9k,.\s]+)\s+vs\s+([0-9k,.\s]+)\s*\)/i);
+  if (p6Match) { p6_bid=parseRate(p6Match[1].trim()); p6_offer=parseRate(p6Match[2].trim()); line=line.replace(p6Match[0],'').trim(); }
+  let bid_usd=null, offer_usd=null;
+  const vsMatch = line.match(/claims\s+seeing\s+([0-9k,.\s]+?)(?:\s+multiple\s+times)?\s+vs\s+([0-9k,.\s]+)/i);
+  if (vsMatch) { bid_usd=parseRate(vsMatch[1].trim()); offer_usd=parseRate(vsMatch[2].trim()); }
+  else { const sv=line.match(/([0-9k,.]+)\s+vs\s+([0-9k,.]+)/i); if(sv){bid_usd=parseRate(sv[1]);offer_usd=parseRate(sv[2]);} }
+  return {route,bid_usd,offer_usd,bid_multiple_claims:multipleTimes,p6_bid,p6_offer};
+}
+
+function parseTonnageMessage(rawText) {
+  const lines = rawText.split('\n').map(l=>l.trim()).filter(Boolean);
+  const vessel = {source:null,vessel_name:null,dwt:null,build_year:null,scrubber:null,
+    current_position:null,open_date:null,eta_ecsa:null,eta_type:null,delivery_basis:null,
+    bod_ifo:null,bod_mdo:null,market_colour:[],status:'OPEN',fixed_route:null,
+    fixed_rate_p6:null,fixed_at:null,notes:null,raw:rawText,parsed_at:new Date().toISOString(),parse_warnings:[]};
+  for (const line of lines) {
+    if (/^BOD\b/i.test(line)) { Object.assign(vessel,parseBODLine(line)); continue; }
+    if (/^=/.test(line)||/claims\s+seeing/i.test(line)) {
+      const c=parseMarketColourLine(line);
+      if(c.route||c.bid_usd||c.p6_bid) vessel.market_colour.push(c);
+      continue;
+    }
+    if (!vessel.vessel_name&&!vessel.source) { Object.assign(vessel,parseVesselLine(line)); continue; }
+    vessel.parse_warnings.push(`Unmatched line: "${line}"`);
+  }
+  if (!vessel.vessel_name) vessel.parse_warnings.push('Could not extract vessel name');
+  if (!vessel.eta_ecsa) vessel.parse_warnings.push('No ETA extracted');
+  if (vessel.market_colour.length===0) vessel.parse_warnings.push('No market colour parsed');
+  return vessel;
+}
+
+function parseMultipleMessages(rawBlock) {
+  return rawBlock.split(/\n{2,}/).map(m=>m.trim()).filter(Boolean).map(parseTonnageMessage);
+}
+
+// ─── App State ────────────────────────────────────────────────────────────────
+let vessels = JSON.parse(localStorage.getItem('pt_vessels')||'[]');
+let pendingParsed = null;
+let activeFilter = 'ALL';
+let activeRoute  = 'ALL';
+
+function save() { localStorage.setItem('pt_vessels', JSON.stringify(vessels)); }
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const [,m,d] = iso.split('-');
+  const months = ['','JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  return `${parseInt(d,10)} ${months[parseInt(m,10)]}`;
+}
+
+function fmtNum(n) {
+  if (n == null) return '—';
+  return n.toLocaleString();
+}
+
+// ─── Inbox Handlers ───────────────────────────────────────────────────────────
+function handleParse() {
+  const raw = document.getElementById('rawInput').value.trim();
+  if (!raw) return;
+  const preview = document.getElementById('previewBox');
+  const btnAdd  = document.getElementById('btnAdd');
+  try {
+    const parsed = parseMultipleMessages(raw);
+    pendingParsed = parsed;
+    preview.textContent = JSON.stringify(parsed, null, 2);
+    preview.className = 'preview-box has-content';
+    btnAdd.disabled = false;
+  } catch(e) {
+    preview.textContent = 'Parse error: ' + e.message;
+    preview.className = 'preview-box has-error';
+    btnAdd.disabled = true;
+  }
+}
+
+function handleAdd() {
+  if (!pendingParsed) return;
+  vessels.push(...pendingParsed);
+  save();
+  renderTable();
+  updateStats();
+  document.getElementById('rawInput').value = '';
+  document.getElementById('previewBox').textContent = `✓ Added ${pendingParsed.length} vessel(s) to board.`;
+  document.getElementById('previewBox').className = 'preview-box has-content';
+  document.getElementById('btnAdd').disabled = true;
+  pendingParsed = null;
+}
+
+function handleClear() {
+  document.getElementById('rawInput').value = '';
+  document.getElementById('previewBox').textContent = '— parsed output will appear here —';
+  document.getElementById('previewBox').className = 'preview-box';
+  document.getElementById('btnAdd').disabled = true;
+  pendingParsed = null;
+}
+
+// ─── Filters ──────────────────────────────────────────────────────────────────
+function setFilter(f) {
+  activeFilter = f;
+  document.querySelectorAll('#statusFilters .filter-pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.filter === f);
+  });
+  renderTable();
+}
+
+function setRoute(r) {
+  activeRoute = r;
+  document.querySelectorAll('#routeFilters .filter-pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.route === r);
+  });
+  renderTable();
+}
+
+// ─── Status Update ────────────────────────────────────────────────────────────
+function cycleStatus(idx) {
+  const states = ['OPEN','FIXED','FAILED','WITHDRAWN'];
+  const cur = vessels[idx].status || 'OPEN';
+  vessels[idx].status = states[(states.indexOf(cur)+1) % states.length];
+  save(); renderTable(); updateStats();
+}
+
+function removeVessel(idx) {
+  if (!confirm(`Remove ${vessels[idx].vessel_name}?`)) return;
+  vessels.splice(idx, 1);
+  save(); renderTable(); updateStats();
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+function updateStats() {
+  document.getElementById('statOpen').textContent  = vessels.filter(v=>v.status==='OPEN').length;
+  document.getElementById('statFixed').textContent = vessels.filter(v=>v.status==='FIXED').length;
+  document.getElementById('statTotal').textContent = vessels.length;
+}
+
+function renderTable() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const tbody  = document.getElementById('vesselBody');
+  const empty  = document.getElementById('emptyState');
+
+  let filtered = vessels.filter((v,i) => {
+    if (activeFilter !== 'ALL' && v.status !== activeFilter) return false;
+    if (activeRoute !== 'ALL') {
+      const hasRoute = v.market_colour.some(mc => mc.route === activeRoute);
+      if (!hasRoute) return false;
+    }
+    if (search) {
+      const hay = `${v.vessel_name||''} ${v.source||''} ${v.current_position||''}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  empty.style.display = filtered.length === 0 ? 'block' : 'none';
+  document.getElementById('vesselTable').style.display = filtered.length === 0 ? 'none' : '';
+
+  tbody.innerHTML = filtered.map((v) => {
+    const globalIdx = vessels.indexOf(v);
+    // P6 — show best route's p6 (first market_colour entry for active route filter, else first)
+    let mc = v.market_colour[0] || null;
+    if (activeRoute !== 'ALL') mc = v.market_colour.find(m=>m.route===activeRoute) || mc;
+
+    const p6Cell = mc
+      ? `<span class="bid">${mc.p6_bid ? fmtNum(mc.p6_bid) : '—'}</span>`
+      : '—';
+    const p6OfferCell = mc
+      ? `<span class="offer">${mc.p6_offer ? fmtNum(mc.p6_offer) : '—'}</span>`
+      : '—';
+
+    const routeTag = mc ? `<span class="td-route">${mc.route||'—'}</span>` : '—';
+
+    const etaCell = v.eta_ecsa
+      ? `${fmtDate(v.eta_ecsa)}${v.eta_type==='ONW'?'<span class="onw-badge">ONW</span>':''}`
+      : '—';
+
+    const scrTag = v.scrubber===true
+      ? '<span class="scrubber-yes">●</span>'
+      : v.scrubber===false
+        ? '<span class="scrubber-no">○</span>'
+        : '<span class="scrubber-unk">—</span>';
+
+    const warnDot = v.parse_warnings && v.parse_warnings.length > 0
+      ? '<span class="warn-dot" title="'+v.parse_warnings.join('; ')+'"></span>'
+      : '';
+
+    return `<tr>
+      <td class="td-vessel">${v.vessel_name||'—'}${warnDot}</td>
+      <td class="td-source">${v.source||'—'}</td>
+      <td class="td-specs">${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '—'} / ${v.build_year||'—'}</td>
+      <td>${scrTag}</td>
+      <td class="td-port">${v.current_position||'—'}</td>
+      <td class="td-date">${fmtDate(v.open_date)}</td>
+      <td class="td-eta">${etaCell}</td>
+      <td class="td-bod">${v.bod_ifo!=null ? v.bod_ifo+'/'+v.bod_mdo : '—'}</td>
+      <td class="td-p6">${p6Cell}</td>
+      <td class="td-p6">${p6OfferCell}</td>
+      <td>${routeTag}</td>
+      <td><span class="status-badge status-${v.status||'OPEN'}" style="cursor:pointer" onclick="cycleStatus(${globalIdx})">${v.status||'OPEN'}</span></td>
+      <td><button class="btn-secondary" style="padding:3px 8px;font-size:10px" onclick="removeVessel(${globalIdx})">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  updateStats();
+}
+
+// Init
+renderTable();
+updateStats();
+</script>
+</body>
+</html>
