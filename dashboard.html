@@ -188,7 +188,17 @@ BOD ABT 1250/240
   </main>
 </div>
 
+<script>
+// ─── PARSER (inlined from parser.js) ─────────────────────────────────────────
+</script>
 <script src="parser.js"></script>
 <script src="app.js"></script>
+<script>
+// Fallback: if loaded via file:// and scripts didn't load, show helpful message
+if (typeof parseMultipleMessages === 'undefined') {
+  document.getElementById('previewBox').textContent = 'Tip: Open via a local server (python3 -m http.server 8080) or use the standalone version.';
+  document.getElementById('previewBox').className = 'preview-box has-error';
+}
+</script>
 </body>
 </html>
