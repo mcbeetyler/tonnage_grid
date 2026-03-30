@@ -8,7 +8,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 
 // ─── Utility Parsers ─────────────────────────────────────────────────────────
 
-function parseRate(str) {
+function parseRate(str, context) {
   if (!str) return null;
   const s = str.replace(/,/g, '').trim().toLowerCase();
   // "20k" → 20000, "1.5k" → 1500
@@ -18,7 +18,16 @@ function parseRate(str) {
   const mMatch = s.match(/^(\d+(?:\.\d+)?)m$/);
   if (mMatch) return Math.round(parseFloat(mMatch[1]) * 1000000);
   const plain = parseFloat(s);
-  return isNaN(plain) ? null : plain;
+  if (isNaN(plain)) return null;
+  // Context-aware scaling for bare numbers:
+  // TC rates: bare "18" or "19.5" in market colour context → 18,000 / 19,500
+  if (context === 'tc' && plain > 0 && plain < 100) return Math.round(plain * 1000);
+  // BB lump sums: "975" → 975,000; "1.025" → 1,025,000
+  if (context === 'bb') {
+    if (plain > 0 && plain < 10) return Math.round(plain * 1000000);   // 1.025 → 1,025,000
+    if (plain >= 10 && plain < 10000) return Math.round(plain * 1000); // 975 → 975,000
+  }
+  return plain;
 }
 
 function parseDate(str) {
@@ -329,16 +338,16 @@ function parseMarketColourLine(line) {
   // Format: TC_RATE + BB_LUMPSUM [bss BASIS] [from DATE]
   const tcBbMatch = line.match(/(?:offers?\s+|was\s+|@\s*)?([0-9k,.]+)\s*\+\s*([0-9k,.m]+)/i);
   if (tcBbMatch) {
-    const rate1 = parseRate(tcBbMatch[1].trim());
-    const lump1 = parseRate(tcBbMatch[2].trim());
+    const rate1 = parseRate(tcBbMatch[1].trim(), 'tc');
+    const lump1 = parseRate(tcBbMatch[2].trim(), 'bb');
 
     // Check if there's a "vs" with another TC+BB pair
     const vsMatch = line.match(/vs\s+([0-9k,.]+)\s*\+\s*([0-9k,.m]+)/i);
     if (vsMatch) {
       bid_usd = rate1;
       bid_bb_usd = lump1;
-      offer_usd = parseRate(vsMatch[1].trim());
-      bb_usd = parseRate(vsMatch[2].trim());
+      offer_usd = parseRate(vsMatch[1].trim(), 'tc');
+      bb_usd = parseRate(vsMatch[2].trim(), 'bb');
     } else if (is_bid) {
       bid_usd = rate1;
       bid_bb_usd = lump1;
@@ -368,23 +377,23 @@ function parseMarketColourLine(line) {
   if (!tcBbMatch) {
     const claimsMatch = line.match(/claims\s+seeing\s+([0-9k,.\s]+?)(?:\s+multiple\s+times)?\s+vs\s+([0-9k,.\s]+)/i);
     if (claimsMatch) {
-      bid_usd = parseRate(claimsMatch[1].trim());
-      offer_usd = parseRate(claimsMatch[2].trim());
+      bid_usd = parseRate(claimsMatch[1].trim(), 'tc');
+      offer_usd = parseRate(claimsMatch[2].trim(), 'tc');
     } else {
       const vsMatch2 = line.match(/(?:was\s+)?([0-9k,.]+)\s+vs\s+([0-9k,.]+)/i);
       if (vsMatch2) {
-        bid_usd = parseRate(vsMatch2[1].trim());
-        offer_usd = parseRate(vsMatch2[2].trim());
+        bid_usd = parseRate(vsMatch2[1].trim(), 'tc');
+        offer_usd = parseRate(vsMatch2[2].trim(), 'tc');
       }
     }
   }
 
-  // "Ideas 21,500" or "Ideas X" — single offer
+  // "Ideas 21,500" or "Ideas X" or "thinking 18 in front" — single offer
   if (!offer_usd && !bid_usd) {
     const ideasMatch = line.match(/\b(?:ideas?|thinking|loosely\s+thinking)\s+([0-9k,.]+)/i);
     if (ideasMatch) {
       is_idea = true;
-      offer_usd = parseRate(ideasMatch[1].trim());
+      offer_usd = parseRate(ideasMatch[1].trim(), 'tc');
     }
   }
 
@@ -393,7 +402,7 @@ function parseMarketColourLine(line) {
   if (!offer_usd && !tcBbMatch) {
     const offersMatch = line.match(/\boffers?\s+([0-9k,.]+)/i);
     if (offersMatch) {
-      offer_usd = parseRate(offersMatch[1].trim());
+      offer_usd = parseRate(offersMatch[1].trim(), 'tc');
     }
   }
 
@@ -401,12 +410,12 @@ function parseMarketColourLine(line) {
   if (is_bid && !bid_usd && !tcBbMatch) {
     const atMatch = line.match(/@\s*([0-9k,.]+)/i);
     if (atMatch) {
-      bid_usd = parseRate(atMatch[1].trim());
+      bid_usd = parseRate(atMatch[1].trim(), 'tc');
     }
   }
 
-  // "Collecting" or "rvtng ideas" = early stage, no rates
-  const collecting = /\b(collecting|rvtng|reverting)\b/i.test(line);
+  // "Collecting" or "rvtng ideas" = early stage, no rates (handle truncated "collec")
+  const collecting = /\b(collect(ing)?|rvtng|reverting)\b/i.test(line);
 
   return {
     route,
@@ -463,66 +472,92 @@ function parseTonnageMessage(rawText) {
   // Check if this is a cargo-side bid (different structure)
   const isCargoBid = /\bbid(ding)?\s+(here|on)\b/i.test(rawText);
 
-  for (const line of lines) {
-    // BOD line
-    if (/^BOD\b/i.test(line) || /\bBOD\b.*\d+.*\/.*\d+/i.test(line)) {
-      const bod = parseBODLine(line);
-      Object.assign(vessel, bod);
-      continue;
+  // For cargo bids: first line is cargo description, not a vessel line.
+  // Parse vessel info from the bid line instead.
+  if (isCargoBid) {
+    // Parse first line as cargo context (source + route + laycan)
+    const firstLine = lines[0] || '';
+    const dashIdx = firstLine.indexOf(' - ');
+    if (dashIdx !== -1) {
+      vessel.source = firstLine.slice(0, dashIdx).trim();
     }
-
-    // Market colour / rate lines (start with = or contain "claims seeing", "offers", "ideas", "bidding")
-    if (/^=/.test(line) || /claims\s+seeing/i.test(line) || /\b(loosely\s+)?thinking\b/i.test(line)) {
-      const mc = parseMarketColourLine(line);
-      if (mc.route || mc.bid_usd || mc.offer_usd || mc.p6_bid || mc.p6_offer || mc.collecting) {
-        vessel.market_colour.push(mc);
-        // Capture BB offer at vessel level
-        if (mc.bb_usd && !vessel.bb_offer) vessel.bb_offer = mc.bb_usd;
+    // Extract route from first line
+    const routePatterns = ['ECSA FH', 'ECSA TA', 'USG FH', 'USG TA', 'NCSA FH'];
+    for (const rp of routePatterns) {
+      if (firstLine.toUpperCase().includes(rp)) {
+        vessel.notes = `Cargo bid: ${firstLine}`;
+        break;
       }
-      continue;
+    }
+    if (!vessel.notes) vessel.notes = `Cargo bid: ${firstLine}`;
+
+    // Extract ETA/laycan from first line if present
+    const etaFromCargo = firstLine.match(/(\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*)\s*(onw)?/i);
+    if (etaFromCargo) {
+      vessel.eta_ecsa = parseDate(etaFromCargo[1]);
+      vessel.eta_type = etaFromCargo[2] ? 'ONW' : 'EXACT';
     }
 
-    // Status lines: "OFF-MKT & EX-OUR CP", "FIXED KOCH..."
-    if (/\bOFF[\s-]?MKT\b|\bEX[\s-]?OUR[\s-]?CP\b|\bFIXED\b|\bFAILED\b|\bWITHDRAWN\b/i.test(line) && vessel.vessel_name) {
-      // Extract notes from the status line
-      const statusNotes = line.replace(/\bOFF[\s-]?MKT\b|\bEX[\s-]?OUR[\s-]?CP\b/gi, '').replace(/[&]/g, '').trim();
-      if (statusNotes) {
-        vessel.notes = vessel.notes ? vessel.notes + '; ' + statusNotes : statusNotes;
-      }
-      continue;
-    }
-
-    // Cargo-side bid line with vessel reference
-    if (isCargoBid && /\bbid(ding)?\b/i.test(line)) {
-      const mc = parseMarketColourLine(line);
-      if (mc.route || mc.bid_usd || mc.p6_bid) {
+    // Now parse remaining lines for bid info + vessel details
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (/\bbid(ding)?\b/i.test(line)) {
+        // Extract vessel name + specs from bid line: "MV Navios Victory (77/14)"
+        const mvMatch = line.match(/M[VT]\s+(.+?)\s*\((\d+)\/(\d{2,4})\)/i);
+        if (mvMatch) {
+          vessel.vessel_name = mvMatch[1].trim();
+          const dwtRaw = parseInt(mvMatch[2], 10);
+          vessel.dwt = dwtRaw < 1000 ? dwtRaw * 1000 : dwtRaw;
+          const yearRaw = parseInt(mvMatch[3], 10);
+          vessel.build_year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
+        }
+        const mc = parseMarketColourLine(line);
         mc.is_bid = true;
+        if (!mc.route) {
+          for (const rp of routePatterns) {
+            if (firstLine.toUpperCase().includes(rp)) { mc.route = rp; break; }
+          }
+        }
         vessel.market_colour.push(mc);
       }
-      // Try to extract vessel name from bid line if not yet parsed
-      if (!vessel.vessel_name) {
-        const mvMatch = line.match(/M[VT]\s+(.+?)\s*\(/);
-        if (mvMatch) vessel.vessel_name = mvMatch[1].trim();
-      }
-      continue;
     }
-
-    // First unmatched line = vessel line
-    if (!vessel.vessel_name && !vessel.source) {
-      const parsed = parseVesselLine(line);
-      Object.assign(vessel, parsed);
-
-      // For cargo-side bids, the source before " - " is the cargo interest, not vessel owner
-      if (isCargoBid) {
-        vessel.notes = vessel.notes
-          ? vessel.notes + '; Cargo bid from ' + (vessel.source || 'unknown')
-          : 'Cargo bid from ' + (vessel.source || 'unknown');
+  } else {
+    // Standard vessel message parsing
+    for (const line of lines) {
+      // BOD line
+      if (/^BOD\b/i.test(line) || /\bBOD\b.*\d+.*\/.*\d+/i.test(line)) {
+        const bod = parseBODLine(line);
+        Object.assign(vessel, bod);
+        continue;
       }
-      continue;
-    }
 
-    // Additional info lines
-    vessel.parse_warnings.push(`Unmatched line: "${line}"`);
+      // Market colour / rate lines (start with = or contain "claims seeing", "offers", "ideas", "bidding")
+      if (/^=/.test(line) || /claims\s+seeing/i.test(line) || /\b(loosely\s+)?thinking\b/i.test(line)) {
+        const mc = parseMarketColourLine(line);
+        if (mc.route || mc.bid_usd || mc.offer_usd || mc.p6_bid || mc.p6_offer || mc.collecting) {
+          vessel.market_colour.push(mc);
+          if (mc.bb_usd && !vessel.bb_offer) vessel.bb_offer = mc.bb_usd;
+        }
+        continue;
+      }
+
+      // Status lines: "OFF-MKT & EX-OUR CP", "FIXED KOCH..."
+      if (/\bOFF[\s-]?MKT\b|\bEX[\s-]?OUR[\s-]?CP\b|\bFIXED\b|\bFAILED\b|\bWITHDRAWN\b/i.test(line) && vessel.vessel_name) {
+        const statusNotes = line.replace(/\bOFF[\s-]?MKT\b|\bEX[\s-]?OUR[\s-]?CP\b/gi, '').replace(/[&]/g, '').trim();
+        if (statusNotes) {
+          vessel.notes = vessel.notes ? vessel.notes + '; ' + statusNotes : statusNotes;
+        }
+        continue;
+      }
+
+      // First unmatched line = vessel line
+      if (!vessel.vessel_name && !vessel.source) {
+        Object.assign(vessel, parseVesselLine(line));
+        continue;
+      }
+
+      vessel.parse_warnings.push(`Unmatched line: "${line}"`);
+    }
   }
 
   // Collect delivery basis from market colour if vessel level is empty
