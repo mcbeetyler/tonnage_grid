@@ -439,6 +439,7 @@ function parseMarketColourLine(line) {
 
 function detectStatus(lines) {
   const text = lines.join(' ').toUpperCase();
+  if (/\bON\s+SUBS\b/i.test(text)) return 'ON SUBS';
   if (/\bOFF[\s-]?MKT\b|\bOFF[\s-]?MARKET\b/i.test(text)) return 'WITHDRAWN';
   if (/\bFIXED\b/i.test(text)) return 'FIXED';
   if (/\bFAILED\b/i.test(text)) return 'FAILED';
@@ -523,10 +524,13 @@ function parseTonnageMessage(rawText) {
     }
   } else {
     // Standard vessel message parsing
-    for (const line of lines) {
+    for (let line of lines) {
+      // Strip wrapping parentheses: "(BOD BSS SANTOS: ABT 700/140)" → "BOD BSS SANTOS: ABT 700/140"
+      const stripped = line.replace(/^\((.+)\)$/, '$1').trim();
+
       // BOD line
-      if (/^BOD\b/i.test(line) || /\bBOD\b.*\d+.*\/.*\d+/i.test(line)) {
-        const bod = parseBODLine(line);
+      if (/^BOD\b/i.test(stripped) || /\bBOD\b.*\d+.*\/.*\d+/i.test(stripped)) {
+        const bod = parseBODLine(stripped);
         Object.assign(vessel, bod);
         continue;
       }
@@ -579,11 +583,20 @@ function parseTonnageMessage(rawText) {
 }
 
 function parseMultipleMessages(rawBlock) {
-  return rawBlock
-    .split(/\n{2,}/)
-    .map(m => m.trim())
-    .filter(Boolean)
-    .map(parseTonnageMessage);
+  // Split on blank lines, but rejoin chunks that are continuations
+  // (lines starting with =, (, BOD, or status keywords belong to the previous message)
+  const rawChunks = rawBlock.split(/\n{2,}/).map(m => m.trim()).filter(Boolean);
+  const messages = [];
+  for (const chunk of rawChunks) {
+    const firstLine = chunk.split('\n')[0].trim();
+    // If this chunk starts with a continuation pattern, append to previous message
+    if (messages.length > 0 && /^[=(]|^BOD\b|^on\s+subs\b|^off[\s-]?mkt\b|^fixed\b|^failed\b/i.test(firstLine)) {
+      messages[messages.length - 1] += '\n' + chunk;
+    } else {
+      messages.push(chunk);
+    }
+  }
+  return messages.map(parseTonnageMessage);
 }
 
 // Export for both Node.js and browser

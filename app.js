@@ -152,7 +152,7 @@ function getSortValue(v, key) {
 // ─── Status & Actions ────────────────────────────────────────────────────────
 
 function cycleStatus(idx) {
-  const states = ['OPEN', 'FIXED', 'FAILED', 'WITHDRAWN'];
+  const states = ['OPEN', 'ON SUBS', 'FIXED', 'FAILED', 'WITHDRAWN'];
   const cur = vessels[idx].status || 'OPEN';
   vessels[idx].status = states[(states.indexOf(cur) + 1) % states.length];
   save(); renderTable(); updateStats();
@@ -267,7 +267,7 @@ function renderTable() {
       <td class="td-p6"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>
       <td class="td-p6"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>
       <td>${spreadCell}</td>
-      <td><span class="status-badge status-${v.status || 'OPEN'}" onclick="cycleStatus(${globalIdx})">${v.status || 'OPEN'}</span></td>
+      <td><span class="status-badge status-${(v.status || 'OPEN').replace(/\s+/g,'_')}" onclick="cycleStatus(${globalIdx})">${v.status || 'OPEN'}</span></td>
       <td><button class="btn-secondary" style="padding:3px 8px;font-size:10px" onclick="removeVessel(${globalIdx})">x</button></td>
     </tr>`);
   }

@@ -93,6 +93,7 @@
   .status-FIXED{background:rgba(61,126,255,.12);color:var(--accent);border:1px solid rgba(61,126,255,.25)}
   .status-FAILED{background:rgba(224,69,69,.12);color:var(--danger);border:1px solid rgba(224,69,69,.25)}
   .status-WITHDRAWN{background:rgba(90,99,128,.12);color:var(--text-dim);border:1px solid var(--border2)}
+  .status-ON_SUBS{background:rgba(245,166,35,.12);color:var(--warn);border:1px solid rgba(245,166,35,.3)}
 
   .scrubber-yes{color:var(--accent2);font-size:9px}
   .scrubber-unk{color:var(--border2);font-size:9px}
@@ -149,6 +150,7 @@ BOD ABT 1250/240
         <button class="filter-pill active" data-filter="ALL" onclick="setFilter('ALL')">All</button>
         <button class="filter-pill" data-filter="OPEN" onclick="setFilter('OPEN')">Open</button>
         <button class="filter-pill" data-filter="FIXED" onclick="setFilter('FIXED')">Fixed</button>
+        <button class="filter-pill" data-filter="ON SUBS" onclick="setFilter('ON SUBS')">On Subs</button>
       </div>
       <span class="toolbar-label" style="margin-left:8px">ETA From</span>
       <input type="date" class="date-input" id="etaFrom" onchange="renderTable()">
@@ -633,6 +635,7 @@ function parseMarketColourLine(line) {
 
 function detectStatus(lines) {
   const text = lines.join(' ').toUpperCase();
+  if (/\bON\s+SUBS\b/i.test(text)) return 'ON SUBS';
   if (/\bOFF[\s-]?MKT\b|\bOFF[\s-]?MARKET\b/i.test(text)) return 'WITHDRAWN';
   if (/\bFIXED\b/i.test(text)) return 'FIXED';
   if (/\bFAILED\b/i.test(text)) return 'FAILED';
@@ -717,10 +720,13 @@ function parseTonnageMessage(rawText) {
     }
   } else {
     // Standard vessel message parsing
-    for (const line of lines) {
+    for (let line of lines) {
+      // Strip wrapping parentheses: "(BOD BSS SANTOS: ABT 700/140)" → "BOD BSS SANTOS: ABT 700/140"
+      const stripped = line.replace(/^\((.+)\)$/, '$1').trim();
+
       // BOD line
-      if (/^BOD\b/i.test(line) || /\bBOD\b.*\d+.*\/.*\d+/i.test(line)) {
-        const bod = parseBODLine(line);
+      if (/^BOD\b/i.test(stripped) || /\bBOD\b.*\d+.*\/.*\d+/i.test(stripped)) {
+        const bod = parseBODLine(stripped);
         Object.assign(vessel, bod);
         continue;
       }
@@ -773,11 +779,20 @@ function parseTonnageMessage(rawText) {
 }
 
 function parseMultipleMessages(rawBlock) {
-  return rawBlock
-    .split(/\n{2,}/)
-    .map(m => m.trim())
-    .filter(Boolean)
-    .map(parseTonnageMessage);
+  // Split on blank lines, but rejoin chunks that are continuations
+  // (lines starting with =, (, BOD, or status keywords belong to the previous message)
+  const rawChunks = rawBlock.split(/\n{2,}/).map(m => m.trim()).filter(Boolean);
+  const messages = [];
+  for (const chunk of rawChunks) {
+    const firstLine = chunk.split('\n')[0].trim();
+    // If this chunk starts with a continuation pattern, append to previous message
+    if (messages.length > 0 && /^[=(]|^BOD\b|^on\s+subs\b|^off[\s-]?mkt\b|^fixed\b|^failed\b/i.test(firstLine)) {
+      messages[messages.length - 1] += '\n' + chunk;
+    } else {
+      messages.push(chunk);
+    }
+  }
+  return messages.map(parseTonnageMessage);
 }
 
 // Export for both Node.js and browser
@@ -1543,7 +1558,7 @@ function getSortValue(v, key) {
 // ─── Status & Actions ────────────────────────────────────────────────────────
 
 function cycleStatus(idx) {
-  const states = ['OPEN', 'FIXED', 'FAILED', 'WITHDRAWN'];
+  const states = ['OPEN', 'ON SUBS', 'FIXED', 'FAILED', 'WITHDRAWN'];
   const cur = vessels[idx].status || 'OPEN';
   vessels[idx].status = states[(states.indexOf(cur) + 1) % states.length];
   save(); renderTable(); updateStats();
@@ -1658,7 +1673,7 @@ function renderTable() {
       <td class="td-p6"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>
       <td class="td-p6"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>
       <td>${spreadCell}</td>
-      <td><span class="status-badge status-${v.status || 'OPEN'}" onclick="cycleStatus(${globalIdx})">${v.status || 'OPEN'}</span></td>
+      <td><span class="status-badge status-${(v.status || 'OPEN').replace(/\s+/g,'_')}" onclick="cycleStatus(${globalIdx})">${v.status || 'OPEN'}</span></td>
       <td><button class="btn-secondary" style="padding:3px 8px;font-size:10px" onclick="removeVessel(${globalIdx})">x</button></td>
     </tr>`);
   }
