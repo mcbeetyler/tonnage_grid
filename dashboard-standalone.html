@@ -3,115 +3,146 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Panamax Tonnage Tracker — Arrow Geneva</title>
+<title>Panamax Tonnage Tracker</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
   :root {
-    --bg:#0d0f13;--bg2:#141720;--bg3:#1c2030;--border:#252a3a;--border2:#2e3550;
-    --text:#c8cfe0;--text-dim:#5a6380;--text-bright:#e8edf8;
-    --accent:#3d7eff;--accent2:#00c896;--warn:#f5a623;--danger:#e04545;
-    --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--radius:4px;
+    --bg:#f8f9fb;--bg2:#ffffff;--bg3:#f1f3f7;--bg-hover:#eef0f5;
+    --border:#e2e5ed;--border2:#d0d5e0;
+    --text:#1a1d26;--text-dim:#6b7280;--text-bright:#0f1117;
+    --accent:#6366f1;--accent-light:#eef2ff;--accent-hover:#4f46e5;
+    --green:#059669;--green-light:#ecfdf5;--green-border:#a7f3d0;
+    --amber:#d97706;--amber-light:#fffbeb;--amber-border:#fde68a;
+    --red:#dc2626;--red-light:#fef2f2;--red-border:#fca5a5;
+    --blue:#2563eb;--blue-light:#eff6ff;--blue-border:#93c5fd;
+    --mono:'JetBrains Mono',monospace;--sans:'Inter',system-ui,sans-serif;
+    --radius:8px;--radius-sm:6px;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.05);--shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;min-height:100vh}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;min-height:100vh;-webkit-font-smoothing:antialiased}
 
-  .header{background:var(--bg2);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:20px}
-  .header-title{font-family:var(--mono);font-weight:600;font-size:14px;color:var(--text-bright);letter-spacing:.5px}
-  .header-subtitle{font-size:11px;color:var(--text-dim);font-family:var(--mono)}
-  .header-stats{margin-left:auto;display:flex;gap:24px}
-  .stat{text-align:right}
-  .stat-value{font-family:var(--mono);font-size:16px;font-weight:600;color:var(--accent2)}
-  .stat-label{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px}
+  /* Header */
+  .header{background:var(--bg2);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:20px;box-shadow:var(--shadow-sm)}
+  .header-title{font-weight:700;font-size:15px;color:var(--text-bright);letter-spacing:-.2px}
+  .header-subtitle{font-size:12px;color:var(--text-dim);font-weight:400}
+  .header-stats{margin-left:auto;display:flex;gap:20px}
+  .stat{text-align:center;padding:4px 12px;background:var(--bg3);border-radius:var(--radius-sm);border:1px solid var(--border)}
+  .stat-value{font-family:var(--mono);font-size:18px;font-weight:600;color:var(--accent)}
+  .stat-label{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;font-weight:500}
 
-  .layout{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 50px)}
+  /* Layout */
+  .layout{display:grid;grid-template-columns:360px 1fr;height:calc(100vh - 54px)}
+
+  /* Left panel */
   .panel-inbox{background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column}
-  .panel-title{padding:12px 16px;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
-  .panel-title .dot{width:6px;height:6px;border-radius:50%;background:var(--accent2);box-shadow:0 0 6px var(--accent2)}
-  .inbox-area{flex:1;display:flex;flex-direction:column;padding:12px;gap:10px;overflow:hidden}
+  .panel-title{padding:14px 16px;font-size:12px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+  .panel-title .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
+  .inbox-area{flex:1;display:flex;flex-direction:column;padding:14px;gap:10px;overflow:hidden}
 
-  textarea#rawInput{flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:11px;line-height:1.6;padding:12px;resize:none;outline:none;transition:border-color .15s}
-  textarea#rawInput:focus{border-color:var(--accent)}
+  textarea#rawInput{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:11px;line-height:1.7;padding:12px;resize:none;outline:none;transition:border-color .15s,box-shadow .15s}
+  textarea#rawInput:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-light)}
   textarea#rawInput::placeholder{color:var(--text-dim)}
   .inbox-controls{display:flex;gap:8px}
 
-  button{font-family:var(--sans);font-size:12px;font-weight:500;border:none;border-radius:var(--radius);cursor:pointer;padding:8px 14px;transition:all .15s}
+  button{font-family:var(--sans);font-size:12px;font-weight:500;border:none;border-radius:var(--radius-sm);cursor:pointer;padding:8px 16px;transition:all .15s}
   .btn-primary{background:var(--accent);color:#fff;flex:1}
-  .btn-primary:hover{background:#5590ff}
+  .btn-primary:hover{background:var(--accent-hover)}
   .btn-primary:disabled{opacity:.4;cursor:not-allowed}
-  .btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border2)}
-  .btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
+  .btn-add{background:var(--green);color:#fff;flex:1}
+  .btn-add:hover{background:#047857}
+  .btn-add:disabled{opacity:.4;cursor:not-allowed}
+  .btn-secondary{background:var(--bg3);color:var(--text-dim);border:1px solid var(--border)}
+  .btn-secondary:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light)}
 
-  .preview-box{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--text-dim);max-height:180px;overflow-y:auto;line-height:1.5;white-space:pre-wrap}
-  .preview-box.has-content{color:var(--accent2);border-color:var(--accent2)}
-  .preview-box.has-error{color:var(--danger);border-color:var(--danger)}
+  .preview-box{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--text-dim);max-height:160px;overflow-y:auto;line-height:1.5;white-space:pre-wrap}
+  .preview-box.has-content{color:var(--green);border-color:var(--green-border);background:var(--green-light)}
+  .preview-box.has-error{color:var(--red);border-color:var(--red-border);background:var(--red-light)}
 
-  .panel-board{display:flex;flex-direction:column;overflow:hidden}
-  .board-toolbar{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--bg2);flex-wrap:wrap}
-  .filter-group{display:flex;gap:4px}
-  .filter-pill{font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:12px;border:1px solid var(--border2);background:transparent;color:var(--text-dim);cursor:pointer;transition:all .12s}
+  /* Right panel */
+  .panel-board{display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+  .board-toolbar{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--bg2);flex-wrap:wrap;box-shadow:var(--shadow-sm)}
+  .filter-group{display:flex;gap:3px}
+  .filter-pill{font-size:11px;font-weight:500;padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:var(--bg2);color:var(--text-dim);cursor:pointer;transition:all .12s}
   .filter-pill:hover{border-color:var(--accent);color:var(--accent)}
   .filter-pill.active{background:var(--accent);border-color:var(--accent);color:#fff}
   .spacer{flex:1}
-  .search-input{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 10px;outline:none;width:160px}
-  .search-input:focus{border-color:var(--accent)}
-  .date-input{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:10px;padding:4px 8px;outline:none;width:120px}
-  .date-input:focus{border-color:var(--accent)}
-  .toolbar-label{font-family:var(--mono);font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px}
+  .search-input{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:12px;padding:6px 12px;outline:none;width:180px;transition:border-color .15s,box-shadow .15s}
+  .search-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-light)}
+  .date-input{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:11px;padding:5px 8px;outline:none;width:125px}
+  .date-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-light)}
+  .toolbar-label{font-size:11px;color:var(--text-dim);font-weight:500}
 
-  .table-wrapper{flex:1;overflow:auto}
-  table{width:100%;border-collapse:collapse;font-size:12px}
-  thead th{background:var(--bg2);padding:8px 10px;text-align:left;font-family:var(--mono);font-size:10px;font-weight:500;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border2);white-space:nowrap;position:sticky;top:0;z-index:2;cursor:pointer;user-select:none}
+  /* Table */
+  .table-wrapper{flex:1;overflow:auto;padding:0 8px 8px}
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px}
+  thead th{background:var(--bg2);padding:10px 12px;text-align:left;font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:2;cursor:pointer;user-select:none;transition:color .1s}
   thead th:hover{color:var(--accent)}
-  thead th.col-p6{color:var(--accent2);border-bottom-color:var(--accent2)}
-  thead th.col-p6:hover{color:#00ffb8}
-  tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
-  tbody tr:hover{background:var(--bg3)}
-  td{padding:8px 10px;white-space:nowrap;vertical-align:middle}
+  thead th.col-p6{color:var(--green)}
+  thead th.col-p6:hover{color:#047857}
+  tbody tr{transition:background .08s}
+  tbody tr:hover{background:var(--bg-hover)}
+  tbody tr td{border-bottom:1px solid var(--border)}
+  td{padding:8px 12px;white-space:nowrap;vertical-align:middle}
 
-  .group-header{background:var(--bg3);border-bottom:2px solid var(--accent)}
-  .group-header td{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent);padding:6px 10px;letter-spacing:.5px}
+  /* Group headers */
+  .group-header{background:var(--accent-light)!important}
+  .group-header td{font-size:11px;font-weight:600;color:var(--accent);padding:8px 12px;letter-spacing:.3px;border-bottom:2px solid var(--accent)!important}
 
-  .td-vessel{font-family:var(--mono);font-weight:500;color:var(--text-bright);font-size:11px}
-  .td-owner{font-family:var(--mono);font-size:10px;color:var(--text)}
-  .td-source{font-family:var(--mono);font-size:10px;color:var(--text-dim)}
-  .td-specs{font-family:var(--mono);font-size:10px;color:var(--text-dim)}
-  .td-port{font-family:var(--mono);font-size:11px;color:var(--warn)}
-  .td-date{font-family:var(--mono);font-size:10px;color:var(--text)}
-  .td-eta{font-family:var(--mono);font-size:10px}
-  .td-laycan{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px;background:rgba(61,126,255,.1);color:var(--accent);border:1px solid rgba(61,126,255,.2)}
-  .td-eta .onw-badge{font-size:9px;background:rgba(245,166,35,.12);color:var(--warn);border:1px solid rgba(245,166,35,.3);padding:1px 5px;border-radius:3px;margin-left:4px}
+  /* Cell styles */
+  .td-vessel{font-family:var(--mono);font-weight:600;color:var(--text-bright);font-size:11px}
+  .td-owner{font-size:11px;color:var(--text);font-weight:500}
+  .td-source{font-size:11px;color:var(--text-dim)}
+  .td-specs{font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+  .td-port{font-weight:500;font-size:11px;color:var(--amber)}
+  .td-eta{font-family:var(--mono);font-size:11px}
+  .td-laycan{font-family:var(--mono);font-size:10px;font-weight:600;padding:3px 8px;border-radius:4px;background:var(--accent-light);color:var(--accent);border:1px solid rgba(99,102,241,.15)}
+  .onw-badge{font-size:9px;font-weight:600;background:var(--amber-light);color:var(--amber);border:1px solid var(--amber-border);padding:2px 6px;border-radius:4px;margin-left:4px}
   .td-p6{font-family:var(--mono);font-weight:600;font-size:12px}
-  .td-p6 .bid{color:var(--accent2)}
+  .td-p6 .bid{color:var(--green)}
   .td-p6 .offer{color:var(--accent)}
-  .td-spread{font-family:var(--mono);font-size:10px;font-weight:500}
-  .spread-pos{color:var(--danger)}
-  .spread-neg{color:var(--accent2)}
+  .td-spread{font-family:var(--mono);font-size:11px;font-weight:500}
+  .spread-pos{color:var(--red)}
+  .spread-neg{color:var(--green)}
   .spread-zero{color:var(--text-dim)}
 
-  .status-badge{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:3px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;cursor:pointer}
-  .status-OPEN{background:rgba(0,200,150,.12);color:var(--accent2);border:1px solid rgba(0,200,150,.25)}
-  .status-FIXED{background:rgba(61,126,255,.12);color:var(--accent);border:1px solid rgba(61,126,255,.25)}
-  .status-FAILED{background:rgba(224,69,69,.12);color:var(--danger);border:1px solid rgba(224,69,69,.25)}
-  .status-WITHDRAWN{background:rgba(90,99,128,.12);color:var(--text-dim);border:1px solid var(--border2)}
-  .status-ON_SUBS{background:rgba(245,166,35,.12);color:var(--warn);border:1px solid rgba(245,166,35,.3)}
+  /* Status badges */
+  .status-badge{font-size:10px;padding:3px 10px;border-radius:20px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;transition:opacity .1s;display:inline-block}
+  .status-badge:hover{opacity:.8}
+  .status-OPEN{background:var(--green-light);color:var(--green);border:1px solid var(--green-border)}
+  .status-FIXED{background:var(--blue-light);color:var(--blue);border:1px solid var(--blue-border)}
+  .status-FAILED{background:var(--red-light);color:var(--red);border:1px solid var(--red-border)}
+  .status-WITHDRAWN{background:var(--bg3);color:var(--text-dim);border:1px solid var(--border)}
+  .status-ON_SUBS{background:var(--amber-light);color:var(--amber);border:1px solid var(--amber-border)}
 
-  .scrubber-yes{color:var(--accent2);font-size:9px}
-  .scrubber-unk{color:var(--border2);font-size:9px}
-  .empty-state{text-align:center;padding:60px 20px;color:var(--text-dim);font-family:var(--mono);font-size:12px}
-  .empty-state .icon{font-size:32px;margin-bottom:12px;opacity:.3}
-  .warn-dot{display:inline-block;width:5px;height:5px;background:var(--warn);border-radius:50%;margin-left:4px;vertical-align:middle}
+  .scrubber-yes{color:var(--green);font-size:10px;font-weight:600}
+  .scrubber-unk{color:var(--border2);font-size:10px}
+  .empty-state{text-align:center;padding:80px 20px;color:var(--text-dim);font-size:13px}
+  .empty-state .icon{font-size:36px;margin-bottom:16px;opacity:.3}
+  .warn-dot{display:inline-block;width:6px;height:6px;background:var(--amber);border-radius:50%;margin-left:5px;vertical-align:middle}
 
-  ::-webkit-scrollbar{width:5px;height:5px}
-  ::-webkit-scrollbar-track{background:var(--bg)}
-  ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-  ::-webkit-scrollbar-thumb:hover{background:var(--accent)}
+  /* Inline editing */
+  .editable{cursor:text;border-radius:3px;padding:1px 3px;margin:-1px -3px;transition:background .1s}
+  .editable:hover{background:var(--accent-light)}
+  .edit-input{font-family:inherit;font-size:inherit;font-weight:inherit;color:inherit;background:var(--bg2);border:1.5px solid var(--accent);border-radius:4px;padding:2px 6px;outline:none;box-shadow:0 0 0 3px var(--accent-light);width:100%;min-width:50px}
+  .edit-input.mono{font-family:var(--mono)}
+
+  /* Scrollbar */
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+  ::-webkit-scrollbar-thumb:hover{background:var(--text-dim)}
+
+  /* Actions */
+  .btn-remove{background:none;border:1px solid var(--border);color:var(--text-dim);padding:4px 8px;font-size:11px;border-radius:var(--radius-sm)}
+  .btn-remove:hover{border-color:var(--red);color:var(--red);background:var(--red-light)}
 </style>
 </head>
 <body>
 
 <header class="header">
   <div>
-    <div class="header-title">PANAMAX TONNAGE TRACKER</div>
+    <div class="header-title">Panamax Tonnage Tracker</div>
     <div class="header-subtitle">Arrow Shipbroking — Geneva Atlantic Desk</div>
   </div>
   <div class="header-stats">
@@ -133,12 +164,12 @@ Example:
 QUADRA - MV SAKIZAYA MIRACLE (81/17) GOA 31 MARCH / ETA 25 APR ONW
 BOD ABT 1250/240
 = ECSA FH: Claims seeing 20k multiple times vs 21,500 (p6: 16,700 vs 18k)"></textarea>
-      <div id="previewBox" class="preview-box">— parsed output will appear here —</div>
+      <div id="previewBox" class="preview-box">Parsed output will appear here</div>
       <div class="inbox-controls">
         <button class="btn-primary" id="btnParse" onclick="handleParse()">Parse</button>
-        <button class="btn-primary" id="btnAdd" onclick="handleAdd()" disabled style="background:var(--accent2)">Add to Board</button>
+        <button class="btn-add" id="btnAdd" onclick="handleAdd()" disabled>Add to Board</button>
         <button class="btn-secondary" onclick="handleClear()">Clear</button>
-        <button class="btn-secondary" id="btnLoadSample" onclick="loadSample()">Load Sample</button>
+        <button class="btn-secondary" id="btnLoadSample" onclick="loadSample()">Sample</button>
       </div>
     </div>
   </aside>
@@ -149,14 +180,14 @@ BOD ABT 1250/240
       <div class="filter-group" id="statusFilters">
         <button class="filter-pill active" data-filter="ALL" onclick="setFilter('ALL')">All</button>
         <button class="filter-pill" data-filter="OPEN" onclick="setFilter('OPEN')">Open</button>
-        <button class="filter-pill" data-filter="FIXED" onclick="setFilter('FIXED')">Fixed</button>
         <button class="filter-pill" data-filter="ON SUBS" onclick="setFilter('ON SUBS')">On Subs</button>
+        <button class="filter-pill" data-filter="FIXED" onclick="setFilter('FIXED')">Fixed</button>
       </div>
-      <span class="toolbar-label" style="margin-left:8px">ETA From</span>
+      <span class="toolbar-label" style="margin-left:6px">ETA</span>
       <input type="date" class="date-input" id="etaFrom" onchange="renderTable()">
-      <span class="toolbar-label">To</span>
+      <span class="toolbar-label">to</span>
       <input type="date" class="date-input" id="etaTo" onchange="renderTable()">
-      <button class="filter-pill" onclick="clearDateFilter()" style="font-size:9px">Clear Dates</button>
+      <button class="filter-pill" onclick="clearDateFilter()" style="font-size:10px">Clear</button>
       <div class="spacer"></div>
       <input class="search-input" id="searchInput" placeholder="Search vessel / owner..." oninput="renderTable()">
     </div>
@@ -169,7 +200,7 @@ BOD ABT 1250/240
             <th onclick="sortBy('vessel_name')">Vessel</th>
             <th onclick="sortBy('owner')">Owner</th>
             <th onclick="sortBy('source')">Broker</th>
-            <th onclick="sortBy('dwt')">DWT/Built</th>
+            <th onclick="sortBy('dwt')">DWT / Built</th>
             <th>SCR</th>
             <th onclick="sortBy('delivery_basis')">Delivery</th>
             <th onclick="sortBy('eta_ecsa')">ETA ECSA</th>
@@ -183,16 +214,13 @@ BOD ABT 1250/240
         <tbody id="vesselBody"></tbody>
       </table>
       <div id="emptyState" class="empty-state">
-        <div class="icon">⬡</div>
-        <div>No vessels on board yet.<br>Paste a WhatsApp message or click "Load Sample".</div>
+        <div class="icon">+</div>
+        <div>No vessels on board yet.<br>Paste a WhatsApp message or click "Sample" to get started.</div>
       </div>
     </div>
   </main>
 </div>
 
-<script>
-// ─── PARSER (inlined from parser.js) ─────────────────────────────────────────
-</script>
 <script>
 // ─── Panamax Tonnage Parser ──────────────────────────────────────────────────
 // Parses WhatsApp tonnage messages into structured vessel objects.
@@ -1410,36 +1438,105 @@ const SAMPLE_DATA =
 let vessels = JSON.parse(localStorage.getItem('pt_vessels') || '[]');
 let pendingParsed = null;
 let activeFilter = 'ALL';
-let currentSort = { key: 'eta_ecsa', dir: 'asc' }; // default: ETA ascending
+let currentSort = { key: 'eta_ecsa', dir: 'asc' };
 
 function save() { localStorage.setItem('pt_vessels', JSON.stringify(vessels)); }
 
-// ─── Formatting Helpers ──────────────────────────────────────────────────────
+// ─── Formatting ──────────────────────────────────────────────────────────────
 
 function fmtDate(iso) {
-  if (!iso) return '—';
+  if (!iso) return '';
   const [, m, d] = iso.split('-');
   const months = ['','JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   return `${parseInt(d,10)} ${months[parseInt(m,10)]}`;
 }
 
 function fmtNum(n) {
-  if (n == null) return '—';
+  if (n == null) return '';
   return n.toLocaleString();
 }
 
 function getP6Values(v) {
   const mc = v.market_colour && v.market_colour[0];
-  return {
-    bid: mc ? mc.p6_bid : null,
-    offer: mc ? mc.p6_offer : null
-  };
+  return { bid: mc ? mc.p6_bid : null, offer: mc ? mc.p6_offer : null };
 }
 
 function getSpread(v) {
   const p6 = getP6Values(v);
   if (p6.offer != null && p6.bid != null) return p6.offer - p6.bid;
   return null;
+}
+
+// ─── Inline Editing ──────────────────────────────────────────────────────────
+
+function startEdit(el, vesselIdx, field, isMono) {
+  if (el.querySelector('input')) return; // already editing
+  const current = el.textContent.trim();
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = current === '—' || current === '' ? '' : current;
+  input.className = 'edit-input' + (isMono ? ' mono' : '');
+  input.style.width = Math.max(el.offsetWidth - 8, 50) + 'px';
+
+  el.textContent = '';
+  el.appendChild(input);
+  input.focus();
+  input.select();
+
+  function commit() {
+    const val = input.value.trim();
+    applyEdit(vesselIdx, field, val);
+    renderTable();
+  }
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { renderTable(); }
+  });
+}
+
+function applyEdit(idx, field, val) {
+  const v = vessels[idx];
+  if (!v) return;
+
+  switch (field) {
+    case 'vessel_name': v.vessel_name = val || null; break;
+    case 'owner': v.owner = val || null; break;
+    case 'source': v.source = val || null; break;
+    case 'dwt': {
+      const n = parseFloat(val.replace(/[kK]/g, '').replace(/,/g, ''));
+      if (!isNaN(n)) v.dwt = n < 1000 ? n * 1000 : n;
+      break;
+    }
+    case 'build_year': {
+      const y = parseInt(val, 10);
+      if (!isNaN(y)) v.build_year = y < 100 ? 2000 + y : y;
+      break;
+    }
+    case 'scrubber':
+      v.scrubber = val.toLowerCase() === 'yes' || val.toLowerCase() === 'scr' || val === '1' ? true : (val === '' ? null : false);
+      break;
+    case 'delivery_basis': v.delivery_basis = val ? val.toUpperCase() : null; break;
+    case 'eta_ecsa': {
+      // Accept "21 APR", "2026-04-21", etc.
+      if (val.includes('-')) { v.eta_ecsa = val; }
+      else { const d = parseDate(val); if (d) v.eta_ecsa = d; }
+      break;
+    }
+    case 'p6_bid': {
+      const n = parseRate(val, 'tc');
+      if (v.market_colour && v.market_colour[0]) v.market_colour[0].p6_bid = n;
+      else v.market_colour = [{ route: 'ECSA FH', p6_bid: n, p6_offer: null, bid_usd: null, offer_usd: null }];
+      break;
+    }
+    case 'p6_offer': {
+      const n = parseRate(val, 'tc');
+      if (v.market_colour && v.market_colour[0]) v.market_colour[0].p6_offer = n;
+      else v.market_colour = [{ route: 'ECSA FH', p6_bid: null, p6_offer: n, bid_usd: null, offer_usd: null }];
+      break;
+    }
+  }
+  save();
 }
 
 // ─── Inbox Handlers ──────────────────────────────────────────────────────────
@@ -1453,9 +1550,9 @@ function handleParse() {
     const parsed = parseMultipleMessages(raw);
     pendingParsed = parsed;
     const summary = parsed.map(v =>
-      `${v.vessel_name || '?'} (${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '?'}/${v.build_year || '?'}) ETA: ${fmtDate(v.eta_ecsa)} ${v.eta_type === 'ONW' ? 'ONW' : ''}`
+      `${v.vessel_name || '?'} (${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '?'}/${v.build_year || '?'}) ETA: ${fmtDate(v.eta_ecsa)} ${v.eta_type === 'ONW' ? 'ONW' : ''} [${v.status}]`
     ).join('\n');
-    preview.textContent = `Parsed ${parsed.length} vessel(s):\n\n${summary}\n\n${JSON.stringify(parsed, null, 2)}`;
+    preview.textContent = `Parsed ${parsed.length} vessel(s):\n${summary}`;
     preview.className = 'preview-box has-content';
     btnAdd.disabled = false;
   } catch (e) {
@@ -1467,23 +1564,21 @@ function handleParse() {
 
 function handleAdd() {
   if (!pendingParsed) return;
-  // Deduplicate by vessel name — update existing if same name
   for (const pv of pendingParsed) {
     const existIdx = vessels.findIndex(v =>
       v.vessel_name && pv.vessel_name &&
       v.vessel_name.toUpperCase() === pv.vessel_name.toUpperCase()
     );
     if (existIdx !== -1) {
-      // Merge: keep existing owner/notes, update rates and ETA
       const existing = vessels[existIdx];
-      vessels[existIdx] = { ...existing, ...pv, owner: pv.owner || existing.owner, notes: pv.notes || existing.notes, status: existing.status };
+      vessels[existIdx] = { ...existing, ...pv, owner: pv.owner || existing.owner, notes: pv.notes || existing.notes, status: pv.status !== 'OPEN' ? pv.status : existing.status };
     } else {
       vessels.push(pv);
     }
   }
   save(); renderTable(); updateStats();
   document.getElementById('rawInput').value = '';
-  document.getElementById('previewBox').textContent = `Added ${pendingParsed.length} vessel(s) to board.`;
+  document.getElementById('previewBox').textContent = `Added ${pendingParsed.length} vessel(s).`;
   document.getElementById('previewBox').className = 'preview-box has-content';
   document.getElementById('btnAdd').disabled = true;
   pendingParsed = null;
@@ -1491,7 +1586,7 @@ function handleAdd() {
 
 function handleClear() {
   document.getElementById('rawInput').value = '';
-  document.getElementById('previewBox').textContent = '— parsed output will appear here —';
+  document.getElementById('previewBox').textContent = 'Parsed output will appear here';
   document.getElementById('previewBox').className = 'preview-box';
   document.getElementById('btnAdd').disabled = true;
   pendingParsed = null;
@@ -1506,7 +1601,16 @@ function loadSample() {
     document.getElementById('previewBox').textContent = `Loaded ${data.length} sample vessels.`;
     document.getElementById('previewBox').className = 'preview-box has-content';
   } catch (e) {
-    document.getElementById('previewBox').className = 'preview-box has-error';
+    // Try embedded data (standalone version)
+    if (typeof SAMPLE_DATA !== 'undefined') {
+      vessels = SAMPLE_DATA;
+      save(); renderTable(); updateStats();
+      document.getElementById('previewBox').textContent = `Loaded ${SAMPLE_DATA.length} sample vessels.`;
+      document.getElementById('previewBox').className = 'preview-box has-content';
+    } else {
+      document.getElementById('previewBox').textContent = 'Could not load sample data. Paste messages manually.';
+      document.getElementById('previewBox').className = 'preview-box has-error';
+    }
   }
 }
 
@@ -1574,7 +1678,7 @@ function removeVessel(idx) {
 
 function updateStats() {
   document.getElementById('statOpen').textContent = vessels.filter(v => v.status === 'OPEN').length;
-  document.getElementById('statFixed').textContent = vessels.filter(v => v.status === 'FIXED').length;
+  document.getElementById('statFixed').textContent = vessels.filter(v => v.status === 'FIXED' || v.status === 'ON SUBS').length;
   document.getElementById('statTotal').textContent = vessels.length;
 }
 
@@ -1585,8 +1689,7 @@ function renderTable() {
   const tbody = document.getElementById('vesselBody');
   const empty = document.getElementById('emptyState');
 
-  // Filter
-  let filtered = vessels.filter((v) => {
+  let filtered = vessels.filter(v => {
     if (activeFilter !== 'ALL' && v.status !== activeFilter) return false;
     if (etaFrom && (!v.eta_ecsa || v.eta_ecsa < etaFrom)) return false;
     if (etaTo && (!v.eta_ecsa || v.eta_ecsa > etaTo)) return false;
@@ -1597,21 +1700,13 @@ function renderTable() {
     return true;
   });
 
-  // Sort — primary: ETA asc, secondary: P6 offer desc (default behavior)
-  // If user clicked a column, use that as primary sort
   filtered.sort((a, b) => {
     const va = getSortValue(a, currentSort.key);
     const vb = getSortValue(b, currentSort.key);
-    let cmp = 0;
-    if (typeof va === 'string') cmp = va.localeCompare(vb);
-    else cmp = va - vb;
+    let cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
     if (currentSort.dir === 'desc') cmp = -cmp;
-
-    // Secondary sort: if sorting by ETA/laycan, use P6 offer desc as tiebreaker
     if (cmp === 0 && (currentSort.key === 'eta_ecsa' || currentSort.key === 'laycan')) {
-      const p6a = getP6Values(a).offer || 0;
-      const p6b = getP6Values(b).offer || 0;
-      return p6b - p6a; // descending
+      return (getP6Values(b).offer || 0) - (getP6Values(a).offer || 0);
     }
     return cmp;
   });
@@ -1619,15 +1714,13 @@ function renderTable() {
   empty.style.display = filtered.length === 0 ? 'block' : 'none';
   document.getElementById('vesselTable').style.display = filtered.length === 0 ? 'none' : '';
 
-  // Group by laycan period
   let lastLaycan = null;
   const rows = [];
 
   for (const v of filtered) {
-    const globalIdx = vessels.indexOf(v);
+    const gi = vessels.indexOf(v);
     const laycan = getLaycanPeriod(v.eta_ecsa);
 
-    // Insert group header when laycan changes (only when sorted by ETA)
     if ((currentSort.key === 'eta_ecsa' || currentSort.key === 'laycan') && laycan !== lastLaycan) {
       rows.push(`<tr class="group-header"><td colspan="13">${laycan || 'NO ETA'}</td></tr>`);
       lastLaycan = laycan;
@@ -1635,19 +1728,13 @@ function renderTable() {
 
     const p6 = getP6Values(v);
     const spread = getSpread(v);
-    const mc = v.market_colour && v.market_colour[0];
 
-    const etaCell = v.eta_ecsa
-      ? `${fmtDate(v.eta_ecsa)}${v.eta_ecsa_end ? '–' + fmtDate(v.eta_ecsa_end).split(' ')[0] : ''}${v.eta_type === 'ONW' ? '<span class="onw-badge">ONW</span>' : ''}`
+    const etaText = v.eta_ecsa
+      ? `${fmtDate(v.eta_ecsa)}${v.eta_ecsa_end ? '–' + fmtDate(v.eta_ecsa_end).split(' ')[0] : ''}${v.eta_type === 'ONW' ? ' <span class="onw-badge">ONW</span>' : ''}`
       : '—';
 
-    const laycanBadge = laycan
-      ? `<span class="td-laycan">${laycan}</span>`
-      : '<span style="color:var(--text-dim)">—</span>';
-
-    const scrTag = v.scrubber === true
-      ? '<span class="scrubber-yes">SCR</span>'
-      : '<span class="scrubber-unk">—</span>';
+    const laycanBadge = laycan ? `<span class="td-laycan">${laycan}</span>` : '<span style="color:var(--text-dim)">—</span>';
+    const scrTag = v.scrubber === true ? '<span class="scrubber-yes">SCR</span>' : '<span class="scrubber-unk">—</span>';
 
     let spreadCell = '—';
     if (spread != null) {
@@ -1656,25 +1743,25 @@ function renderTable() {
     }
 
     const warnDot = v.parse_warnings && v.parse_warnings.length > 0
-      ? `<span class="warn-dot" title="${v.parse_warnings.join('; ')}"></span>`
-      : '';
+      ? `<span class="warn-dot" title="${v.parse_warnings.join('; ')}"></span>` : '';
 
-    const delivery = v.delivery_basis || (v.current_position ? v.current_position : '—');
+    const delivery = v.delivery_basis || v.current_position || '—';
+    const statusCls = (v.status || 'OPEN').replace(/\s+/g, '_');
 
     rows.push(`<tr>
       <td>${laycanBadge}</td>
-      <td class="td-vessel">${v.vessel_name || '—'}${warnDot}</td>
-      <td class="td-owner">${v.owner || '—'}</td>
-      <td class="td-source">${v.source || '—'}</td>
-      <td class="td-specs">${v.dwt ? (v.dwt/1000).toFixed(0) + 'K' : '—'} / ${v.build_year || '—'}</td>
-      <td>${scrTag}</td>
-      <td class="td-port">${delivery}</td>
-      <td class="td-eta">${etaCell}</td>
-      <td class="td-p6"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>
-      <td class="td-p6"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>
+      <td class="td-vessel editable" onclick="startEdit(this,${gi},'vessel_name',true)">${v.vessel_name || '—'}${warnDot}</td>
+      <td class="td-owner editable" onclick="startEdit(this,${gi},'owner',false)">${v.owner || '—'}</td>
+      <td class="td-source editable" onclick="startEdit(this,${gi},'source',false)">${v.source || '—'}</td>
+      <td class="td-specs">${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '—'} / ${v.build_year || '—'}</td>
+      <td class="editable" onclick="startEdit(this,${gi},'scrubber',false)">${scrTag}</td>
+      <td class="td-port editable" onclick="startEdit(this,${gi},'delivery_basis',false)">${delivery}</td>
+      <td class="td-eta editable" onclick="startEdit(this,${gi},'eta_ecsa',true)">${etaText}</td>
+      <td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_bid',true)"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>
+      <td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_offer',true)"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>
       <td>${spreadCell}</td>
-      <td><span class="status-badge status-${(v.status || 'OPEN').replace(/\s+/g,'_')}" onclick="cycleStatus(${globalIdx})">${v.status || 'OPEN'}</span></td>
-      <td><button class="btn-secondary" style="padding:3px 8px;font-size:10px" onclick="removeVessel(${globalIdx})">x</button></td>
+      <td><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>
+      <td><button class="btn-remove" onclick="removeVessel(${gi})">x</button></td>
     </tr>`);
   }
 
