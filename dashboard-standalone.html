@@ -319,32 +319,66 @@ function laycanSortKey(isoDate) {
 function parseVesselLine(line) {
   const result = {
     source: null, owner: null, vessel_name: null, dwt: null, build_year: null,
-    scrubber: null, current_position: null, open_date: null, open_date_end: null,
+    draft: null, scrubber: null, current_position: null, open_date: null, open_date_end: null,
     eta_ecsa: null, eta_ecsa_end: null, eta_type: null, delivery_basis: null
   };
 
-  // Source/broker before " - "
-  const dashIdx = line.indexOf(' - ');
-  if (dashIdx !== -1) {
-    let src = line.slice(0, dashIdx).trim();
-    // Extract annotations like "(CP ON THIS VSL)" into notes, keep clean source name
-    const srcAnnotation = src.match(/\(([^)]+)\)/);
-    if (srcAnnotation) {
-      result.source_note = srcAnnotation[1].trim();
-      src = src.replace(srcAnnotation[0], '').trim();
-    }
-    result.source = src;
-    line = line.slice(dashIdx + 3);
+  // "WITH BROKER" prefix: "WITH QUADRA MV ..." → source is QUADRA
+  const withMatch = line.match(/^WITH\s+(\S+)\s+/i);
+  if (withMatch) {
+    result.source = withMatch[1].trim();
+    line = line.slice(withMatch[0].length).trim();
   }
 
-  // DWT/year in parens: (81/17), (82/2013), (77095/14)
-  const sizeMatch = line.match(/\((\d+(?:,\d+)?)\/(\d{2,4})\)/);
-  if (sizeMatch) {
-    const dwtRaw = parseInt(sizeMatch[1].replace(/,/g, ''), 10);
-    result.dwt = dwtRaw < 1000 ? dwtRaw * 1000 : dwtRaw;
-    const yearRaw = parseInt(sizeMatch[2], 10);
-    result.build_year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
-    line = line.replace(sizeMatch[0], '').trim();
+  // Find MV/MT position to help locate vessel name vs source
+  const mvPos = line.search(/\bM[VT]\s/i);
+
+  // Source/broker before " - " BUT only if the dash comes before MV,
+  // or if there's no MV at all
+  const dashIdx = line.indexOf(' - ');
+  if (dashIdx !== -1) {
+    const afterDash = line.slice(dashIdx + 3).trim();
+    const mvAfterDash = /^M[VT]\s/i.test(afterDash);
+    const dashIsBeforeMV = mvPos === -1 || dashIdx < mvPos;
+    // It's a specs-to-port separator if: specs parens end right before dash AND no MV after dash
+    const dashIsSpecsToPort = !mvAfterDash && dashIdx > 0 && /\)\s*$/.test(line.slice(0, dashIdx).trim());
+
+    if ((dashIsBeforeMV || mvAfterDash) && !dashIsSpecsToPort) {
+      // Normal: "BAUMARINE - MV SILVERMINE..." or "BAUMARINE (note) - MV SILVERMINE..."
+      let src = line.slice(0, dashIdx).trim();
+      const srcAnnotation = src.match(/\(([^)]+)\)/);
+      if (srcAnnotation) {
+        result.source_note = srcAnnotation[1].trim();
+        src = src.replace(srcAnnotation[0], '').trim();
+      }
+      if (!result.source) result.source = src;
+      line = line.slice(dashIdx + 3);
+    }
+  }
+
+  // Extended specs in parens: (81'688DWT ON 14.469 BUILT 2017) or (82,225DWT ON 14.47M BUILT 2013)
+  const extSpecMatch = line.match(/\((\d[\d',.]*)(?:\s*DWT)?(?:\s+ON\s+(\d+(?:\.\d+)?)(?:M)?)?\s*(?:BUILT\s+(\d{4}))?\)/i);
+  if (extSpecMatch) {
+    const dwtStr = extSpecMatch[1].replace(/[',]/g, '');
+    const dwtRaw = parseInt(dwtStr, 10);
+    if (!isNaN(dwtRaw)) result.dwt = dwtRaw < 1000 ? dwtRaw * 1000 : dwtRaw;
+    if (extSpecMatch[2]) result.draft = parseFloat(extSpecMatch[2]);
+    if (extSpecMatch[3]) result.build_year = parseInt(extSpecMatch[3], 10);
+    line = line.replace(extSpecMatch[0], '').trim();
+    // If there's a " - " right after specs, consume it
+    line = line.replace(/^\s*-\s*/, '').trim();
+  }
+
+  // Standard short specs: (81/17), (82/2013), (77095/14)
+  if (!result.dwt) {
+    const sizeMatch = line.match(/\((\d+(?:,\d+)?)\/(\d{2,4})\)/);
+    if (sizeMatch) {
+      const dwtRaw = parseInt(sizeMatch[1].replace(/,/g, ''), 10);
+      result.dwt = dwtRaw < 1000 ? dwtRaw * 1000 : dwtRaw;
+      const yearRaw = parseInt(sizeMatch[2], 10);
+      result.build_year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
+      line = line.replace(sizeMatch[0], '').trim();
+    }
   }
 
   // Scrubber detection
@@ -630,12 +664,23 @@ function parseMarketColourLine(line) {
     }
   }
 
-  // "Ideas 21,500" or "Ideas X" or "thinking 18 in front" — single offer
+  // "Ideas 21,500", "Rating 21500", "thinking 18 in front" — single offer
   if (!offer_usd && !bid_usd) {
-    const ideasMatch = line.match(/\b(?:ideas?|thinking|loosely\s+thinking)\s+([0-9k,.]+)/i);
+    const ideasMatch = line.match(/\b(?:ideas?|thinking|loosely\s+thinking|rating)\s+([0-9k,.]+)/i);
     if (ideasMatch) {
       is_idea = true;
       offer_usd = parseRate(ideasMatch[1].trim(), 'tc');
+    }
+  }
+
+  // Route from "ECSA OPT NCSA/FEAST" or similar trailing route preferences
+  if (!route) {
+    const routeTrail = line.match(/\b(ECSA|USG|NCSA)\b.*?\b(OPT|FH|TA|FEAST)\b/i);
+    if (routeTrail) {
+      const rt = routeTrail[0].toUpperCase();
+      if (rt.includes('ECSA')) route = rt.includes('TA') ? 'ECSA TA' : 'ECSA FH';
+      else if (rt.includes('USG')) route = rt.includes('TA') ? 'USG TA' : 'USG FH';
+      else if (rt.includes('NCSA')) route = 'NCSA FH';
     }
   }
 
@@ -796,7 +841,8 @@ function parseTonnageMessage(rawText) {
       // Market colour / rate lines
       if (/^=/.test(line) || /claims\s+seeing/i.test(line) || /\b(loosely\s+)?thinking\b/i.test(line)
           || /^\s*ideas?\b/i.test(line) || /^\s*offers?\s+\d/i.test(line) || /^\s*on\s+subs\b/i.test(line)
-          || /^\s*last\s+offered\b/i.test(line) || /^\s*pref\b/i.test(line) || /^\s*collecting\b/i.test(line)) {
+          || /^\s*last\s+offered\b/i.test(line) || /^\s*pref\b/i.test(line) || /^\s*collecting\b/i.test(line)
+          || /^\s*rating\b/i.test(line)) {
         const mc = parseMarketColourLine(line);
         if (mc.route || mc.bid_usd || mc.offer_usd || mc.p6_bid || mc.p6_offer || mc.collecting) {
           vessel.market_colour.push(mc);
