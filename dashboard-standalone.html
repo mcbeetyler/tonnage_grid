@@ -1,0 +1,1690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panamax Tonnage Tracker — Arrow Geneva</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+  :root {
+    --bg:#0d0f13;--bg2:#141720;--bg3:#1c2030;--border:#252a3a;--border2:#2e3550;
+    --text:#c8cfe0;--text-dim:#5a6380;--text-bright:#e8edf8;
+    --accent:#3d7eff;--accent2:#00c896;--warn:#f5a623;--danger:#e04545;
+    --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--radius:4px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;min-height:100vh}
+
+  .header{background:var(--bg2);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:20px}
+  .header-title{font-family:var(--mono);font-weight:600;font-size:14px;color:var(--text-bright);letter-spacing:.5px}
+  .header-subtitle{font-size:11px;color:var(--text-dim);font-family:var(--mono)}
+  .header-stats{margin-left:auto;display:flex;gap:24px}
+  .stat{text-align:right}
+  .stat-value{font-family:var(--mono);font-size:16px;font-weight:600;color:var(--accent2)}
+  .stat-label{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px}
+
+  .layout{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 50px)}
+  .panel-inbox{background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column}
+  .panel-title{padding:12px 16px;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+  .panel-title .dot{width:6px;height:6px;border-radius:50%;background:var(--accent2);box-shadow:0 0 6px var(--accent2)}
+  .inbox-area{flex:1;display:flex;flex-direction:column;padding:12px;gap:10px;overflow:hidden}
+
+  textarea#rawInput{flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:11px;line-height:1.6;padding:12px;resize:none;outline:none;transition:border-color .15s}
+  textarea#rawInput:focus{border-color:var(--accent)}
+  textarea#rawInput::placeholder{color:var(--text-dim)}
+  .inbox-controls{display:flex;gap:8px}
+
+  button{font-family:var(--sans);font-size:12px;font-weight:500;border:none;border-radius:var(--radius);cursor:pointer;padding:8px 14px;transition:all .15s}
+  .btn-primary{background:var(--accent);color:#fff;flex:1}
+  .btn-primary:hover{background:#5590ff}
+  .btn-primary:disabled{opacity:.4;cursor:not-allowed}
+  .btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border2)}
+  .btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
+
+  .preview-box{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--text-dim);max-height:180px;overflow-y:auto;line-height:1.5;white-space:pre-wrap}
+  .preview-box.has-content{color:var(--accent2);border-color:var(--accent2)}
+  .preview-box.has-error{color:var(--danger);border-color:var(--danger)}
+
+  .panel-board{display:flex;flex-direction:column;overflow:hidden}
+  .board-toolbar{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--bg2);flex-wrap:wrap}
+  .filter-group{display:flex;gap:4px}
+  .filter-pill{font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:12px;border:1px solid var(--border2);background:transparent;color:var(--text-dim);cursor:pointer;transition:all .12s}
+  .filter-pill:hover{border-color:var(--accent);color:var(--accent)}
+  .filter-pill.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .spacer{flex:1}
+  .search-input{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 10px;outline:none;width:160px}
+  .search-input:focus{border-color:var(--accent)}
+  .date-input{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:10px;padding:4px 8px;outline:none;width:120px}
+  .date-input:focus{border-color:var(--accent)}
+  .toolbar-label{font-family:var(--mono);font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px}
+
+  .table-wrapper{flex:1;overflow:auto}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  thead th{background:var(--bg2);padding:8px 10px;text-align:left;font-family:var(--mono);font-size:10px;font-weight:500;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border2);white-space:nowrap;position:sticky;top:0;z-index:2;cursor:pointer;user-select:none}
+  thead th:hover{color:var(--accent)}
+  thead th.col-p6{color:var(--accent2);border-bottom-color:var(--accent2)}
+  thead th.col-p6:hover{color:#00ffb8}
+  tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+  tbody tr:hover{background:var(--bg3)}
+  td{padding:8px 10px;white-space:nowrap;vertical-align:middle}
+
+  .group-header{background:var(--bg3);border-bottom:2px solid var(--accent)}
+  .group-header td{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent);padding:6px 10px;letter-spacing:.5px}
+
+  .td-vessel{font-family:var(--mono);font-weight:500;color:var(--text-bright);font-size:11px}
+  .td-owner{font-family:var(--mono);font-size:10px;color:var(--text)}
+  .td-source{font-family:var(--mono);font-size:10px;color:var(--text-dim)}
+  .td-specs{font-family:var(--mono);font-size:10px;color:var(--text-dim)}
+  .td-port{font-family:var(--mono);font-size:11px;color:var(--warn)}
+  .td-date{font-family:var(--mono);font-size:10px;color:var(--text)}
+  .td-eta{font-family:var(--mono);font-size:10px}
+  .td-laycan{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px;background:rgba(61,126,255,.1);color:var(--accent);border:1px solid rgba(61,126,255,.2)}
+  .td-eta .onw-badge{font-size:9px;background:rgba(245,166,35,.12);color:var(--warn);border:1px solid rgba(245,166,35,.3);padding:1px 5px;border-radius:3px;margin-left:4px}
+  .td-p6{font-family:var(--mono);font-weight:600;font-size:12px}
+  .td-p6 .bid{color:var(--accent2)}
+  .td-p6 .offer{color:var(--accent)}
+  .td-spread{font-family:var(--mono);font-size:10px;font-weight:500}
+  .spread-pos{color:var(--danger)}
+  .spread-neg{color:var(--accent2)}
+  .spread-zero{color:var(--text-dim)}
+
+  .status-badge{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:3px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;cursor:pointer}
+  .status-OPEN{background:rgba(0,200,150,.12);color:var(--accent2);border:1px solid rgba(0,200,150,.25)}
+  .status-FIXED{background:rgba(61,126,255,.12);color:var(--accent);border:1px solid rgba(61,126,255,.25)}
+  .status-FAILED{background:rgba(224,69,69,.12);color:var(--danger);border:1px solid rgba(224,69,69,.25)}
+  .status-WITHDRAWN{background:rgba(90,99,128,.12);color:var(--text-dim);border:1px solid var(--border2)}
+  .status-ON_SUBS{background:rgba(245,166,35,.12);color:var(--warn);border:1px solid rgba(245,166,35,.3)}
+
+  .scrubber-yes{color:var(--accent2);font-size:9px}
+  .scrubber-unk{color:var(--border2);font-size:9px}
+  .empty-state{text-align:center;padding:60px 20px;color:var(--text-dim);font-family:var(--mono);font-size:12px}
+  .empty-state .icon{font-size:32px;margin-bottom:12px;opacity:.3}
+  .warn-dot{display:inline-block;width:5px;height:5px;background:var(--warn);border-radius:50%;margin-left:4px;vertical-align:middle}
+
+  ::-webkit-scrollbar{width:5px;height:5px}
+  ::-webkit-scrollbar-track{background:var(--bg)}
+  ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+  ::-webkit-scrollbar-thumb:hover{background:var(--accent)}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div>
+    <div class="header-title">PANAMAX TONNAGE TRACKER</div>
+    <div class="header-subtitle">Arrow Shipbroking — Geneva Atlantic Desk</div>
+  </div>
+  <div class="header-stats">
+    <div class="stat"><div class="stat-value" id="statOpen">0</div><div class="stat-label">Open</div></div>
+    <div class="stat"><div class="stat-value" id="statFixed">0</div><div class="stat-label">Fixed</div></div>
+    <div class="stat"><div class="stat-value" id="statTotal">0</div><div class="stat-label">Total</div></div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="panel-inbox">
+    <div class="panel-title"><span class="dot"></span>WhatsApp Inbox</div>
+    <div class="inbox-area">
+      <textarea id="rawInput" placeholder="Paste one or more WhatsApp tonnage messages here.
+
+Separate multiple messages with a blank line.
+
+Example:
+QUADRA - MV SAKIZAYA MIRACLE (81/17) GOA 31 MARCH / ETA 25 APR ONW
+BOD ABT 1250/240
+= ECSA FH: Claims seeing 20k multiple times vs 21,500 (p6: 16,700 vs 18k)"></textarea>
+      <div id="previewBox" class="preview-box">— parsed output will appear here —</div>
+      <div class="inbox-controls">
+        <button class="btn-primary" id="btnParse" onclick="handleParse()">Parse</button>
+        <button class="btn-primary" id="btnAdd" onclick="handleAdd()" disabled style="background:var(--accent2)">Add to Board</button>
+        <button class="btn-secondary" onclick="handleClear()">Clear</button>
+        <button class="btn-secondary" id="btnLoadSample" onclick="loadSample()">Load Sample</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="panel-board">
+    <div class="board-toolbar">
+      <span class="toolbar-label">Status</span>
+      <div class="filter-group" id="statusFilters">
+        <button class="filter-pill active" data-filter="ALL" onclick="setFilter('ALL')">All</button>
+        <button class="filter-pill" data-filter="OPEN" onclick="setFilter('OPEN')">Open</button>
+        <button class="filter-pill" data-filter="FIXED" onclick="setFilter('FIXED')">Fixed</button>
+        <button class="filter-pill" data-filter="ON SUBS" onclick="setFilter('ON SUBS')">On Subs</button>
+      </div>
+      <span class="toolbar-label" style="margin-left:8px">ETA From</span>
+      <input type="date" class="date-input" id="etaFrom" onchange="renderTable()">
+      <span class="toolbar-label">To</span>
+      <input type="date" class="date-input" id="etaTo" onchange="renderTable()">
+      <button class="filter-pill" onclick="clearDateFilter()" style="font-size:9px">Clear Dates</button>
+      <div class="spacer"></div>
+      <input class="search-input" id="searchInput" placeholder="Search vessel / owner..." oninput="renderTable()">
+    </div>
+
+    <div class="table-wrapper">
+      <table id="vesselTable">
+        <thead>
+          <tr>
+            <th onclick="sortBy('laycan')">Laycan</th>
+            <th onclick="sortBy('vessel_name')">Vessel</th>
+            <th onclick="sortBy('owner')">Owner</th>
+            <th onclick="sortBy('source')">Broker</th>
+            <th onclick="sortBy('dwt')">DWT/Built</th>
+            <th>SCR</th>
+            <th onclick="sortBy('delivery_basis')">Delivery</th>
+            <th onclick="sortBy('eta_ecsa')">ETA ECSA</th>
+            <th class="col-p6" onclick="sortBy('p6_bid')">P6 Bid</th>
+            <th class="col-p6" onclick="sortBy('p6_offer')">P6 Offer</th>
+            <th onclick="sortBy('spread')">Spread</th>
+            <th onclick="sortBy('status')">Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="vesselBody"></tbody>
+      </table>
+      <div id="emptyState" class="empty-state">
+        <div class="icon">⬡</div>
+        <div>No vessels on board yet.<br>Paste a WhatsApp message or click "Load Sample".</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ─── PARSER (inlined from parser.js) ─────────────────────────────────────────
+</script>
+<script>
+// ─── Panamax Tonnage Parser ──────────────────────────────────────────────────
+// Parses WhatsApp tonnage messages into structured vessel objects.
+// Handles the wide variety of formats seen across brokers and owners.
+
+const MONTH_MAP = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12,
+  march:3,april:4,june:6,july:7};
+const CURRENT_YEAR = new Date().getFullYear();
+
+// ─── Utility Parsers ─────────────────────────────────────────────────────────
+
+function parseRate(str, context) {
+  if (!str) return null;
+  const s = str.replace(/,/g, '').trim().toLowerCase();
+  // "20k" → 20000, "1.5k" → 1500
+  const kMatch = s.match(/^(\d+(?:\.\d+)?)k$/);
+  if (kMatch) return Math.round(parseFloat(kMatch[1]) * 1000);
+  // "1m" or "1.025m" → 1000000 / 1025000
+  const mMatch = s.match(/^(\d+(?:\.\d+)?)m$/);
+  if (mMatch) return Math.round(parseFloat(mMatch[1]) * 1000000);
+  const plain = parseFloat(s);
+  if (isNaN(plain)) return null;
+  // Context-aware scaling for bare numbers:
+  // TC rates: bare "18" or "19.5" in market colour context → 18,000 / 19,500
+  if (context === 'tc' && plain > 0 && plain < 100) return Math.round(plain * 1000);
+  // BB lump sums: "975" → 975,000; "1.025" → 1,025,000
+  if (context === 'bb') {
+    if (plain > 0 && plain < 10) return Math.round(plain * 1000000);   // 1.025 → 1,025,000
+    if (plain >= 10 && plain < 10000) return Math.round(plain * 1000); // 975 → 975,000
+  }
+  return plain;
+}
+
+function parseDate(str) {
+  if (!str) return null;
+  const clean = str.trim().toLowerCase().replace(/[.,]/g, '');
+  // Handle "19 MAR", "31 MARCH", "15 APR 2026"
+  const match = clean.match(/(\d{1,2})\s+([a-z]+)(?:\s+(\d{4}))?/);
+  if (!match) return null;
+  const day = parseInt(match[1], 10);
+  const monthStr = match[2].slice(0, 3);
+  const month = MONTH_MAP[monthStr] || MONTH_MAP[match[2]];
+  const year = match[3] ? parseInt(match[3], 10) : CURRENT_YEAR;
+  if (!month || day < 1 || day > 31) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+// Parse range dates like "10-15 APR", "8-9 APR", "16-18 APR"
+// Returns { earliest: "2026-04-10", latest: "2026-04-15" }
+function parseDateRange(str) {
+  if (!str) return null;
+  const clean = str.trim().toLowerCase().replace(/[.,]/g, '');
+  // "10-15 apr" or "8-9 apr"
+  const rangeMatch = clean.match(/(\d{1,2})\s*[-\/]\s*(\d{1,2})\s+([a-z]+)(?:\s+(\d{4}))?/);
+  if (rangeMatch) {
+    const day1 = parseInt(rangeMatch[1], 10);
+    const day2 = parseInt(rangeMatch[2], 10);
+    const monthStr = rangeMatch[3].slice(0, 3);
+    const month = MONTH_MAP[monthStr] || MONTH_MAP[rangeMatch[3]];
+    const year = rangeMatch[4] ? parseInt(rangeMatch[4], 10) : CURRENT_YEAR;
+    if (!month) return null;
+    const pad = (n) => String(n).padStart(2, '0');
+    return {
+      earliest: `${year}-${pad(month)}-${pad(day1)}`,
+      latest: `${year}-${pad(month)}-${pad(day2)}`
+    };
+  }
+  // Single date fallback
+  const single = parseDate(str);
+  if (single) return { earliest: single, latest: single };
+  return null;
+}
+
+function detectScrubber(text) {
+  if (/\bscr(ubber)?\b|\+s\b/i.test(text)) return true;
+  return null;
+}
+
+// ─── Laycan Period Helpers ───────────────────────────────────────────────────
+
+function getLaycanPeriod(isoDate) {
+  if (!isoDate) return null;
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const half = d <= 15 ? 'FH' : 'LH';
+  return `${half} ${months[m]}`;
+}
+
+function laycanSortKey(isoDate) {
+  if (!isoDate) return '9999-99-99';
+  return isoDate;
+}
+
+// ─── Vessel Line Parser ──────────────────────────────────────────────────────
+
+function parseVesselLine(line) {
+  const result = {
+    source: null, owner: null, vessel_name: null, dwt: null, build_year: null,
+    scrubber: null, current_position: null, open_date: null, open_date_end: null,
+    eta_ecsa: null, eta_ecsa_end: null, eta_type: null, delivery_basis: null
+  };
+
+  // Source/broker before " - "
+  const dashIdx = line.indexOf(' - ');
+  if (dashIdx !== -1) {
+    result.source = line.slice(0, dashIdx).trim();
+    line = line.slice(dashIdx + 3);
+  }
+
+  // DWT/year in parens: (81/17), (82/2013), (77095/14)
+  const sizeMatch = line.match(/\((\d+(?:,\d+)?)\/(\d{2,4})\)/);
+  if (sizeMatch) {
+    const dwtRaw = parseInt(sizeMatch[1].replace(/,/g, ''), 10);
+    result.dwt = dwtRaw < 1000 ? dwtRaw * 1000 : dwtRaw;
+    const yearRaw = parseInt(sizeMatch[2], 10);
+    result.build_year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
+    line = line.replace(sizeMatch[0], '').trim();
+  }
+
+  // Scrubber detection
+  result.scrubber = detectScrubber(line);
+  line = line.replace(/\bscr(ubber)?\b|\+s\b/gi, '').trim();
+
+  // ETA extraction: "/ ETA 25 APR ONW" or "/ ETA ECSA 11 MAY ONW" or "/ ETA SANTOS 13 APR"
+  const etaMatch = line.match(/\/\s*ETA\s+(?:(?:ECSA|SANTOS|PARANAGUA|TUBARAO)\s+)?(.+)$/i);
+  if (etaMatch) {
+    const etaStr = etaMatch[1].trim();
+    const onw = /\bonw\b/i.test(etaStr);
+    result.eta_type = onw ? 'ONW' : 'EXACT';
+    const cleanEta = etaStr.replace(/\bonw\b/gi, '').trim();
+    const dateRange = parseDateRange(cleanEta);
+    if (dateRange) {
+      result.eta_ecsa = dateRange.earliest;
+      result.eta_ecsa_end = dateRange.latest !== dateRange.earliest ? dateRange.latest : null;
+    }
+    line = line.slice(0, line.search(/\/\s*ETA/i)).trim();
+  }
+
+  // Remove MV/MT prefix (handle "MVNavios" with no space too)
+  line = line.replace(/^M[VT]\s*/i, '').trim();
+
+  // Delivery basis: APS ECSA, APS SANTOS, DLOSP, SANTOS, PARANAGUA etc.
+  const deliveryMatch = line.match(/\b(APS\s+\w+|DLOSP|PASSING\s+\w+)\b/i);
+  if (deliveryMatch) {
+    result.delivery_basis = deliveryMatch[1].toUpperCase();
+    line = line.replace(deliveryMatch[0], '').replace(/\s{2,}/g, ' ').trim();
+  }
+
+  // Open date (possibly range): "GANGAVARAM 19 MAR", "PARADIP 10-15 APR"
+  const rangeDatePattern = /(\d{1,2}\s*[-\/]\s*\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*)/gi;
+  const singleDatePattern = /(\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*)/gi;
+
+  let dateMatches = [...line.matchAll(rangeDatePattern)];
+  if (dateMatches.length > 0) {
+    const lastDate = dateMatches[dateMatches.length - 1];
+    const range = parseDateRange(lastDate[0]);
+    if (range) {
+      result.open_date = range.earliest;
+      result.open_date_end = range.latest !== range.earliest ? range.latest : null;
+    }
+    const beforeDate = line.slice(0, lastDate.index).trim();
+    const parts = beforeDate.split(/\s+/).filter(Boolean);
+    if (parts.length >= 1) {
+      result.current_position = parts[parts.length - 1];
+      result.vessel_name = parts.slice(0, parts.length - 1).join(' ') || beforeDate;
+    }
+  } else {
+    dateMatches = [...line.matchAll(singleDatePattern)];
+    if (dateMatches.length > 0) {
+      const lastDate = dateMatches[dateMatches.length - 1];
+      result.open_date = parseDate(lastDate[0]);
+      const beforeDate = line.slice(0, lastDate.index).trim();
+      const parts = beforeDate.split(/\s+/).filter(Boolean);
+      if (parts.length >= 1) {
+        result.current_position = parts[parts.length - 1];
+        result.vessel_name = parts.slice(0, parts.length - 1).join(' ') || beforeDate;
+      }
+    } else {
+      // No date found — try to extract port from end
+      const parts = line.trim().split(/\s+/).filter(Boolean);
+      if (parts.length > 1 && /^[A-Z]+$/.test(parts[parts.length - 1]) && parts[parts.length - 1].length <= 12) {
+        // Check if last word looks like a port/delivery
+        const lastWord = parts[parts.length - 1];
+        const knownPorts = ['SANTOS', 'PARANAGUA', 'TUBARAO', 'SINGAPORE', 'GOA', 'HALDIA', 'GANGAVARAM', 'PARADIP', 'ENNORE', 'HAZIRA', 'MUNDRA', 'KANDLA'];
+        if (knownPorts.includes(lastWord)) {
+          result.current_position = lastWord;
+          result.vessel_name = parts.slice(0, parts.length - 1).join(' ');
+        } else {
+          result.vessel_name = line.trim() || null;
+        }
+      } else {
+        result.vessel_name = line.trim() || null;
+      }
+    }
+  }
+
+  // Clean vessel name
+  if (result.vessel_name) {
+    result.vessel_name = result.vessel_name.replace(/^\s*[-/]\s*|\s*[-/]\s*$/g, '').trim();
+    // If delivery_basis wasn't caught earlier but vessel name ends with port
+    if (!result.delivery_basis && result.current_position) {
+      const port = result.current_position.toUpperCase();
+      if (['SANTOS', 'PARANAGUA'].includes(port)) {
+        result.delivery_basis = port;
+      }
+    }
+  }
+
+  return result;
+}
+
+// ─── BOD Line Parser ─────────────────────────────────────────────────────────
+
+function parseBODLine(line) {
+  const result = { bod_ifo: null, bod_mdo: null, bod_basis: null, bod_fuel_type: null };
+
+  // Extract basis: "BSS SANTOS", "BSS ENNORE", "bss Santos"
+  const basisMatch = line.match(/\bbss\s+([A-Za-z]+)/i);
+  if (basisMatch) {
+    result.bod_basis = basisMatch[1].toUpperCase();
+  }
+
+  // Detect fuel type: LSFO/LSMGO vs IFO/MDO (default)
+  if (/\bLSFO\b/i.test(line)) {
+    result.bod_fuel_type = 'LSFO/LSMGO';
+  }
+
+  // Handle ranges: "1400-1500 / 180-200" → take midpoint
+  const rangeMatch = line.match(/(\d+(?:,\d+)?)\s*[-–]\s*(\d+(?:,\d+)?)\s*\/\s*(\d+(?:,\d+)?)\s*[-–]\s*(\d+(?:,\d+)?)/);
+  if (rangeMatch) {
+    const v1 = parseFloat(rangeMatch[1].replace(/,/g, ''));
+    const v2 = parseFloat(rangeMatch[2].replace(/,/g, ''));
+    const v3 = parseFloat(rangeMatch[3].replace(/,/g, ''));
+    const v4 = parseFloat(rangeMatch[4].replace(/,/g, ''));
+    result.bod_ifo = Math.round((v1 + v2) / 2);
+    result.bod_mdo = Math.round((v3 + v4) / 2);
+    return result;
+  }
+
+  // Handle fuel-type prefix: "LSFO 670 / LSMGO 185"
+  const fuelMatch = line.match(/(?:LSFO|IFO|HFO)?\s*(\d+(?:,\d+)?(?:\.\d+)?)\s*\/\s*(?:LSMGO|MDO|MGO)?\s*(\d+(?:,\d+)?(?:\.\d+)?)/i);
+  if (fuelMatch) {
+    result.bod_ifo = parseFloat(fuelMatch[1].replace(/,/g, ''));
+    result.bod_mdo = parseFloat(fuelMatch[2].replace(/,/g, ''));
+    return result;
+  }
+
+  // Standard: "BOD ABT 1250/240"
+  const stdMatch = line.match(/(\d+(?:,\d+)?(?:\.\d+)?)\s*\/\s*(\d+(?:,\d+)?(?:\.\d+)?)/);
+  if (stdMatch) {
+    result.bod_ifo = parseFloat(stdMatch[1].replace(/,/g, ''));
+    result.bod_mdo = parseFloat(stdMatch[2].replace(/,/g, ''));
+  }
+
+  return result;
+}
+
+// ─── Market Colour Line Parser ───────────────────────────────────────────────
+
+function parseMarketColourLine(line) {
+  line = line.replace(/^[=\s]+/, '').trim();
+
+  let route = null;
+  let bid_usd = null;
+  let offer_usd = null;
+  let bb_usd = null;
+  let bid_bb_usd = null;
+  let bid_multiple_claims = false;
+  let p6_bid = null;
+  let p6_offer = null;
+  let delivery_basis = null;
+  let offer_date = null;
+  let is_bid = false;
+  let is_idea = false;
+  let notes = null;
+
+  // Detect if this is a bid line: "Bidding here MV XXX @ 19k..."
+  if (/\bbid(ding|s)?\b/i.test(line)) {
+    is_bid = true;
+  }
+
+  // Route detection: "ECSA FH:", "Friday:" (day = timing note), "Pref ECSA FH"
+  const colonIdx = line.indexOf(':');
+  if (colonIdx !== -1 && colonIdx < 30) {
+    const beforeColon = line.slice(0, colonIdx).trim().toUpperCase();
+    // Check if it's a known route or timing reference
+    const routePatterns = ['ECSA FH', 'ECSA TA', 'USG FH', 'USG TA', 'NCSA FH', 'USEC TA', 'WAFR', 'BSEA', 'MED'];
+    const matchedRoute = routePatterns.find(r => beforeColon.includes(r));
+    if (matchedRoute) {
+      route = matchedRoute;
+    } else if (/PREF/i.test(beforeColon)) {
+      const prefRoute = routePatterns.find(r => beforeColon.includes(r));
+      if (prefRoute) route = prefRoute;
+    }
+    // Keep non-route prefix as timing note
+    if (!route && /^(MON|TUE|WED|THU|FRI|SAT|SUN|MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)/i.test(beforeColon)) {
+      notes = `(${line.slice(0, colonIdx).trim()})`;
+    }
+    line = line.slice(colonIdx + 1).trim();
+  }
+
+  // "Pref ECSA FH" without colon
+  if (!route) {
+    const prefMatch = line.match(/\bpref\s+(ECSA\s+FH|ECSA\s+TA|USG\s+FH)/i);
+    if (prefMatch) route = prefMatch[1].toUpperCase();
+  }
+
+  // Default route for ECSA-related content
+  if (!route && /\b(ECSA|Santos|Paranagua|China|Qingdao)\b/i.test(line)) {
+    route = 'ECSA FH';
+  }
+
+  // "multiple times"
+  bid_multiple_claims = /multiple\s+times/i.test(line);
+
+  // P6 extraction: "(p6: 16,700 vs 18k)" or "(p6: 17,150)" or "(p6 assuming 18,250 = 19,300)"
+  const p6Match = line.match(/\(\s*p6\s*(?:assuming\s+)?(?::\s*)?([0-9k,.\s]+?)(?:\s*[=]\s*([0-9k,.\s]+?))?\s*(?:\s+vs\s+([0-9k,.\s]+?))?\s*(?:…|\.{3})?\s*\)/i);
+  if (p6Match) {
+    if (p6Match[3]) {
+      // "(p6: 16,700 vs 18k)" → bid vs offer
+      p6_bid = parseRate(p6Match[1].trim());
+      p6_offer = parseRate(p6Match[3].trim());
+    } else if (p6Match[2]) {
+      // "(p6 assuming 18,250 = 19,300)" → the = value is the p6 equiv
+      p6_offer = parseRate(p6Match[2].trim());
+    } else if (p6Match[1]) {
+      // "(p6: 17,150)" → single value, context determines bid or offer
+      const val = parseRate(p6Match[1].trim());
+      if (is_bid) {
+        p6_bid = val;
+      } else {
+        p6_offer = val;
+      }
+    }
+    line = line.replace(p6Match[0], '').trim();
+  }
+
+  // TC + BB pattern: "19k + 900k" or "19,750 + 975" or "19600+1.025m"
+  // Format: TC_RATE + BB_LUMPSUM [bss BASIS] [from DATE]
+  const tcBbMatch = line.match(/(?:offers?\s+|was\s+|@\s*)?([0-9k,.]+)\s*\+\s*([0-9k,.m]+)/i);
+  if (tcBbMatch) {
+    const rate1 = parseRate(tcBbMatch[1].trim(), 'tc');
+    const lump1 = parseRate(tcBbMatch[2].trim(), 'bb');
+
+    // Check if there's a "vs" with another TC+BB pair
+    const vsMatch = line.match(/vs\s+([0-9k,.]+)\s*\+\s*([0-9k,.m]+)/i);
+    if (vsMatch) {
+      bid_usd = rate1;
+      bid_bb_usd = lump1;
+      offer_usd = parseRate(vsMatch[1].trim(), 'tc');
+      bb_usd = parseRate(vsMatch[2].trim(), 'bb');
+    } else if (is_bid) {
+      bid_usd = rate1;
+      bid_bb_usd = lump1;
+    } else {
+      offer_usd = rate1;
+      bb_usd = lump1;
+    }
+  }
+
+  // Delivery basis from offer line: "bss APS Santos", "bss 15th April"
+  const bssMatch = line.match(/\bbss\s+(APS\s+\w+|\w+)/i);
+  if (bssMatch) {
+    const bssVal = bssMatch[1].trim();
+    // Check if it's a date reference
+    if (!/\d/.test(bssVal)) {
+      delivery_basis = bssVal.toUpperCase();
+    }
+  }
+
+  // Date from offer: "from 21st", "bss 15th April", "bss 21 April onw"
+  const fromMatch = line.match(/(?:from|bss)\s+(\d{1,2})(?:st|nd|rd|th)?\s*([a-z]*)/i);
+  if (fromMatch && fromMatch[2]) {
+    offer_date = parseDate(`${fromMatch[1]} ${fromMatch[2]}`);
+  }
+
+  // Standard "claims seeing X vs Y" or just "X vs Y"
+  if (!tcBbMatch) {
+    const claimsMatch = line.match(/claims\s+seeing\s+([0-9k,.\s]+?)(?:\s+multiple\s+times)?\s+vs\s+([0-9k,.\s]+)/i);
+    if (claimsMatch) {
+      bid_usd = parseRate(claimsMatch[1].trim(), 'tc');
+      offer_usd = parseRate(claimsMatch[2].trim(), 'tc');
+    } else {
+      const vsMatch2 = line.match(/(?:was\s+)?([0-9k,.]+)\s+vs\s+([0-9k,.]+)/i);
+      if (vsMatch2) {
+        bid_usd = parseRate(vsMatch2[1].trim(), 'tc');
+        offer_usd = parseRate(vsMatch2[2].trim(), 'tc');
+      }
+    }
+  }
+
+  // "Ideas 21,500" or "Ideas X" or "thinking 18 in front" — single offer
+  if (!offer_usd && !bid_usd) {
+    const ideasMatch = line.match(/\b(?:ideas?|thinking|loosely\s+thinking)\s+([0-9k,.]+)/i);
+    if (ideasMatch) {
+      is_idea = true;
+      offer_usd = parseRate(ideasMatch[1].trim(), 'tc');
+    }
+  }
+
+  // "Offers 19750+975" already handled above
+  // "Offers X" single rate
+  if (!offer_usd && !tcBbMatch) {
+    const offersMatch = line.match(/\boffers?\s+([0-9k,.]+)/i);
+    if (offersMatch) {
+      offer_usd = parseRate(offersMatch[1].trim(), 'tc');
+    }
+  }
+
+  // "@ 19k" for bid lines
+  if (is_bid && !bid_usd && !tcBbMatch) {
+    const atMatch = line.match(/@\s*([0-9k,.]+)/i);
+    if (atMatch) {
+      bid_usd = parseRate(atMatch[1].trim(), 'tc');
+    }
+  }
+
+  // "Collecting" or "rvtng ideas" = early stage, no rates (handle truncated "collec")
+  const collecting = /\b(collect(ing)?|rvtng|reverting)\b/i.test(line);
+
+  return {
+    route,
+    bid_usd,
+    offer_usd,
+    bb_usd,
+    bid_bb_usd,
+    bid_multiple_claims,
+    p6_bid,
+    p6_offer,
+    delivery_basis,
+    offer_date,
+    is_bid,
+    is_idea,
+    collecting,
+    notes
+  };
+}
+
+// ─── Status Detection ────────────────────────────────────────────────────────
+
+function detectStatus(lines) {
+  const text = lines.join(' ').toUpperCase();
+  if (/\bON\s+SUBS\b/i.test(text)) return 'ON SUBS';
+  if (/\bOFF[\s-]?MKT\b|\bOFF[\s-]?MARKET\b/i.test(text)) return 'WITHDRAWN';
+  if (/\bFIXED\b/i.test(text)) return 'FIXED';
+  if (/\bFAILED\b/i.test(text)) return 'FAILED';
+  if (/\bEX[\s-]?OUR[\s-]?CP\b/i.test(text)) return 'WITHDRAWN';
+  return 'OPEN';
+}
+
+// ─── Main Message Parser ─────────────────────────────────────────────────────
+
+function parseTonnageMessage(rawText) {
+  const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+
+  const vessel = {
+    source: null, owner: null, vessel_name: null, dwt: null, build_year: null,
+    scrubber: null, current_position: null, open_date: null, open_date_end: null,
+    eta_ecsa: null, eta_ecsa_end: null, eta_type: null, delivery_basis: null,
+    bod_ifo: null, bod_mdo: null, bod_basis: null, bod_fuel_type: null,
+    market_colour: [],
+    tc_offer: null, bb_offer: null,
+    status: 'OPEN',
+    fixed_route: null, fixed_rate_p6: null, fixed_at: null,
+    notes: null,
+    raw: rawText,
+    parsed_at: new Date().toISOString(),
+    parse_warnings: []
+  };
+
+  // Detect overall status from the full message
+  vessel.status = detectStatus(lines);
+
+  // Check if this is a cargo-side bid (different structure)
+  const isCargoBid = /\bbid(ding)?\s+(here|on)\b/i.test(rawText);
+
+  // For cargo bids: first line is cargo description, not a vessel line.
+  // Parse vessel info from the bid line instead.
+  if (isCargoBid) {
+    // Parse first line as cargo context (source + route + laycan)
+    const firstLine = lines[0] || '';
+    const dashIdx = firstLine.indexOf(' - ');
+    if (dashIdx !== -1) {
+      vessel.source = firstLine.slice(0, dashIdx).trim();
+    }
+    // Extract route from first line
+    const routePatterns = ['ECSA FH', 'ECSA TA', 'USG FH', 'USG TA', 'NCSA FH'];
+    for (const rp of routePatterns) {
+      if (firstLine.toUpperCase().includes(rp)) {
+        vessel.notes = `Cargo bid: ${firstLine}`;
+        break;
+      }
+    }
+    if (!vessel.notes) vessel.notes = `Cargo bid: ${firstLine}`;
+
+    // Extract ETA/laycan from first line if present
+    const etaFromCargo = firstLine.match(/(\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*)\s*(onw)?/i);
+    if (etaFromCargo) {
+      vessel.eta_ecsa = parseDate(etaFromCargo[1]);
+      vessel.eta_type = etaFromCargo[2] ? 'ONW' : 'EXACT';
+    }
+
+    // Now parse remaining lines for bid info + vessel details
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (/\bbid(ding)?\b/i.test(line)) {
+        // Extract vessel name + specs from bid line: "MV Navios Victory (77/14)"
+        const mvMatch = line.match(/M[VT]\s+(.+?)\s*\((\d+)\/(\d{2,4})\)/i);
+        if (mvMatch) {
+          vessel.vessel_name = mvMatch[1].trim();
+          const dwtRaw = parseInt(mvMatch[2], 10);
+          vessel.dwt = dwtRaw < 1000 ? dwtRaw * 1000 : dwtRaw;
+          const yearRaw = parseInt(mvMatch[3], 10);
+          vessel.build_year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
+        }
+        const mc = parseMarketColourLine(line);
+        mc.is_bid = true;
+        if (!mc.route) {
+          for (const rp of routePatterns) {
+            if (firstLine.toUpperCase().includes(rp)) { mc.route = rp; break; }
+          }
+        }
+        vessel.market_colour.push(mc);
+      }
+    }
+  } else {
+    // Standard vessel message parsing
+    for (let line of lines) {
+      // Strip wrapping parentheses: "(BOD BSS SANTOS: ABT 700/140)" → "BOD BSS SANTOS: ABT 700/140"
+      const stripped = line.replace(/^\((.+)\)$/, '$1').trim();
+
+      // BOD line
+      if (/^BOD\b/i.test(stripped) || /\bBOD\b.*\d+.*\/.*\d+/i.test(stripped)) {
+        const bod = parseBODLine(stripped);
+        Object.assign(vessel, bod);
+        continue;
+      }
+
+      // Market colour / rate lines (start with = or contain "claims seeing", "offers", "ideas", "bidding")
+      if (/^=/.test(line) || /claims\s+seeing/i.test(line) || /\b(loosely\s+)?thinking\b/i.test(line)) {
+        const mc = parseMarketColourLine(line);
+        if (mc.route || mc.bid_usd || mc.offer_usd || mc.p6_bid || mc.p6_offer || mc.collecting) {
+          vessel.market_colour.push(mc);
+          if (mc.bb_usd && !vessel.bb_offer) vessel.bb_offer = mc.bb_usd;
+        }
+        continue;
+      }
+
+      // Status lines: "OFF-MKT & EX-OUR CP", "FIXED KOCH..."
+      if (/\bOFF[\s-]?MKT\b|\bEX[\s-]?OUR[\s-]?CP\b|\bFIXED\b|\bFAILED\b|\bWITHDRAWN\b/i.test(line) && vessel.vessel_name) {
+        const statusNotes = line.replace(/\bOFF[\s-]?MKT\b|\bEX[\s-]?OUR[\s-]?CP\b/gi, '').replace(/[&]/g, '').trim();
+        if (statusNotes) {
+          vessel.notes = vessel.notes ? vessel.notes + '; ' + statusNotes : statusNotes;
+        }
+        continue;
+      }
+
+      // First unmatched line = vessel line
+      if (!vessel.vessel_name && !vessel.source) {
+        Object.assign(vessel, parseVesselLine(line));
+        continue;
+      }
+
+      vessel.parse_warnings.push(`Unmatched line: "${line}"`);
+    }
+  }
+
+  // Collect delivery basis from market colour if vessel level is empty
+  if (!vessel.delivery_basis) {
+    for (const mc of vessel.market_colour) {
+      if (mc.delivery_basis) {
+        vessel.delivery_basis = mc.delivery_basis;
+        break;
+      }
+    }
+  }
+
+  // Validation warnings
+  if (!vessel.vessel_name) vessel.parse_warnings.push('Could not extract vessel name');
+  if (!vessel.eta_ecsa) vessel.parse_warnings.push('No ETA extracted');
+  if (vessel.market_colour.length === 0) vessel.parse_warnings.push('No market colour parsed');
+
+  return vessel;
+}
+
+function parseMultipleMessages(rawBlock) {
+  // Split on blank lines, but rejoin chunks that are continuations
+  // (lines starting with =, (, BOD, or status keywords belong to the previous message)
+  const rawChunks = rawBlock.split(/\n{2,}/).map(m => m.trim()).filter(Boolean);
+  const messages = [];
+  for (const chunk of rawChunks) {
+    const firstLine = chunk.split('\n')[0].trim();
+    // If this chunk starts with a continuation pattern, append to previous message
+    if (messages.length > 0 && /^[=(]|^BOD\b|^on\s+subs\b|^off[\s-]?mkt\b|^fixed\b|^failed\b/i.test(firstLine)) {
+      messages[messages.length - 1] += '\n' + chunk;
+    } else {
+      messages.push(chunk);
+    }
+  }
+  return messages.map(parseTonnageMessage);
+}
+
+// Export for both Node.js and browser
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    parseRate, parseDate, parseDateRange, detectScrubber, getLaycanPeriod,
+    laycanSortKey, parseVesselLine, parseBODLine, parseMarketColourLine,
+    parseTonnageMessage, parseMultipleMessages
+  };
+}
+
+</script>
+<script>
+const SAMPLE_DATA = 
+[
+  {
+    "source": "QUADRA",
+    "owner": "CENTROFIN",
+    "vessel_name": "SAKIZAYA MIRACLE",
+    "dwt": 76847,
+    "build_year": 2013,
+    "scrubber": null,
+    "current_position": "GOA",
+    "open_date": "2026-03-31",
+    "eta_ecsa": "2026-04-21",
+    "eta_type": "ONW",
+    "delivery_basis": "SANTOS",
+    "bod_ifo": 1250,
+    "bod_mdo": 240,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 20000,
+        "offer_usd": 21500,
+        "bid_multiple_claims": true,
+        "p6_bid": 16700,
+        "p6_offer": 18000
+      }
+    ],
+    "tc_offer": 19000,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "QUADRA - MV SAKIZAYA MIRACLE (77/13) GOA 31 MARCH / ETA 21 APR ONW\nBOD ABT 1250/240\n= ECSA FH: Claims seeing 20k multiple times vs 21,500 (p6: 16,700 vs 18k)",
+    "parsed_at": "2026-03-30T09:20:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "MARINAKISS",
+    "owner": "MARINAKISS",
+    "vessel_name": "ARGEUS",
+    "dwt": 82225,
+    "build_year": 2013,
+    "scrubber": null,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-04-12",
+    "eta_type": "EXACT",
+    "delivery_basis": "APS ECSA",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 20000,
+        "offer_usd": 21500,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 17200
+      }
+    ],
+    "tc_offer": 20000,
+    "bb_offer": 100000,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "MARINAKISS - MV ARGEUS (82/13) APS ECSA / ETA 12 APR",
+    "parsed_at": "2026-03-30T10:53:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "IK",
+    "owner": "AQUAVITA",
+    "vessel_name": "NAVIOS VICTORY",
+    "dwt": 77095,
+    "build_year": 2014,
+    "scrubber": null,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-04-01",
+    "eta_type": "EXACT",
+    "delivery_basis": "SANTOS",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 19500,
+        "offer_usd": 21000,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 17500
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "IK - MV NAVIOS VICTORY (77/14) SANTOS / ETA 01 APR",
+    "parsed_at": "2026-03-30T09:38:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "KTM",
+    "owner": "STAR BULK",
+    "vessel_name": "STAR CHARIS",
+    "dwt": 81713,
+    "build_year": 2013,
+    "scrubber": null,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-04-13",
+    "eta_type": "EXACT",
+    "delivery_basis": "APS ECSA",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 19500,
+        "offer_usd": 21000,
+        "bid_multiple_claims": false,
+        "p6_bid": 15800,
+        "p6_offer": 17200
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "KTM - MV STAR CHARIS (82/13) APS ECSA / ETA 13 APR\n= ECSA FH: 19,500 vs 21,000 (p6: 15,800 vs 17,200)",
+    "parsed_at": "2026-03-27T10:05:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "HHU",
+    "owner": "FUJIAN OCEAN",
+    "vessel_name": "ZHENG RONG",
+    "dwt": 81793,
+    "build_year": 2013,
+    "scrubber": null,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-04-07",
+    "eta_type": "EXACT",
+    "delivery_basis": "APS ECSA",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 19000,
+        "offer_usd": 20500,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 16800
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "HHU - MV ZHENG RONG (82/13) APS ECSA / ETA 07 APR",
+    "parsed_at": "2026-03-26T16:26:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "ZH",
+    "owner": "COSCO",
+    "vessel_name": "WEN ZHU HAI",
+    "dwt": 76381,
+    "build_year": 2008,
+    "scrubber": null,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-03-30",
+    "eta_type": "EXACT",
+    "delivery_basis": "APS ECSA",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 18500,
+        "offer_usd": 20000,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 16200
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "ZH - MV WEN ZHU HAI (76/08) APS ECSA / ETA 30 MAR",
+    "parsed_at": "2026-03-19T10:28:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "HGS",
+    "owner": "OLDENDORFF",
+    "vessel_name": "KONSTANTINOS II",
+    "dwt": 81698,
+    "build_year": 2013,
+    "scrubber": null,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-04-13",
+    "eta_type": "EXACT",
+    "delivery_basis": "APS ECSA",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 19000,
+        "offer_usd": 20500,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 16500
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "HGS - MV KONSTANTINOS II (82/13) APS ECSA / ETA 13 APR",
+    "parsed_at": "2026-03-24T15:36:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "IK",
+    "owner": "DRYBULK",
+    "vessel_name": "RAPALLO",
+    "dwt": 75018,
+    "build_year": 2009,
+    "scrubber": true,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-04-11",
+    "eta_type": "EXACT",
+    "delivery_basis": "APS ECSA",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 19000,
+        "offer_usd": 20000,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 15900
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "IK - MV RAPALLO (75/09) SCR APS ECSA / ETA 11 APR",
+    "parsed_at": "2026-03-30T10:30:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "TK",
+    "owner": "PALOMA",
+    "vessel_name": "ODYSSEAS I",
+    "dwt": 81662,
+    "build_year": 2013,
+    "scrubber": null,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-04-01",
+    "eta_type": "EXACT",
+    "delivery_basis": "APS ECSA",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 19500,
+        "offer_usd": 21000,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 17000
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "TK - MV ODYSSEAS I (82/13) APS ECSA / ETA 01 APR",
+    "parsed_at": "2026-03-30T11:38:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "MPU",
+    "owner": "MODION",
+    "vessel_name": "MINOAN DIGNITY",
+    "dwt": 76801,
+    "build_year": 2004,
+    "scrubber": null,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-04-12",
+    "eta_type": "EXACT",
+    "delivery_basis": "APS ECSA",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 18500,
+        "offer_usd": 20000,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 15300
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "MPU - MV MINOAN DIGNITY (77/04) APS ECSA / ETA 12 APR",
+    "parsed_at": "2026-03-30T11:39:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "MA",
+    "owner": "TECHNOMAR",
+    "vessel_name": "ZOI XL",
+    "dwt": 82489,
+    "build_year": 2006,
+    "scrubber": null,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-04-25",
+    "eta_type": "EXACT",
+    "delivery_basis": "SANTOS",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 19000,
+        "offer_usd": 20500,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 16900
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "MA - MV ZOI XL (82/06) SANTOS / ETA 25 APR",
+    "parsed_at": "2026-03-23T09:43:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "GPW",
+    "owner": "MERCURIA",
+    "vessel_name": "SHANDONG XIN RONG",
+    "dwt": 82000,
+    "build_year": 2015,
+    "scrubber": null,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-03-26",
+    "eta_type": "EXACT",
+    "delivery_basis": "APS ECSA",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 20000,
+        "offer_usd": 22000,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 18100
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "GPW - MV SHANDONG XIN RONG (82/15) APS ECSA / ETA 26 MAR",
+    "parsed_at": "2026-03-23T14:28:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "HHU",
+    "owner": "MING WAH",
+    "vessel_name": "PACIFIC CELERITY",
+    "dwt": 81928,
+    "build_year": 2025,
+    "scrubber": true,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-04-21",
+    "eta_type": "EXACT",
+    "delivery_basis": "SANTOS",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 20500,
+        "offer_usd": 22500,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 18600
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "HHU - MV PACIFIC CELERITY (82/25) SCR SANTOS / ETA 21 APR",
+    "parsed_at": "2026-03-26T04:47:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "MGK",
+    "owner": "CENTROFIN",
+    "vessel_name": "NIRIIS",
+    "dwt": 76847,
+    "build_year": 2013,
+    "scrubber": null,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-04-21",
+    "eta_type": "EXACT",
+    "delivery_basis": "SANTOS",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 19000,
+        "offer_usd": 21000,
+        "bid_multiple_claims": false,
+        "p6_bid": 15800,
+        "p6_offer": 17500
+      }
+    ],
+    "tc_offer": 19000,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": "Offers $35.3, 1 offer",
+    "raw": "MGK - MV NIRIIS (77/13) SANTOS / ETA 21 APR\n= ECSA FH: 19,000 vs 21,000 (p6: 15,800 vs 17,500)",
+    "parsed_at": "2026-03-30T09:20:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "MA",
+    "owner": "TECHNOMAR",
+    "vessel_name": "CAPE TAINARO",
+    "dwt": 81946,
+    "build_year": 2012,
+    "scrubber": null,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-05-02",
+    "eta_type": "EXACT",
+    "delivery_basis": "APS ECSA",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 19000,
+        "offer_usd": 20500,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 16400
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "MA - MV CAPE TAINARO (82/12) APS ECSA / ETA 02 MAY",
+    "parsed_at": "2026-03-28T08:15:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "TK",
+    "owner": "NAVIOS",
+    "vessel_name": "NAVIOS HORIZON",
+    "dwt": 82036,
+    "build_year": 2018,
+    "scrubber": true,
+    "current_position": null,
+    "open_date": null,
+    "eta_ecsa": "2026-05-10",
+    "eta_type": "ONW",
+    "delivery_basis": "APS ECSA",
+    "bod_ifo": null,
+    "bod_mdo": null,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 19500,
+        "offer_usd": 21000,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 17800
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "TK - MV NAVIOS HORIZON (82/18) SCR APS ECSA / ETA 10 MAY ONW",
+    "parsed_at": "2026-03-29T14:20:00.000Z",
+    "parse_warnings": []
+  },
+  {
+    "source": "IK",
+    "owner": "GOLDEN OCEAN",
+    "vessel_name": "GOLDEN ARIES",
+    "dwt": 81735,
+    "build_year": 2016,
+    "scrubber": null,
+    "current_position": "SINGAPORE",
+    "open_date": "2026-04-02",
+    "eta_ecsa": "2026-05-05",
+    "eta_type": "ONW",
+    "delivery_basis": null,
+    "bod_ifo": 1400,
+    "bod_mdo": 280,
+    "market_colour": [
+      {
+        "route": "ECSA FH",
+        "bid_usd": 19000,
+        "offer_usd": 20500,
+        "bid_multiple_claims": false,
+        "p6_bid": null,
+        "p6_offer": 16600
+      }
+    ],
+    "tc_offer": null,
+    "bb_offer": null,
+    "status": "OPEN",
+    "fixed_route": null,
+    "fixed_rate_p6": null,
+    "fixed_at": null,
+    "notes": null,
+    "raw": "IK - MV GOLDEN ARIES (82/16) SINGAPORE 02 APR / ETA 05 MAY ONW\nBOD ABT 1400/280",
+    "parsed_at": "2026-03-30T08:45:00.000Z",
+    "parse_warnings": []
+  }
+]
+;
+
+// ─── App State ────────────────────────────────────────────────────────────────
+let vessels = JSON.parse(localStorage.getItem('pt_vessels') || '[]');
+let pendingParsed = null;
+let activeFilter = 'ALL';
+let currentSort = { key: 'eta_ecsa', dir: 'asc' }; // default: ETA ascending
+
+function save() { localStorage.setItem('pt_vessels', JSON.stringify(vessels)); }
+
+// ─── Formatting Helpers ──────────────────────────────────────────────────────
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const [, m, d] = iso.split('-');
+  const months = ['','JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  return `${parseInt(d,10)} ${months[parseInt(m,10)]}`;
+}
+
+function fmtNum(n) {
+  if (n == null) return '—';
+  return n.toLocaleString();
+}
+
+function getP6Values(v) {
+  const mc = v.market_colour && v.market_colour[0];
+  return {
+    bid: mc ? mc.p6_bid : null,
+    offer: mc ? mc.p6_offer : null
+  };
+}
+
+function getSpread(v) {
+  const p6 = getP6Values(v);
+  if (p6.offer != null && p6.bid != null) return p6.offer - p6.bid;
+  return null;
+}
+
+// ─── Inbox Handlers ──────────────────────────────────────────────────────────
+
+function handleParse() {
+  const raw = document.getElementById('rawInput').value.trim();
+  if (!raw) return;
+  const preview = document.getElementById('previewBox');
+  const btnAdd = document.getElementById('btnAdd');
+  try {
+    const parsed = parseMultipleMessages(raw);
+    pendingParsed = parsed;
+    const summary = parsed.map(v =>
+      `${v.vessel_name || '?'} (${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '?'}/${v.build_year || '?'}) ETA: ${fmtDate(v.eta_ecsa)} ${v.eta_type === 'ONW' ? 'ONW' : ''}`
+    ).join('\n');
+    preview.textContent = `Parsed ${parsed.length} vessel(s):\n\n${summary}\n\n${JSON.stringify(parsed, null, 2)}`;
+    preview.className = 'preview-box has-content';
+    btnAdd.disabled = false;
+  } catch (e) {
+    preview.textContent = 'Parse error: ' + e.message;
+    preview.className = 'preview-box has-error';
+    btnAdd.disabled = true;
+  }
+}
+
+function handleAdd() {
+  if (!pendingParsed) return;
+  // Deduplicate by vessel name — update existing if same name
+  for (const pv of pendingParsed) {
+    const existIdx = vessels.findIndex(v =>
+      v.vessel_name && pv.vessel_name &&
+      v.vessel_name.toUpperCase() === pv.vessel_name.toUpperCase()
+    );
+    if (existIdx !== -1) {
+      // Merge: keep existing owner/notes, update rates and ETA
+      const existing = vessels[existIdx];
+      vessels[existIdx] = { ...existing, ...pv, owner: pv.owner || existing.owner, notes: pv.notes || existing.notes, status: existing.status };
+    } else {
+      vessels.push(pv);
+    }
+  }
+  save(); renderTable(); updateStats();
+  document.getElementById('rawInput').value = '';
+  document.getElementById('previewBox').textContent = `Added ${pendingParsed.length} vessel(s) to board.`;
+  document.getElementById('previewBox').className = 'preview-box has-content';
+  document.getElementById('btnAdd').disabled = true;
+  pendingParsed = null;
+}
+
+function handleClear() {
+  document.getElementById('rawInput').value = '';
+  document.getElementById('previewBox').textContent = '— parsed output will appear here —';
+  document.getElementById('previewBox').className = 'preview-box';
+  document.getElementById('btnAdd').disabled = true;
+  pendingParsed = null;
+}
+
+function loadSample() {
+  try {
+    // Using embedded data
+    const data = SAMPLE_DATA;
+    vessels = data;
+    save(); renderTable(); updateStats();
+    document.getElementById('previewBox').textContent = `Loaded ${data.length} sample vessels.`;
+    document.getElementById('previewBox').className = 'preview-box has-content';
+  } catch (e) {
+    document.getElementById('previewBox').className = 'preview-box has-error';
+  }
+}
+
+// ─── Filters ─────────────────────────────────────────────────────────────────
+
+function setFilter(f) {
+  activeFilter = f;
+  document.querySelectorAll('#statusFilters .filter-pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.filter === f);
+  });
+  renderTable();
+}
+
+function clearDateFilter() {
+  document.getElementById('etaFrom').value = '';
+  document.getElementById('etaTo').value = '';
+  renderTable();
+}
+
+// ─── Sorting ─────────────────────────────────────────────────────────────────
+
+function sortBy(key) {
+  if (currentSort.key === key) {
+    currentSort.dir = currentSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    currentSort.key = key;
+    currentSort.dir = key === 'p6_offer' || key === 'p6_bid' || key === 'spread' || key === 'dwt' ? 'desc' : 'asc';
+  }
+  renderTable();
+}
+
+function getSortValue(v, key) {
+  switch (key) {
+    case 'laycan': return v.eta_ecsa || '9999-99-99';
+    case 'eta_ecsa': return v.eta_ecsa || '9999-99-99';
+    case 'p6_bid': return getP6Values(v).bid || 0;
+    case 'p6_offer': return getP6Values(v).offer || 0;
+    case 'spread': return getSpread(v) || 0;
+    case 'dwt': return v.dwt || 0;
+    case 'vessel_name': return (v.vessel_name || '').toUpperCase();
+    case 'owner': return (v.owner || '').toUpperCase();
+    case 'source': return (v.source || '').toUpperCase();
+    case 'delivery_basis': return (v.delivery_basis || '').toUpperCase();
+    case 'status': return v.status || '';
+    default: return '';
+  }
+}
+
+// ─── Status & Actions ────────────────────────────────────────────────────────
+
+function cycleStatus(idx) {
+  const states = ['OPEN', 'ON SUBS', 'FIXED', 'FAILED', 'WITHDRAWN'];
+  const cur = vessels[idx].status || 'OPEN';
+  vessels[idx].status = states[(states.indexOf(cur) + 1) % states.length];
+  save(); renderTable(); updateStats();
+}
+
+function removeVessel(idx) {
+  if (!confirm(`Remove ${vessels[idx].vessel_name}?`)) return;
+  vessels.splice(idx, 1);
+  save(); renderTable(); updateStats();
+}
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+
+function updateStats() {
+  document.getElementById('statOpen').textContent = vessels.filter(v => v.status === 'OPEN').length;
+  document.getElementById('statFixed').textContent = vessels.filter(v => v.status === 'FIXED').length;
+  document.getElementById('statTotal').textContent = vessels.length;
+}
+
+function renderTable() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const etaFrom = document.getElementById('etaFrom').value;
+  const etaTo = document.getElementById('etaTo').value;
+  const tbody = document.getElementById('vesselBody');
+  const empty = document.getElementById('emptyState');
+
+  // Filter
+  let filtered = vessels.filter((v) => {
+    if (activeFilter !== 'ALL' && v.status !== activeFilter) return false;
+    if (etaFrom && (!v.eta_ecsa || v.eta_ecsa < etaFrom)) return false;
+    if (etaTo && (!v.eta_ecsa || v.eta_ecsa > etaTo)) return false;
+    if (search) {
+      const hay = `${v.vessel_name||''} ${v.owner||''} ${v.source||''} ${v.current_position||''} ${v.delivery_basis||''}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  // Sort — primary: ETA asc, secondary: P6 offer desc (default behavior)
+  // If user clicked a column, use that as primary sort
+  filtered.sort((a, b) => {
+    const va = getSortValue(a, currentSort.key);
+    const vb = getSortValue(b, currentSort.key);
+    let cmp = 0;
+    if (typeof va === 'string') cmp = va.localeCompare(vb);
+    else cmp = va - vb;
+    if (currentSort.dir === 'desc') cmp = -cmp;
+
+    // Secondary sort: if sorting by ETA/laycan, use P6 offer desc as tiebreaker
+    if (cmp === 0 && (currentSort.key === 'eta_ecsa' || currentSort.key === 'laycan')) {
+      const p6a = getP6Values(a).offer || 0;
+      const p6b = getP6Values(b).offer || 0;
+      return p6b - p6a; // descending
+    }
+    return cmp;
+  });
+
+  empty.style.display = filtered.length === 0 ? 'block' : 'none';
+  document.getElementById('vesselTable').style.display = filtered.length === 0 ? 'none' : '';
+
+  // Group by laycan period
+  let lastLaycan = null;
+  const rows = [];
+
+  for (const v of filtered) {
+    const globalIdx = vessels.indexOf(v);
+    const laycan = getLaycanPeriod(v.eta_ecsa);
+
+    // Insert group header when laycan changes (only when sorted by ETA)
+    if ((currentSort.key === 'eta_ecsa' || currentSort.key === 'laycan') && laycan !== lastLaycan) {
+      rows.push(`<tr class="group-header"><td colspan="13">${laycan || 'NO ETA'}</td></tr>`);
+      lastLaycan = laycan;
+    }
+
+    const p6 = getP6Values(v);
+    const spread = getSpread(v);
+    const mc = v.market_colour && v.market_colour[0];
+
+    const etaCell = v.eta_ecsa
+      ? `${fmtDate(v.eta_ecsa)}${v.eta_ecsa_end ? '–' + fmtDate(v.eta_ecsa_end).split(' ')[0] : ''}${v.eta_type === 'ONW' ? '<span class="onw-badge">ONW</span>' : ''}`
+      : '—';
+
+    const laycanBadge = laycan
+      ? `<span class="td-laycan">${laycan}</span>`
+      : '<span style="color:var(--text-dim)">—</span>';
+
+    const scrTag = v.scrubber === true
+      ? '<span class="scrubber-yes">SCR</span>'
+      : '<span class="scrubber-unk">—</span>';
+
+    let spreadCell = '—';
+    if (spread != null) {
+      const cls = spread > 0 ? 'spread-pos' : spread < 0 ? 'spread-neg' : 'spread-zero';
+      spreadCell = `<span class="td-spread ${cls}">${spread > 0 ? '+' : ''}${fmtNum(spread)}</span>`;
+    }
+
+    const warnDot = v.parse_warnings && v.parse_warnings.length > 0
+      ? `<span class="warn-dot" title="${v.parse_warnings.join('; ')}"></span>`
+      : '';
+
+    const delivery = v.delivery_basis || (v.current_position ? v.current_position : '—');
+
+    rows.push(`<tr>
+      <td>${laycanBadge}</td>
+      <td class="td-vessel">${v.vessel_name || '—'}${warnDot}</td>
+      <td class="td-owner">${v.owner || '—'}</td>
+      <td class="td-source">${v.source || '—'}</td>
+      <td class="td-specs">${v.dwt ? (v.dwt/1000).toFixed(0) + 'K' : '—'} / ${v.build_year || '—'}</td>
+      <td>${scrTag}</td>
+      <td class="td-port">${delivery}</td>
+      <td class="td-eta">${etaCell}</td>
+      <td class="td-p6"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>
+      <td class="td-p6"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>
+      <td>${spreadCell}</td>
+      <td><span class="status-badge status-${(v.status || 'OPEN').replace(/\s+/g,'_')}" onclick="cycleStatus(${globalIdx})">${v.status || 'OPEN'}</span></td>
+      <td><button class="btn-secondary" style="padding:3px 8px;font-size:10px" onclick="removeVessel(${globalIdx})">x</button></td>
+    </tr>`);
+  }
+
+  tbody.innerHTML = rows.join('');
+  updateStats();
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+renderTable();
+updateStats();
+</script>
+</body>
+</html>
