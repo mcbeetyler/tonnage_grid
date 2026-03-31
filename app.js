@@ -99,6 +99,11 @@ function applyEdit(idx, field, val) {
       else v.market_colour = [{ route: 'ECSA FH', p6_bid: null, p6_offer: n, bid_usd: null, offer_usd: null }];
       break;
     }
+    case 'fixed_price': {
+      const n = parseRate(val, 'tc');
+      v.fixed_price = n;
+      break;
+    }
   }
   save();
 }
@@ -129,8 +134,8 @@ document.addEventListener('DOMContentLoaded', () => {
 const PARSE_SYSTEM_PROMPT = `You are a dry bulk shipping message parser. Extract vessel tonnage data from WhatsApp messages into structured JSON.
 
 FIELD DEFINITIONS:
-- source: The broker who sent the message (before " - " or after "WITH")
-- owner: The vessel owner/operator (often same as source if owner is marketing directly)
+- source: The broker who sent the message (before " - " or after "WITH"). This is NOT the owner.
+- owner: The vessel owner/operator. The name before " - " is usually the OWNER, not a broker. "CENTROFIN - MV NIRIIS" means CENTROFIN is the owner. "WITH QUADRA MV..." means QUADRA is the broker. If the source appears to be an owner (marketing their own vessel), put the same name in both source and owner.
 - vessel_name: Ship name (after MV/MT, without the MV/MT prefix)
 - dwt: Deadweight tonnage (number, e.g. 81688). (81/17) means 81,000 DWT built 2017. (81'688DWT) means 81,688 DWT.
 - build_year: Year built (4-digit)
@@ -376,6 +381,7 @@ function getSortValue(v, key) {
     case 'p6_bid': return getP6Values(v).bid || 0;
     case 'p6_offer': return getP6Values(v).offer || 0;
     case 'spread': return getSpread(v) || 0;
+    case 'fixed_price': return v.fixed_price || 0;
     case 'dwt': return v.dwt || 0;
     case 'vessel_name': return (v.vessel_name || '').toUpperCase();
     case 'owner': return (v.owner || '').toUpperCase();
@@ -391,7 +397,18 @@ function getSortValue(v, key) {
 function cycleStatus(idx) {
   const states = ['OPEN', 'ON SUBS', 'FIXED', 'FAILED', 'WITHDRAWN'];
   const cur = vessels[idx].status || 'OPEN';
-  vessels[idx].status = states[(states.indexOf(cur) + 1) % states.length];
+  const next = states[(states.indexOf(cur) + 1) % states.length];
+  vessels[idx].status = next;
+
+  // Prompt for fixed price when moving to ON SUBS
+  if (next === 'ON SUBS' && !vessels[idx].fixed_price) {
+    const price = prompt(`${vessels[idx].vessel_name} on subs — enter fixed P6 price:`);
+    if (price) {
+      const val = parseRate(price, 'tc');
+      if (val) vessels[idx].fixed_price = val;
+    }
+  }
+
   save(); renderTable(); updateStats();
 }
 
@@ -453,6 +470,9 @@ function renderTable() {
       lastLaycan = laycan;
     }
 
+    // CSS class for laycan row shading
+    const laycanClass = laycan ? 'laycan-' + laycan.toLowerCase().replace(/\s+/g, '-') : '';
+
     const p6 = getP6Values(v);
     const spread = getSpread(v);
 
@@ -475,11 +495,14 @@ function renderTable() {
     const delivery = v.delivery_basis || v.current_position || '—';
     const statusCls = (v.status || 'OPEN').replace(/\s+/g, '_');
 
-    rows.push(`<tr>
+    const fixedCell = v.fixed_price
+      ? `<span class="td-fixed">${fmtNum(v.fixed_price)}</span>`
+      : '—';
+
+    rows.push(`<tr class="${laycanClass}">
       <td>${laycanBadge}</td>
       <td class="td-vessel editable" onclick="startEdit(this,${gi},'vessel_name',true)">${v.vessel_name || '—'}${warnDot}</td>
       <td class="td-owner editable" onclick="startEdit(this,${gi},'owner',false)">${v.owner || '—'}</td>
-      <td class="td-source editable" onclick="startEdit(this,${gi},'source',false)">${v.source || '—'}</td>
       <td class="td-specs">${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '—'} / ${v.build_year || '—'}</td>
       <td class="editable" onclick="startEdit(this,${gi},'scrubber',false)">${scrTag}</td>
       <td class="td-port editable" onclick="startEdit(this,${gi},'delivery_basis',false)">${delivery}</td>
@@ -487,6 +510,7 @@ function renderTable() {
       <td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_bid',true)"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>
       <td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_offer',true)"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>
       <td>${spreadCell}</td>
+      <td class="td-fixed editable" onclick="startEdit(this,${gi},'fixed_price',true)">${fixedCell}</td>
       <td><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>
       <td><button class="btn-remove" onclick="removeVessel(${gi})">x</button></td>
     </tr>`);

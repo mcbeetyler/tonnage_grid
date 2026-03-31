@@ -106,6 +106,32 @@
   .spread-neg{color:var(--green)}
   .spread-zero{color:var(--text-dim)}
 
+  /* Fixed price column */
+  thead th.col-fixed{color:var(--amber)}
+  .td-fixed{font-family:var(--mono);font-weight:600;font-size:12px;color:var(--amber)}
+
+  /* Laycan period row shading — subtle alternating tints */
+  .laycan-fh-mar td{background:rgba(99,102,241,.03)}
+  .laycan-lh-mar td{background:rgba(99,102,241,.06)}
+  .laycan-fh-apr td{background:rgba(5,150,105,.03)}
+  .laycan-lh-apr td{background:rgba(5,150,105,.06)}
+  .laycan-fh-may td{background:rgba(217,119,6,.03)}
+  .laycan-lh-may td{background:rgba(217,119,6,.06)}
+  .laycan-fh-jun td{background:rgba(147,51,234,.03)}
+  .laycan-lh-jun td{background:rgba(147,51,234,.06)}
+  .laycan-fh-jul td{background:rgba(220,38,38,.03)}
+  .laycan-lh-jul td{background:rgba(220,38,38,.06)}
+  .laycan-fh-aug td{background:rgba(14,165,233,.03)}
+  .laycan-lh-aug td{background:rgba(14,165,233,.06)}
+  .laycan-fh-sep td{background:rgba(99,102,241,.03)}
+  .laycan-lh-sep td{background:rgba(99,102,241,.06)}
+  .laycan-fh-oct td{background:rgba(5,150,105,.03)}
+  .laycan-lh-oct td{background:rgba(5,150,105,.06)}
+  .laycan-fh-nov td{background:rgba(217,119,6,.03)}
+  .laycan-lh-nov td{background:rgba(217,119,6,.06)}
+  .laycan-fh-dec td{background:rgba(147,51,234,.03)}
+  .laycan-lh-dec td{background:rgba(147,51,234,.06)}
+
   /* Status badges */
   .status-badge{font-size:10px;padding:3px 10px;border-radius:20px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;transition:opacity .1s;display:inline-block}
   .status-badge:hover{opacity:.8}
@@ -204,7 +230,6 @@ BOD ABT 1250/240
             <th onclick="sortBy('laycan')">Laycan</th>
             <th onclick="sortBy('vessel_name')">Vessel</th>
             <th onclick="sortBy('owner')">Owner</th>
-            <th onclick="sortBy('source')">Broker</th>
             <th onclick="sortBy('dwt')">DWT / Built</th>
             <th>SCR</th>
             <th onclick="sortBy('delivery_basis')">Delivery</th>
@@ -212,6 +237,7 @@ BOD ABT 1250/240
             <th class="col-p6" onclick="sortBy('p6_bid')">P6 Bid</th>
             <th class="col-p6" onclick="sortBy('p6_offer')">P6 Offer</th>
             <th onclick="sortBy('spread')">Spread</th>
+            <th class="col-fixed" onclick="sortBy('fixed_price')">Fixed</th>
             <th onclick="sortBy('status')">Status</th>
             <th>Actions</th>
           </tr>
