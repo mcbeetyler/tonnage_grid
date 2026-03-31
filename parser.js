@@ -614,6 +614,53 @@ function parseTonnageMessage(rawText) {
         continue;
       }
 
+      // Skip section headers like "//remain//", "//new//"
+      if (/^\/\/\w+\/\/$/.test(line)) continue;
+
+      // Rate lines starting with "-$" (e.g. "-$20k fr ecsa fh")
+      if (/^\s*-\$\d/i.test(line)) {
+        const rateMatch = line.match(/\$([0-9k,.]+)/i);
+        if (rateMatch) {
+          const route = /ecsa\s*fh|fh/i.test(line) ? 'ECSA FH' : /safr|sa\b/i.test(line) ? 'SAFR' : /ecsa/i.test(line) ? 'ECSA FH' : null;
+          const rate = parseRate(rateMatch[1], 'tc');
+          if (rate) {
+            vessel.market_colour.push({ route, bid_usd: null, offer_usd: rate, bb_usd: null, bid_bb_usd: null, bid_multiple_claims: false, p6_bid: null, p6_offer: null, delivery_basis: null, offer_date: null, is_bid: false, is_idea: true, collecting: false, notes: line.trim() });
+          }
+        }
+        continue;
+      }
+
+      // Standalone ETA line: "ETA RBAY 10APR / ETA SANTOS 26APR" or "ETA SANTOS 26APR"
+      if (/^ETA\b/i.test(line) && !vessel.eta_ecsa) {
+        // Try to find the last ETA date (rightmost = final destination ETA)
+        const etaMatches = [...line.matchAll(/ETA\s+(?:\w+\s+)?(\d{1,2}\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*)/gi)];
+        if (etaMatches.length > 0) {
+          const lastEta = etaMatches[etaMatches.length - 1];
+          vessel.eta_ecsa = parseDate(lastEta[1]);
+          vessel.eta_type = /\bonw\b/i.test(line) ? 'ONW' : 'EXACT';
+        }
+        // Also try compressed format: "10APR"
+        if (!vessel.eta_ecsa) {
+          const compressed = [...line.matchAll(/(\d{1,2})(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/gi)];
+          if (compressed.length > 0) {
+            const last = compressed[compressed.length - 1];
+            vessel.eta_ecsa = parseDate(last[1] + ' ' + last[2]);
+            vessel.eta_type = /\bonw\b/i.test(line) ? 'ONW' : 'EXACT';
+          }
+        }
+        continue;
+      }
+
+      // "SLD DAHEJ 27MAR" = sailed from port on date
+      if (/^SLD\b/i.test(line)) {
+        const sldMatch = line.match(/^SLD\s+(\w+)\s+(\d{1,2})\s*([a-z]+)/i);
+        if (sldMatch) {
+          vessel.current_position = sldMatch[1].toUpperCase();
+          vessel.open_date = parseDate(sldMatch[2] + ' ' + sldMatch[3]);
+        }
+        continue;
+      }
+
       // Market colour / rate lines
       if (/^=/.test(line) || /claims\s+seeing/i.test(line) || /\b(loosely\s+)?thinking\b/i.test(line)
           || /^\s*ideas?\b/i.test(line) || /^\s*offers?\s+\d/i.test(line) || /^\s*on\s+subs\b/i.test(line)
@@ -636,9 +683,56 @@ function parseTonnageMessage(rawText) {
         continue;
       }
 
-      // First unmatched line = vessel line
+      // Line starting with "MV" — vessel line (possibly with owner already set from previous line)
+      if (/^M[VT]\s/i.test(line) && !vessel.vessel_name) {
+        if (vessel.source && !vessel.owner) vessel.owner = vessel.source;
+        // Try to extract DWT in comma format: "82,311/2014"
+        const commaSpec = line.match(/(\d{1,3}(?:,\d{3})+)\/(\d{4})/);
+        if (commaSpec) {
+          vessel.dwt = parseInt(commaSpec[1].replace(/,/g, ''), 10);
+          vessel.build_year = parseInt(commaSpec[2], 10);
+          line = line.replace(commaSpec[0], '').trim();
+        }
+        // Check for scrubber
+        if (/\bscrubber\b/i.test(line)) vessel.scrubber = true;
+        // Extract vessel name (after MV, before specs)
+        const nameMatch = line.match(/^M[VT]\s+(.+?)(?:\s+\d|\s*\(|\s*$)/i);
+        if (nameMatch) vessel.vessel_name = nameMatch[1].trim();
+        else {
+          const simpleName = line.replace(/^M[VT]\s+/i, '').replace(/\(.*\)/, '').trim();
+          vessel.vessel_name = simpleName || null;
+        }
+        // Check for SLD (sailed) inline
+        const sldInline = line.match(/\bSLD\s+(\w+)\s+(\d{1,2})\s*([a-z]+)/i);
+        if (sldInline) {
+          vessel.current_position = sldInline[1].toUpperCase();
+          vessel.open_date = parseDate(sldInline[2] + ' ' + sldInline[3]);
+        }
+        continue;
+      }
+
+      // First unmatched line = vessel line (or owner if no MV)
       if (!vessel.vessel_name && !vessel.source) {
-        Object.assign(vessel, parseVesselLine(line));
+        // Look ahead: if this line has no MV/specs and the NEXT line starts with MV,
+        // treat this as an owner name, not a vessel line
+        const nextLines = lines.slice(lines.indexOf(line) + 1);
+        const nextHasMV = nextLines.some(l => /^M[VT]\s/i.test(l));
+        const thisHasMV = /\bM[VT]\s/i.test(line);
+        const thisHasSpecs = /\(\d+[,']?\d*\/\d{2,4}\)/.test(line) || /\d{2,3}[,']\d{3}\/\d{4}/.test(line);
+
+        if (!thisHasMV && !thisHasSpecs && nextHasMV) {
+          // This is just an owner/source name
+          vessel.source = line.trim();
+          vessel.owner = line.trim();
+        } else {
+          Object.assign(vessel, parseVesselLine(line));
+        }
+        continue;
+      }
+
+      // Owner-only line (short, all caps, no MV) — if we don't have owner yet
+      if (!vessel.owner && line.trim().split(/\s+/).length <= 3 && /^[A-Z\s]+$/.test(line.trim())) {
+        vessel.owner = line.trim();
         continue;
       }
 
@@ -666,19 +760,42 @@ function parseTonnageMessage(rawText) {
 
 function parseMultipleMessages(rawBlock) {
   // Split on blank lines, but rejoin chunks that are continuations
-  // (lines starting with =, (, BOD, or status keywords belong to the previous message)
   const rawChunks = rawBlock.split(/\n{2,}/).map(m => m.trim()).filter(Boolean);
   const messages = [];
   for (const chunk of rawChunks) {
     const firstLine = chunk.split('\n')[0].trim();
-    // If this chunk starts with a continuation pattern, append to previous message
-    if (messages.length > 0 && /^[=(]|^BOD\b|^on\s+subs\b|^off[\s-]?mkt\b|^fixed\b|^failed\b/i.test(firstLine)) {
+
+    // Skip section headers like "//remain//", "//new//", "//update//"
+    if (/^\/\/\w+\/\/$/.test(firstLine) && chunk.split('\n').length === 1) {
+      // Standalone header — treat rate lines after it as context for next message
+      continue;
+    }
+
+    // If this chunk starts with a continuation pattern, append to previous
+    if (messages.length > 0 && /^[=(]|^BOD\b|^on\s+subs\b|^off[\s-]?mkt\b|^fixed\b|^failed\b|^-\$/i.test(firstLine)) {
       messages[messages.length - 1] += '\n' + chunk;
-    } else {
+    }
+    // If this chunk starts with MV/MT (vessel line) and previous has no vessel yet, join
+    else if (messages.length > 0 && /^M[VT]\s/i.test(firstLine)) {
+      messages[messages.length - 1] += '\n' + chunk;
+    }
+    // If this chunk starts with ETA and previous exists, join
+    else if (messages.length > 0 && /^ETA\b/i.test(firstLine)) {
+      messages[messages.length - 1] += '\n' + chunk;
+    }
+    else {
       messages.push(chunk);
     }
   }
-  return messages.map(parseTonnageMessage);
+
+  // Filter out messages that are just section headers with rate context
+  return messages
+    .filter(m => {
+      const lines = m.split('\n').map(l => l.trim()).filter(Boolean);
+      // Must have at least one line with MV or vessel-like content
+      return lines.some(l => /\bM[VT]\s/i.test(l) || /\(\d+[,']\d*\/?\d+\)/.test(l) || /\d+[,']?\d*\/\d{2,4}/.test(l));
+    })
+    .map(parseTonnageMessage);
 }
 
 // Export for both Node.js and browser
