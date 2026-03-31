@@ -221,6 +221,10 @@ BOD ABT 1250/240
       <button class="filter-pill" onclick="clearDateFilter()" style="font-size:10px">Clear</button>
       <div class="spacer"></div>
       <input class="search-input" id="searchInput" placeholder="Search vessel / owner..." oninput="renderTable()">
+      <div style="position:relative">
+        <button class="filter-pill" onclick="toggleColumnMenu()" style="font-size:10px">Columns</button>
+        <div id="columnMenu" style="display:none;position:absolute;right:0;top:30px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;z-index:10;box-shadow:var(--shadow);min-width:140px"></div>
+      </div>
     </div>
 
     <div class="table-wrapper">
@@ -239,6 +243,7 @@ BOD ABT 1250/240
             <th onclick="sortBy('spread')">Spread</th>
             <th class="col-fixed" onclick="sortBy('fixed_price')">Fixed</th>
             <th onclick="sortBy('charterer')">Charterer</th>
+            <th>Notes</th>
             <th onclick="sortBy('status')">Status</th>
             <th>Actions</th>
           </tr>
