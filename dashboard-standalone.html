@@ -221,6 +221,10 @@ BOD ABT 1250/240
       <button class="filter-pill" onclick="clearDateFilter()" style="font-size:10px">Clear</button>
       <div class="spacer"></div>
       <input class="search-input" id="searchInput" placeholder="Search vessel / owner..." oninput="renderTable()">
+      <div style="position:relative">
+        <button class="filter-pill" onclick="toggleColumnMenu()" style="font-size:10px">Columns</button>
+        <div id="columnMenu" style="display:none;position:absolute;right:0;top:30px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;z-index:10;box-shadow:var(--shadow);min-width:140px"></div>
+      </div>
     </div>
 
     <div class="table-wrapper">
@@ -239,6 +243,7 @@ BOD ABT 1250/240
             <th onclick="sortBy('spread')">Spread</th>
             <th class="col-fixed" onclick="sortBy('fixed_price')">Fixed</th>
             <th onclick="sortBy('charterer')">Charterer</th>
+            <th>Notes</th>
             <th onclick="sortBy('status')">Status</th>
             <th>Actions</th>
           </tr>
@@ -1554,7 +1559,13 @@ let pendingParsed = null;
 let activeFilter = 'ALL';
 let currentSort = { key: 'eta_ecsa', dir: 'asc' };
 
+// Column visibility — stored in localStorage
+const ALL_COLUMNS = ['laycan','vessel','owner','specs','scr','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','notes','status','actions'];
+const DEFAULT_VISIBLE = ['laycan','vessel','owner','specs','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','notes','status','actions'];
+let visibleColumns = JSON.parse(localStorage.getItem('pt_columns') || 'null') || DEFAULT_VISIBLE;
+
 function save() { localStorage.setItem('pt_vessels', JSON.stringify(vessels)); }
+function saveColumns() { localStorage.setItem('pt_columns', JSON.stringify(visibleColumns)); }
 
 // ─── Formatting ──────────────────────────────────────────────────────────────
 
@@ -1655,6 +1666,17 @@ function applyEdit(idx, field, val) {
       break;
     }
     case 'charterer': v.charterer = val || null; break;
+    case 'notes': v.notes = val || null; break;
+    case 'dwt': {
+      const n = parseFloat(val.replace(/[kK]/g, '').replace(/,/g, ''));
+      if (!isNaN(n)) v.dwt = n < 1000 ? n * 1000 : n;
+      break;
+    }
+    case 'build_year': {
+      const y = parseInt(val, 10);
+      if (!isNaN(y)) v.build_year = y < 100 ? 2000 + y : y;
+      break;
+    }
   }
   save();
 }
@@ -1710,7 +1732,7 @@ FIELD DEFINITIONS:
   - p6_bid: P6 equivalent of bid
   - p6_offer: P6 equivalent of offer. Parse from (p6: X) or (p6 bss X = Y) where Y is the p6 equiv.
 - status: "OPEN", "ON SUBS", "FIXED", "FAILED", "WITHDRAWN". "OFF-MKT" or "EX-OUR CP" = WITHDRAWN. "On subs (nfd)" = ON SUBS.
-- notes: Any additional context (CP notes, cargo details, etc.)
+- notes: The raw offer/rate line verbatim (e.g. "Ideas 21k try less (p6: 17,750 vs 19,200)") plus any extra context (CP notes, cargo details, route preferences). Always include the original rate/offer text here.
 
 IMPORTANT:
 - Use current year (${new Date().getFullYear()}) for dates without a year
@@ -1768,6 +1790,37 @@ async function parseWithAPI(rawText) {
     status: v.status || 'OPEN',
     market_colour: v.market_colour || []
   }));
+}
+
+function startEditSpecs(el, vesselIdx) {
+  if (el.querySelector('input')) return;
+  const v = vessels[vesselIdx];
+  const dwtVal = v.dwt ? (v.dwt/1000).toFixed(0) : '';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = `${dwtVal}/${v.build_year || ''}`;
+  input.className = 'edit-input mono';
+  input.placeholder = '82/19';
+  input.style.width = Math.max(el.offsetWidth - 8, 60) + 'px';
+  el.textContent = '';
+  el.appendChild(input);
+  input.focus();
+  input.select();
+
+  function commit() {
+    const val = input.value.trim();
+    const match = val.match(/(\d+)\s*\/\s*(\d+)/);
+    if (match) {
+      applyEdit(vesselIdx, 'dwt', match[1]);
+      applyEdit(vesselIdx, 'build_year', match[2]);
+    }
+    renderTable();
+  }
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') renderTable();
+  });
 }
 
 // ─── Inbox Handlers ──────────────────────────────────────────────────────────
@@ -1913,6 +1966,32 @@ function clearDateFilter() {
   renderTable();
 }
 
+// ─── Column Visibility ───────────────────────────────────────────────────────
+
+function toggleColumnMenu() {
+  const menu = document.getElementById('columnMenu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleColumn(col) {
+  const idx = visibleColumns.indexOf(col);
+  if (idx === -1) visibleColumns.push(col);
+  else visibleColumns.splice(idx, 1);
+  saveColumns();
+  renderTable();
+  renderColumnMenu();
+}
+
+function renderColumnMenu() {
+  const labels = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',specs:'DWT/Built',scr:'SCR',delivery:'Delivery',eta:'ETA',p6_bid:'P6 Bid',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',notes:'Notes',status:'Status',actions:'Actions'};
+  const menu = document.getElementById('columnMenu');
+  menu.innerHTML = ALL_COLUMNS.map(c =>
+    `<label style="display:block;padding:3px 0;cursor:pointer;font-size:11px"><input type="checkbox" ${visibleColumns.includes(c)?'checked':''} onchange="toggleColumn('${c}')" style="margin-right:6px">${labels[c]}</label>`
+  ).join('');
+}
+
+function colVis(col) { return visibleColumns.includes(col); }
+
 // ─── Sorting ─────────────────────────────────────────────────────────────────
 
 function sortBy(key) {
@@ -2011,21 +2090,26 @@ function renderTable() {
   empty.style.display = filtered.length === 0 ? 'block' : 'none';
   document.getElementById('vesselTable').style.display = filtered.length === 0 ? 'none' : '';
 
+  // Update header visibility
+  const thCols = ['laycan','vessel','owner','specs','scr','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','notes','status','actions'];
+  document.querySelectorAll('#vesselTable thead th').forEach((th, i) => {
+    th.style.display = visibleColumns.includes(thCols[i]) ? '' : 'none';
+  });
+
   let lastLaycan = null;
   const rows = [];
+  const colCount = visibleColumns.length;
 
   for (const v of filtered) {
     const gi = vessels.indexOf(v);
     const laycan = getLaycanPeriod(v.eta_ecsa);
 
     if ((currentSort.key === 'eta_ecsa' || currentSort.key === 'laycan') && laycan !== lastLaycan) {
-      rows.push(`<tr class="group-header"><td colspan="14">${laycan || 'NO ETA'}</td></tr>`);
+      rows.push(`<tr class="group-header"><td colspan="${colCount}">${laycan || 'NO ETA'}</td></tr>`);
       lastLaycan = laycan;
     }
 
-    // CSS class for laycan row shading
     const laycanClass = laycan ? 'laycan-' + laycan.toLowerCase().replace(/\s+/g, '-') : '';
-
     const p6 = getP6Values(v);
     const spread = getSpread(v);
 
@@ -2047,26 +2131,30 @@ function renderTable() {
 
     const delivery = v.delivery_basis || v.current_position || '—';
     const statusCls = (v.status || 'OPEN').replace(/\s+/g, '_');
+    const fixedCell = v.fixed_price ? `<span class="td-fixed">${fmtNum(v.fixed_price)}</span>` : '—';
 
-    const fixedCell = v.fixed_price
-      ? `<span class="td-fixed">${fmtNum(v.fixed_price)}</span>`
-      : '—';
+    // Notes: show raw offer line or manual notes, truncated
+    const notesText = v.notes || v.raw || '';
+    const notesTrunc = notesText.length > 40 ? notesText.substring(0, 40) + '...' : notesText;
+
+    const cv = (c) => visibleColumns.includes(c) ? '' : 'display:none';
 
     rows.push(`<tr class="${laycanClass}">
-      <td>${laycanBadge}</td>
-      <td class="td-vessel editable" onclick="startEdit(this,${gi},'vessel_name',true)">${v.vessel_name || '—'}${warnDot}</td>
-      <td class="td-owner editable" onclick="startEdit(this,${gi},'owner',false)">${v.owner || '—'}</td>
-      <td class="td-specs">${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '—'} / ${v.build_year || '—'}</td>
-      <td class="editable" onclick="startEdit(this,${gi},'scrubber',false)">${scrTag}</td>
-      <td class="td-port editable" onclick="startEdit(this,${gi},'delivery_basis',false)">${delivery}</td>
-      <td class="td-eta editable" onclick="startEdit(this,${gi},'eta_ecsa',true)">${etaText}</td>
-      <td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_bid',true)"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>
-      <td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_offer',true)"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>
-      <td>${spreadCell}</td>
-      <td class="td-fixed editable" onclick="startEdit(this,${gi},'fixed_price',true)">${fixedCell}</td>
-      <td class="td-owner editable" onclick="startEdit(this,${gi},'charterer',false)">${v.charterer || '—'}</td>
-      <td><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>
-      <td><button class="btn-remove" onclick="removeVessel(${gi})">x</button></td>
+      <td style="${cv('laycan')}">${laycanBadge}</td>
+      <td style="${cv('vessel')}" class="td-vessel editable" onclick="startEdit(this,${gi},'vessel_name',true)">${v.vessel_name || '—'}${warnDot}</td>
+      <td style="${cv('owner')}" class="td-owner editable" onclick="startEdit(this,${gi},'owner',false)">${v.owner || '—'}</td>
+      <td style="${cv('specs')}" class="td-specs editable" onclick="startEditSpecs(this,${gi})">${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '—'} / ${v.build_year || '—'}</td>
+      <td style="${cv('scr')}" class="editable" onclick="startEdit(this,${gi},'scrubber',false)">${scrTag}</td>
+      <td style="${cv('delivery')}" class="td-port editable" onclick="startEdit(this,${gi},'delivery_basis',false)">${delivery}</td>
+      <td style="${cv('eta')}" class="td-eta editable" onclick="startEdit(this,${gi},'eta_ecsa',true)">${etaText}</td>
+      <td style="${cv('p6_bid')}" class="td-p6 editable" onclick="startEdit(this,${gi},'p6_bid',true)"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>
+      <td style="${cv('p6_offer')}" class="td-p6 editable" onclick="startEdit(this,${gi},'p6_offer',true)"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>
+      <td style="${cv('spread')}">${spreadCell}</td>
+      <td style="${cv('fixed')}" class="td-fixed editable" onclick="startEdit(this,${gi},'fixed_price',true)">${fixedCell}</td>
+      <td style="${cv('charterer')}" class="td-owner editable" onclick="startEdit(this,${gi},'charterer',false)">${v.charterer || '—'}</td>
+      <td style="${cv('notes')}" class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>
+      <td style="${cv('status')}"><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>
+      <td style="${cv('actions')}"><button class="btn-remove" onclick="removeVessel(${gi})">x</button></td>
     </tr>`);
   }
 
@@ -2077,6 +2165,7 @@ function renderTable() {
 // ─── Init ────────────────────────────────────────────────────────────────────
 renderTable();
 updateStats();
+renderColumnMenu();
 </script>
 </body>
 </html>
