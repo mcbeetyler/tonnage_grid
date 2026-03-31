@@ -103,9 +103,172 @@ function applyEdit(idx, field, val) {
   save();
 }
 
+// ─── API Key Management ──────────────────────────────────────────────────────
+
+function saveApiKey(key) {
+  localStorage.setItem('pt_api_key', key.trim());
+}
+
+function getApiKey() {
+  return localStorage.getItem('pt_api_key') || '';
+}
+
+function toggleKeyVisibility() {
+  const input = document.getElementById('apiKeyInput');
+  input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+// Load saved key on init
+document.addEventListener('DOMContentLoaded', () => {
+  const saved = getApiKey();
+  if (saved) document.getElementById('apiKeyInput').value = saved;
+});
+
+// ─── Claude API Parser ──────────────────────────────────────────────────────
+
+const PARSE_SYSTEM_PROMPT = `You are a dry bulk shipping message parser. Extract vessel tonnage data from WhatsApp messages into structured JSON.
+
+FIELD DEFINITIONS:
+- source: The broker who sent the message (before " - " or after "WITH")
+- owner: The vessel owner/operator (often same as source if owner is marketing directly)
+- vessel_name: Ship name (after MV/MT, without the MV/MT prefix)
+- dwt: Deadweight tonnage (number, e.g. 81688). (81/17) means 81,000 DWT built 2017. (81'688DWT) means 81,688 DWT.
+- build_year: Year built (4-digit)
+- draft: Maximum draft in meters if provided
+- scrubber: true if SCR/scrubber/+S mentioned, null if unknown
+- current_position: Current port/location
+- open_date: Date vessel is open (ISO format YYYY-MM-DD). If range like "10-15 APR", use earliest date.
+- eta_ecsa: ETA to ECSA/loading area (ISO format). If range, use earliest.
+- eta_ecsa_end: End of ETA range if given (ISO format), null if single date.
+- eta_type: "ONW" if onwards/approximate, "EXACT" if firm date
+- delivery_basis: Delivery terms (APS ECSA, SANTOS, PARANAGUA, DLOSP, etc.)
+- bod_ifo: Bunkers on delivery - IFO/LSFO/HFO quantity in MT
+- bod_mdo: Bunkers on delivery - MDO/LSMGO quantity in MT
+- bod_basis: BOD basis port (e.g. SANTOS, ENNORE)
+- bod_fuel_type: "LSFO/LSMGO" if low-sulphur, null for standard IFO/MDO
+- market_colour: Array of rate/offer objects, each with:
+  - route: "ECSA FH", "ECSA TA", "USG FH", etc. FEAST = Far East = FH (fronthaul)
+  - bid_usd: Bid/market side rate ($/day)
+  - offer_usd: Owner's asking rate ($/day). "Rating", "Ideas", "Offers" all mean the offer.
+  - bb_usd: Ballast bonus lump sum ($). "19k + 900k" means 19,000/day TC + $900,000 BB.
+  - p6_bid: P6 equivalent of bid
+  - p6_offer: P6 equivalent of offer. Parse from (p6: X) or (p6 bss X = Y) where Y is the p6 equiv.
+- status: "OPEN", "ON SUBS", "FIXED", "FAILED", "WITHDRAWN". "OFF-MKT" or "EX-OUR CP" = WITHDRAWN. "On subs (nfd)" = ON SUBS.
+- notes: Any additional context (CP notes, cargo details, etc.)
+
+IMPORTANT:
+- Use current year (${new Date().getFullYear()}) for dates without a year
+- Return an array of vessel objects, one per vessel in the input
+- Multiple messages may be separated by blank lines
+- "RATING 21500" means offer of $21,500/day
+- "Ideas 18k" means offer of $18,000/day
+- "try 18k infront" means the bid side is $18,000/day
+- "ECSA OPT NCSA/FEAST" means route options are ECSA FH or NCSA FH
+- If a line contains "(CP ON THIS VSL)" note it but still parse the vessel
+
+Return ONLY valid JSON array. No markdown, no explanation.`;
+
+async function parseWithAPI(rawText) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error('No API key set. Enter your Anthropic API key below.');
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5',
+      max_tokens: 4096,
+      system: PARSE_SYSTEM_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `Parse these vessel tonnage messages into JSON:\n\n${rawText}`
+      }]
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(`API error ${response.status}: ${err.error?.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+  const text = data.content.find(b => b.type === 'text')?.text;
+  if (!text) throw new Error('No response from API');
+
+  const parsed = JSON.parse(text);
+  const vessels = Array.isArray(parsed) ? parsed : [parsed];
+
+  // Add metadata
+  return vessels.map(v => ({
+    ...v,
+    raw: rawText,
+    parsed_at: new Date().toISOString(),
+    parse_warnings: [],
+    status: v.status || 'OPEN',
+    market_colour: v.market_colour || []
+  }));
+}
+
 // ─── Inbox Handlers ──────────────────────────────────────────────────────────
 
-function handleParse() {
+async function handleParse() {
+  const raw = document.getElementById('rawInput').value.trim();
+  if (!raw) return;
+  const preview = document.getElementById('previewBox');
+  const btnAdd = document.getElementById('btnAdd');
+  const btnParse = document.getElementById('btnParse');
+
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    // Fall back to regex if no API key
+    handleParseRegex();
+    return;
+  }
+
+  btnParse.disabled = true;
+  btnParse.textContent = 'Parsing...';
+  preview.textContent = 'Sending to Claude API...';
+  preview.className = 'preview-box';
+
+  try {
+    const parsed = await parseWithAPI(raw);
+    pendingParsed = parsed;
+    const summary = parsed.map(v =>
+      `${v.vessel_name || '?'} (${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '?'}/${v.build_year || '?'}) ETA: ${fmtDate(v.eta_ecsa)} ${v.eta_type === 'ONW' ? 'ONW' : ''} [${v.status}]`
+    ).join('\n');
+    preview.textContent = `AI parsed ${parsed.length} vessel(s):\n${summary}`;
+    preview.className = 'preview-box has-content';
+    btnAdd.disabled = false;
+  } catch (e) {
+    preview.textContent = 'AI parse error: ' + e.message + '\n\nTrying regex fallback...';
+    preview.className = 'preview-box has-error';
+    // Auto-fallback to regex
+    try {
+      const parsed = parseMultipleMessages(raw);
+      pendingParsed = parsed;
+      const summary = parsed.map(v =>
+        `${v.vessel_name || '?'} (${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '?'}/${v.build_year || '?'}) ETA: ${fmtDate(v.eta_ecsa)} ${v.eta_type === 'ONW' ? 'ONW' : ''} [${v.status}]`
+      ).join('\n');
+      preview.textContent = `Regex fallback parsed ${parsed.length} vessel(s):\n${summary}`;
+      preview.className = 'preview-box has-content';
+      btnAdd.disabled = false;
+    } catch (e2) {
+      preview.textContent = 'Both AI and regex parsing failed:\n' + e.message + '\n' + e2.message;
+      preview.className = 'preview-box has-error';
+      btnAdd.disabled = true;
+    }
+  } finally {
+    btnParse.disabled = false;
+    btnParse.textContent = 'Parse (AI)';
+  }
+}
+
+function handleParseRegex() {
   const raw = document.getElementById('rawInput').value.trim();
   if (!raw) return;
   const preview = document.getElementById('previewBox');
@@ -116,11 +279,11 @@ function handleParse() {
     const summary = parsed.map(v =>
       `${v.vessel_name || '?'} (${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '?'}/${v.build_year || '?'}) ETA: ${fmtDate(v.eta_ecsa)} ${v.eta_type === 'ONW' ? 'ONW' : ''} [${v.status}]`
     ).join('\n');
-    preview.textContent = `Parsed ${parsed.length} vessel(s):\n${summary}`;
+    preview.textContent = `Regex parsed ${parsed.length} vessel(s):\n${summary}`;
     preview.className = 'preview-box has-content';
     btnAdd.disabled = false;
   } catch (e) {
-    preview.textContent = 'Parse error: ' + e.message;
+    preview.textContent = 'Regex parse error: ' + e.message;
     preview.className = 'preview-box has-error';
     btnAdd.disabled = true;
   }

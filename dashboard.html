@@ -166,10 +166,15 @@ BOD ABT 1250/240
 = ECSA FH: Claims seeing 20k multiple times vs 21,500 (p6: 16,700 vs 18k)"></textarea>
       <div id="previewBox" class="preview-box">Parsed output will appear here</div>
       <div class="inbox-controls">
-        <button class="btn-primary" id="btnParse" onclick="handleParse()">Parse</button>
+        <button class="btn-primary" id="btnParse" onclick="handleParse()">Parse (AI)</button>
         <button class="btn-add" id="btnAdd" onclick="handleAdd()" disabled>Add to Board</button>
         <button class="btn-secondary" onclick="handleClear()">Clear</button>
         <button class="btn-secondary" id="btnLoadSample" onclick="loadSample()">Sample</button>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input type="password" class="search-input" id="apiKeyInput" placeholder="Anthropic API Key" style="flex:1;font-size:10px" onchange="saveApiKey(this.value)">
+        <button class="btn-secondary" style="padding:5px 8px;font-size:10px" onclick="toggleKeyVisibility()">Show</button>
+        <button class="btn-secondary" style="padding:5px 8px;font-size:10px" onclick="handleParseRegex()">Regex</button>
       </div>
     </div>
   </aside>
