@@ -104,6 +104,7 @@ function applyEdit(idx, field, val) {
       v.fixed_price = n;
       break;
     }
+    case 'charterer': v.charterer = val || null; break;
   }
   save();
 }
@@ -400,13 +401,15 @@ function cycleStatus(idx) {
   const next = states[(states.indexOf(cur) + 1) % states.length];
   vessels[idx].status = next;
 
-  // Prompt for fixed price when moving to ON SUBS
+  // Prompt for fixed price and charterer when moving to ON SUBS
   if (next === 'ON SUBS' && !vessels[idx].fixed_price) {
     const price = prompt(`${vessels[idx].vessel_name} on subs — enter fixed P6 price:`);
     if (price) {
       const val = parseRate(price, 'tc');
       if (val) vessels[idx].fixed_price = val;
     }
+    const charterer = prompt(`${vessels[idx].vessel_name} — enter charterer:`);
+    if (charterer) vessels[idx].charterer = charterer.trim();
   }
 
   save(); renderTable(); updateStats();
@@ -466,7 +469,7 @@ function renderTable() {
     const laycan = getLaycanPeriod(v.eta_ecsa);
 
     if ((currentSort.key === 'eta_ecsa' || currentSort.key === 'laycan') && laycan !== lastLaycan) {
-      rows.push(`<tr class="group-header"><td colspan="13">${laycan || 'NO ETA'}</td></tr>`);
+      rows.push(`<tr class="group-header"><td colspan="14">${laycan || 'NO ETA'}</td></tr>`);
       lastLaycan = laycan;
     }
 
@@ -511,6 +514,7 @@ function renderTable() {
       <td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_offer',true)"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>
       <td>${spreadCell}</td>
       <td class="td-fixed editable" onclick="startEdit(this,${gi},'fixed_price',true)">${fixedCell}</td>
+      <td class="td-owner editable" onclick="startEdit(this,${gi},'charterer',false)">${v.charterer || '—'}</td>
       <td><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>
       <td><button class="btn-remove" onclick="removeVessel(${gi})">x</button></td>
     </tr>`);
