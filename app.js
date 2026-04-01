@@ -516,9 +516,19 @@ function removeVessel(idx) {
 // ─── Render ──────────────────────────────────────────────────────────────────
 
 function updateStats() {
-  document.getElementById('statOpen').textContent = vessels.filter(v => v.status === 'OPEN').length;
-  document.getElementById('statFixed').textContent = vessels.filter(v => v.status === 'FIXED' || v.status === 'ON SUBS').length;
+  const open = vessels.filter(v => v.status === 'OPEN').length;
+  const subs = vessels.filter(v => v.status === 'ON SUBS').length;
+  const fixed = vessels.filter(v => v.status === 'FIXED').length;
+  const failed = vessels.filter(v => v.status === 'FAILED').length;
+  const withdrawn = vessels.filter(v => v.status === 'WITHDRAWN').length;
+  document.getElementById('statOpen').textContent = open;
+  document.getElementById('statSubs').textContent = subs;
+  document.getElementById('statFixed').textContent = fixed;
   document.getElementById('statTotal').textContent = vessels.length;
+  // Filter pill counts
+  const ce = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = `(${val})`; };
+  ce('cntAll', vessels.length); ce('cntOpen', open); ce('cntSubs', subs);
+  ce('cntFixed', fixed); ce('cntFailed', failed); ce('cntWithdrawn', withdrawn);
 }
 
 function renderTable() {
