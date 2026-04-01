@@ -1,7 +1,7 @@
 // ─── App State ────────────────────────────────────────────────────────────────
 let vessels = JSON.parse(localStorage.getItem('pt_vessels') || '[]');
 let pendingParsed = null;
-let activeFilter = 'ALL';
+let activeFilters = new Set(['ALL']); // multi-select status filters
 let currentSort = { key: 'eta_ecsa', dir: 'asc' };
 
 // Column visibility — stored in localStorage
@@ -402,10 +402,21 @@ async function loadSample() {
 
 // ─── Filters ─────────────────────────────────────────────────────────────────
 
-function setFilter(f) {
-  activeFilter = f;
+function toggleFilter(f) {
+  if (f === 'ALL') {
+    // Clicking ALL clears everything and selects ALL
+    activeFilters = new Set(['ALL']);
+  } else {
+    // Remove ALL if it was active
+    activeFilters.delete('ALL');
+    // Toggle the clicked filter
+    if (activeFilters.has(f)) activeFilters.delete(f);
+    else activeFilters.add(f);
+    // If nothing selected, revert to ALL
+    if (activeFilters.size === 0) activeFilters = new Set(['ALL']);
+  }
   document.querySelectorAll('#statusFilters .filter-pill').forEach(p => {
-    p.classList.toggle('active', p.dataset.filter === f);
+    p.classList.toggle('active', activeFilters.has(p.dataset.filter));
   });
   renderTable();
 }
@@ -518,7 +529,7 @@ function renderTable() {
   const empty = document.getElementById('emptyState');
 
   let filtered = vessels.filter(v => {
-    if (activeFilter !== 'ALL' && v.status !== activeFilter) return false;
+    if (!activeFilters.has('ALL') && !activeFilters.has(v.status)) return false;
     if (etaFrom && (!v.eta_ecsa || v.eta_ecsa < etaFrom)) return false;
     if (etaTo && (!v.eta_ecsa || v.eta_ecsa > etaTo)) return false;
     if (search) {
