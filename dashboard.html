@@ -84,8 +84,14 @@
   tbody tr td{border-bottom:1px solid var(--border)}
   td{padding:10px 14px;white-space:nowrap;vertical-align:middle}
 
-  .group-header{background:var(--accent-light)!important}
-  .group-header td{font-size:12px;font-weight:600;color:var(--accent);padding:10px 14px;border-bottom:2px solid var(--green-border)!important}
+  /* Group header rows — bold period breaks */
+  .group-header td{font-size:12px;font-weight:700;padding:12px 14px;letter-spacing:.3px;border-bottom:2px solid!important;border-top:2px solid!important}
+  .group-color-0 td{background:#EFF6FF;color:#1E40AF;border-color:#93C5FD!important}
+  .group-color-1 td{background:#F0FDF4;color:#166534;border-color:#86EFAC!important}
+  .group-color-2 td{background:#FDF4FF;color:#86198F;border-color:#E879F9!important}
+  .group-color-3 td{background:#FFF7ED;color:#9A3412;border-color:#FDBA74!important}
+  .group-color-4 td{background:#ECFDF5;color:#115E59;border-color:#5EEAD4!important}
+  .group-color-5 td{background:#FEF2F2;color:#991B1B;border-color:#FCA5A5!important}
 
   .td-vessel{font-weight:600;color:var(--text-bright);font-size:13px}
   .td-owner{font-size:12px;color:var(--text);font-weight:500}
@@ -95,12 +101,12 @@
   .td-date{font-family:var(--mono);font-size:12px;color:var(--text)}
   .td-eta{font-family:var(--mono);font-size:12px}
   .td-laycan{font-size:11px;font-weight:600;padding:4px 10px;border-radius:4px;display:inline-block}
-  .laycan-color-0{background:#DCFCE7;color:#166534}
-  .laycan-color-1{background:#D1FAE5;color:#065F46}
-  .laycan-color-2{background:#DBEAFE;color:#1E40AF}
-  .laycan-color-3{background:#E0E7FF;color:#3730A3}
-  .laycan-color-4{background:#FEF3C7;color:#92400E}
-  .laycan-color-5{background:#FCE7F3;color:#9D174D}
+  .laycan-color-0{background:#DBEAFE;color:#1E40AF}
+  .laycan-color-1{background:#DCFCE7;color:#166534}
+  .laycan-color-2{background:#F3E8FF;color:#7C3AED}
+  .laycan-color-3{background:#FFEDD5;color:#9A3412}
+  .laycan-color-4{background:#CCFBF1;color:#115E59}
+  .laycan-color-5{background:#FEE2E2;color:#991B1B}
   .onw-badge{font-size:10px;font-weight:600;background:var(--amber-light);color:var(--amber);padding:2px 8px;border-radius:4px;margin-left:5px}
   .td-p6{font-family:var(--mono);font-weight:600;font-size:13px}
   .td-p6 .bid{color:var(--green)}
@@ -111,16 +117,13 @@
   .spread-zero{color:var(--text-dim)}
   .td-fixed{font-family:var(--mono);font-weight:600;font-size:13px;color:var(--amber)}
 
-  .laycan-fh-mar td{background:rgba(22,101,52,.015)}.laycan-lh-mar td{background:rgba(22,101,52,.04)}
-  .laycan-fh-apr td{background:rgba(30,64,175,.015)}.laycan-lh-apr td{background:rgba(30,64,175,.04)}
-  .laycan-fh-may td{background:rgba(146,64,14,.015)}.laycan-lh-may td{background:rgba(146,64,14,.04)}
-  .laycan-fh-jun td{background:rgba(55,48,163,.015)}.laycan-lh-jun td{background:rgba(55,48,163,.04)}
-  .laycan-fh-jul td{background:rgba(157,23,77,.015)}.laycan-lh-jul td{background:rgba(157,23,77,.04)}
-  .laycan-fh-aug td{background:rgba(22,101,52,.015)}.laycan-lh-aug td{background:rgba(22,101,52,.04)}
-  .laycan-fh-sep td{background:rgba(30,64,175,.015)}.laycan-lh-sep td{background:rgba(30,64,175,.04)}
-  .laycan-fh-oct td{background:rgba(146,64,14,.015)}.laycan-lh-oct td{background:rgba(146,64,14,.04)}
-  .laycan-fh-nov td{background:rgba(55,48,163,.015)}.laycan-lh-nov td{background:rgba(55,48,163,.04)}
-  .laycan-fh-dec td{background:rgba(157,23,77,.015)}.laycan-lh-dec td{background:rgba(157,23,77,.04)}
+  /* Row shading — FH lighter, LH slightly deeper */
+  .laycan-fh-jan td,.laycan-fh-jul td{background:rgba(30,64,175,.02)}.laycan-lh-jan td,.laycan-lh-jul td{background:rgba(30,64,175,.05)}
+  .laycan-fh-feb td,.laycan-fh-aug td{background:rgba(22,101,52,.02)}.laycan-lh-feb td,.laycan-lh-aug td{background:rgba(22,101,52,.05)}
+  .laycan-fh-mar td,.laycan-fh-sep td{background:rgba(124,58,237,.02)}.laycan-lh-mar td,.laycan-lh-sep td{background:rgba(124,58,237,.05)}
+  .laycan-fh-apr td,.laycan-fh-oct td{background:rgba(154,52,18,.02)}.laycan-lh-apr td,.laycan-lh-oct td{background:rgba(154,52,18,.05)}
+  .laycan-fh-may td,.laycan-fh-nov td{background:rgba(17,94,89,.02)}.laycan-lh-may td,.laycan-lh-nov td{background:rgba(17,94,89,.05)}
+  .laycan-fh-jun td,.laycan-fh-dec td{background:rgba(153,27,27,.02)}.laycan-lh-jun td,.laycan-lh-dec td{background:rgba(153,27,27,.05)}
 
   .status-badge{font-size:11px;padding:4px 12px;border-radius:4px;font-weight:600;cursor:pointer;transition:opacity .15s;display:inline-block}
   .status-badge:hover{opacity:.75}
