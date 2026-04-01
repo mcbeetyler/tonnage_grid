@@ -571,14 +571,23 @@ function renderTable() {
 
   let lastLaycan = null;
   const rows = [];
-  const colCount = visibleColumns.length;
+
+  // Laycan color map — rotating distinct colors per period
+  const laycanColors = {
+    'FH Jan':'0','LH Jan':'0','FH Feb':'1','LH Feb':'1','FH Mar':'2','LH Mar':'2',
+    'FH Apr':'3','LH Apr':'3','FH May':'4','LH May':'4','FH Jun':'5','LH Jun':'5',
+    'FH Jul':'0','LH Jul':'0','FH Aug':'1','LH Aug':'1','FH Sep':'2','LH Sep':'2',
+    'FH Oct':'3','LH Oct':'3','FH Nov':'4','LH Nov':'4','FH Dec':'5','LH Dec':'5',
+  };
 
   for (const v of filtered) {
     const gi = vessels.indexOf(v);
     const laycan = getLaycanPeriod(v.eta_ecsa);
 
+    // Group header row — full width break between laycan periods
     if ((currentSort.key === 'eta_ecsa' || currentSort.key === 'laycan') && laycan !== lastLaycan) {
-      rows.push(`<tr class="group-header"><td colspan="${colCount}">${laycan || 'NO ETA'}</td></tr>`);
+      const colorIdx = laycan ? (laycanColors[laycan] || '0') : '0';
+      rows.push(`<tr class="group-header group-color-${colorIdx}"><td colspan="99">${laycan || 'NO ETA'}</td></tr>`);
       lastLaycan = laycan;
     }
 
@@ -590,7 +599,8 @@ function renderTable() {
       ? `${fmtDate(v.eta_ecsa)}${v.eta_ecsa_end ? '–' + fmtDate(v.eta_ecsa_end).split(' ')[0] : ''}${v.eta_type === 'ONW' ? ' <span class="onw-badge">ONW</span>' : ''}`
       : '—';
 
-    const laycanBadge = laycan ? `<span class="td-laycan">${laycan}</span>` : '<span style="color:var(--text-dim)">—</span>';
+    const lcIdx = laycan ? (laycanColors[laycan] || '0') : null;
+    const laycanBadge = laycan ? `<span class="td-laycan laycan-color-${lcIdx}">${laycan}</span>` : '<span style="color:var(--text-dim)">—</span>';
     const scrTag = v.scrubber === true ? '<span class="scrubber-yes">SCR</span>' : '<span class="scrubber-unk">—</span>';
 
     let spreadCell = '—';
