@@ -243,6 +243,7 @@ BOD ABT 1250/240
             <th onclick="sortBy('spread')">Spread</th>
             <th class="col-fixed" onclick="sortBy('fixed_price')">Fixed</th>
             <th onclick="sortBy('charterer')">Charterer</th>
+            <th onclick="sortBy('date_fixed')">Date Fixed</th>
             <th>Notes</th>
             <th onclick="sortBy('status')">Status</th>
             <th>Actions</th>
@@ -1677,8 +1678,8 @@ let activeFilter = 'ALL';
 let currentSort = { key: 'eta_ecsa', dir: 'asc' };
 
 // Column visibility — stored in localStorage
-const ALL_COLUMNS = ['laycan','vessel','owner','specs','scr','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','notes','status','actions'];
-const DEFAULT_VISIBLE = ['laycan','vessel','owner','specs','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','notes','status','actions'];
+const ALL_COLUMNS = ['laycan','vessel','owner','specs','scr','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','notes','status','actions'];
+const DEFAULT_VISIBLE = ['laycan','vessel','owner','specs','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','notes','status','actions'];
 let visibleColumns = JSON.parse(localStorage.getItem('pt_columns') || 'null') || DEFAULT_VISIBLE;
 
 function save() { localStorage.setItem('pt_vessels', JSON.stringify(vessels)); }
@@ -1783,6 +1784,11 @@ function applyEdit(idx, field, val) {
       break;
     }
     case 'charterer': v.charterer = val || null; break;
+    case 'date_fixed': {
+      if (val.includes('-')) v.date_fixed = val;
+      else { const d = parseDate(val); if (d) v.date_fixed = d; }
+      break;
+    }
     case 'notes': v.notes = val || null; break;
     case 'dwt': {
       const n = parseFloat(val.replace(/[kK]/g, '').replace(/,/g, ''));
@@ -2100,7 +2106,7 @@ function toggleColumn(col) {
 }
 
 function renderColumnMenu() {
-  const labels = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',specs:'DWT/Built',scr:'SCR',delivery:'Delivery',eta:'ETA',p6_bid:'P6 Bid',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',notes:'Notes',status:'Status',actions:'Actions'};
+  const labels = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',specs:'DWT/Built',scr:'SCR',delivery:'Delivery',eta:'ETA',p6_bid:'P6 Bid',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',date_fixed:'Date Fixed',notes:'Notes',status:'Status',actions:'Actions'};
   const menu = document.getElementById('columnMenu');
   menu.innerHTML = ALL_COLUMNS.map(c =>
     `<label style="display:block;padding:3px 0;cursor:pointer;font-size:11px"><input type="checkbox" ${visibleColumns.includes(c)?'checked':''} onchange="toggleColumn('${c}')" style="margin-right:6px">${labels[c]}</label>`
@@ -2129,6 +2135,7 @@ function getSortValue(v, key) {
     case 'p6_offer': return getP6Values(v).offer || 0;
     case 'spread': return getSpread(v) || 0;
     case 'fixed_price': return v.fixed_price || 0;
+    case 'date_fixed': return v.date_fixed || '9999-99-99';
     case 'dwt': return v.dwt || 0;
     case 'vessel_name': return (v.vessel_name || '').toUpperCase();
     case 'owner': return (v.owner || '').toUpperCase();
@@ -2147,8 +2154,9 @@ function cycleStatus(idx) {
   const next = states[(states.indexOf(cur) + 1) % states.length];
   vessels[idx].status = next;
 
-  // Prompt for fixed price and charterer when moving to ON SUBS
+  // Prompt for fixed price, charterer, and auto-set date when moving to ON SUBS
   if (next === 'ON SUBS' && !vessels[idx].fixed_price) {
+    if (!vessels[idx].date_fixed) vessels[idx].date_fixed = new Date().toISOString().split('T')[0];
     const price = prompt(`${vessels[idx].vessel_name} on subs — enter fixed P6 price:`);
     if (price) {
       const val = parseRate(price, 'tc');
@@ -2208,7 +2216,7 @@ function renderTable() {
   document.getElementById('vesselTable').style.display = filtered.length === 0 ? 'none' : '';
 
   // Update header visibility
-  const thCols = ['laycan','vessel','owner','specs','scr','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','notes','status','actions'];
+  const thCols = ['laycan','vessel','owner','specs','scr','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','notes','status','actions'];
   document.querySelectorAll('#vesselTable thead th').forEach((th, i) => {
     th.style.display = visibleColumns.includes(thCols[i]) ? '' : 'none';
   });
@@ -2269,6 +2277,7 @@ function renderTable() {
       <td style="${cv('spread')}">${spreadCell}</td>
       <td style="${cv('fixed')}" class="td-fixed editable" onclick="startEdit(this,${gi},'fixed_price',true)">${fixedCell}</td>
       <td style="${cv('charterer')}" class="td-owner editable" onclick="startEdit(this,${gi},'charterer',false)">${v.charterer || '—'}</td>
+      <td style="${cv('date_fixed')}" class="td-date editable" onclick="startEdit(this,${gi},'date_fixed',true)">${v.date_fixed ? fmtDate(v.date_fixed) : '—'}</td>
       <td style="${cv('notes')}" class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>
       <td style="${cv('status')}"><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>
       <td style="${cv('actions')}"><button class="btn-remove" onclick="removeVessel(${gi})">x</button></td>
