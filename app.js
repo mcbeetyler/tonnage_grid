@@ -4,14 +4,29 @@ let pendingParsed = null;
 let activeFilters = new Set(['ALL']); // multi-select status filters
 let currentSort = { key: 'eta_ecsa', dir: 'asc' };
 
-// Column visibility — stored in localStorage
+// Column visibility AND order — stored in localStorage
 const ALL_COLUMNS = ['laycan','vessel','owner','specs','scr','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
-const DEFAULT_VISIBLE = ['laycan','vessel','owner','specs','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
-let visibleColumns = JSON.parse(localStorage.getItem('pt_columns') || 'null') || DEFAULT_VISIBLE;
+const DEFAULT_ORDER = ['laycan','vessel','owner','specs','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
+let columnOrder = JSON.parse(localStorage.getItem('pt_col_order') || 'null') || [...DEFAULT_ORDER];
+let hiddenColumns = new Set(JSON.parse(localStorage.getItem('pt_col_hidden') || '[]'));
+
+// Migrate old format
+const oldVisible = JSON.parse(localStorage.getItem('pt_columns') || 'null');
+if (oldVisible && !localStorage.getItem('pt_col_order')) {
+  columnOrder = oldVisible;
+  hiddenColumns = new Set(ALL_COLUMNS.filter(c => !oldVisible.includes(c)));
+  // Add any columns missing from old order
+  ALL_COLUMNS.forEach(c => { if (!columnOrder.includes(c)) columnOrder.push(c); });
+  saveColumns();
+}
 
 function save() { localStorage.setItem('pt_vessels', JSON.stringify(vessels)); }
 function touchVessel(idx) { vessels[idx].last_updated = new Date().toISOString(); }
-function saveColumns() { localStorage.setItem('pt_columns', JSON.stringify(visibleColumns)); }
+function saveColumns() {
+  localStorage.setItem('pt_col_order', JSON.stringify(columnOrder));
+  localStorage.setItem('pt_col_hidden', JSON.stringify([...hiddenColumns]));
+}
+function colVis(col) { return !hiddenColumns.has(col); }
 
 // ─── Formatting ──────────────────────────────────────────────────────────────
 
@@ -440,7 +455,9 @@ function clearDateFilter() {
   renderTable();
 }
 
-// ─── Column Visibility ───────────────────────────────────────────────────────
+// ─── Column Visibility & Reordering ──────────────────────────────────────────
+
+const COL_LABELS = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',specs:'DWT/Built',scr:'SCR',delivery:'Delivery',eta:'ETA',p6_bid:'P6 Bid',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',date_fixed:'Date Fixed',last_updated:'Updated',notes:'Notes',status:'Status',actions:'Actions'};
 
 function toggleColumnMenu() {
   const menu = document.getElementById('columnMenu');
@@ -448,23 +465,19 @@ function toggleColumnMenu() {
 }
 
 function toggleColumn(col) {
-  const idx = visibleColumns.indexOf(col);
-  if (idx === -1) visibleColumns.push(col);
-  else visibleColumns.splice(idx, 1);
+  if (hiddenColumns.has(col)) hiddenColumns.delete(col);
+  else hiddenColumns.add(col);
   saveColumns();
   renderTable();
   renderColumnMenu();
 }
 
 function renderColumnMenu() {
-  const labels = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',specs:'DWT/Built',scr:'SCR',delivery:'Delivery',eta:'ETA',p6_bid:'P6 Bid',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',date_fixed:'Date Fixed',last_updated:'Updated',notes:'Notes',status:'Status',actions:'Actions'};
   const menu = document.getElementById('columnMenu');
-  menu.innerHTML = ALL_COLUMNS.map(c =>
-    `<label style="display:block;padding:3px 0;cursor:pointer;font-size:11px"><input type="checkbox" ${visibleColumns.includes(c)?'checked':''} onchange="toggleColumn('${c}')" style="margin-right:6px">${labels[c]}</label>`
+  menu.innerHTML = columnOrder.map(c =>
+    `<label style="display:block;padding:3px 0;cursor:pointer;font-size:11px"><input type="checkbox" ${!hiddenColumns.has(c)?'checked':''} onchange="toggleColumn('${c}')" style="margin-right:6px">${COL_LABELS[c]||c}</label>`
   ).join('');
 }
-
-function colVis(col) { return visibleColumns.includes(col); }
 
 // ─── Sorting ─────────────────────────────────────────────────────────────────
 
@@ -578,11 +591,17 @@ function renderTable() {
   empty.style.display = filtered.length === 0 ? 'block' : 'none';
   document.getElementById('vesselTable').style.display = filtered.length === 0 ? 'none' : '';
 
-  // Update header visibility
-  const thCols = ['laycan','vessel','owner','specs','scr','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
-  document.querySelectorAll('#vesselTable thead th').forEach((th, i) => {
-    th.style.display = visibleColumns.includes(thCols[i]) ? '' : 'none';
-  });
+  // Build headers dynamically from columnOrder
+  const sortKeys = {laycan:'laycan',vessel:'vessel_name',owner:'owner',specs:'dwt',scr:null,delivery:'delivery_basis',eta:'eta_ecsa',p6_bid:'p6_bid',p6_offer:'p6_offer',spread:'spread',fixed:'fixed_price',charterer:'charterer',date_fixed:'date_fixed',last_updated:'last_updated',notes:null,status:'status',actions:null};
+  const thClasses = {p6_bid:'col-p6',p6_offer:'col-p6',fixed:'col-fixed'};
+  const visCols = columnOrder.filter(c => !hiddenColumns.has(c));
+  const headRow = document.querySelector('#vesselHead tr');
+  headRow.innerHTML = visCols.map(c => {
+    const sk = sortKeys[c];
+    const cls = thClasses[c] ? ` class="${thClasses[c]}"` : '';
+    const onclick = sk ? ` onclick="sortBy('${sk}')"` : '';
+    return `<th${cls}${onclick} draggable="true" data-col="${c}">${COL_LABELS[c]||c}</th>`;
+  }).join('');
 
   let lastLaycan = null;
   const rows = [];
@@ -595,11 +614,51 @@ function renderTable() {
     'FH Oct':'3','LH Oct':'3','FH Nov':'4','LH Nov':'4','FH Dec':'5','LH Dec':'5',
   };
 
+  // Cell renderer map — each column key maps to a function returning HTML
+  function cellHTML(col, v, gi) {
+    const p6 = getP6Values(v);
+    const spread = getSpread(v);
+    const laycan = getLaycanPeriod(v.eta_ecsa);
+    const lcIdx = laycan ? (laycanColors[laycan] || '0') : null;
+    const warnDot = v.parse_warnings && v.parse_warnings.length > 0
+      ? `<span class="warn-dot" title="${v.parse_warnings.join('; ')}"></span>` : '';
+    const notesText = v.notes || '';
+    const notesTrunc = notesText.length > 40 ? notesText.substring(0, 40) + '...' : notesText;
+    const statusCls = (v.status || 'OPEN').replace(/\s+/g, '_');
+
+    switch (col) {
+      case 'laycan': return laycan ? `<span class="td-laycan laycan-color-${lcIdx}">${laycan}</span>` : '<span style="color:var(--text-dim)">—</span>';
+      case 'vessel': return `<td class="td-vessel editable" onclick="startEdit(this,${gi},'vessel_name',true)">${v.vessel_name || '—'}${warnDot}</td>`;
+      case 'owner': return `<td class="td-owner editable" onclick="startEdit(this,${gi},'owner',false)">${v.owner || '—'}</td>`;
+      case 'specs': return `<td class="td-specs editable" onclick="startEditSpecs(this,${gi})">${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '—'} / ${v.build_year || '—'}</td>`;
+      case 'scr': return `<td class="editable" onclick="startEdit(this,${gi},'scrubber',false)">${v.scrubber === true ? '<span class="scrubber-yes">SCR</span>' : '<span class="scrubber-unk">—</span>'}</td>`;
+      case 'delivery': return `<td class="td-port editable" onclick="startEdit(this,${gi},'delivery_basis',false)">${v.delivery_basis || v.current_position || '—'}</td>`;
+      case 'eta': {
+        const etaText = v.eta_ecsa ? `${fmtDate(v.eta_ecsa)}${v.eta_ecsa_end ? '–' + fmtDate(v.eta_ecsa_end).split(' ')[0] : ''}${v.eta_type === 'ONW' ? ' <span class="onw-badge">ONW</span>' : ''}` : '—';
+        return `<td class="td-eta editable" onclick="startEdit(this,${gi},'eta_ecsa',true)">${etaText}</td>`;
+      }
+      case 'p6_bid': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_bid',true)"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>`;
+      case 'p6_offer': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_offer',true)"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>`;
+      case 'spread': {
+        if (spread == null) return `<td>—</td>`;
+        const cls = spread > 0 ? 'spread-pos' : spread < 0 ? 'spread-neg' : 'spread-zero';
+        return `<td><span class="td-spread ${cls}">${spread > 0 ? '+' : ''}${fmtNum(spread)}</span></td>`;
+      }
+      case 'fixed': return `<td class="td-fixed editable" onclick="startEdit(this,${gi},'fixed_price',true)">${v.fixed_price ? fmtNum(v.fixed_price) : '—'}</td>`;
+      case 'charterer': return `<td class="td-owner editable" onclick="startEdit(this,${gi},'charterer',false)">${v.charterer || '—'}</td>`;
+      case 'date_fixed': return `<td class="td-date editable" onclick="startEdit(this,${gi},'date_fixed',true)">${v.date_fixed ? fmtDate(v.date_fixed) : '—'}</td>`;
+      case 'last_updated': return `<td class="td-source">${fmtTimestamp(v.last_updated)}</td>`;
+      case 'notes': return `<td class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>`;
+      case 'status': return `<td><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>`;
+      case 'actions': return `<td><button class="btn-remove" onclick="removeVessel(${gi})">x</button></td>`;
+      default: return '<td>—</td>';
+    }
+  }
+
   for (const v of filtered) {
     const gi = vessels.indexOf(v);
     const laycan = getLaycanPeriod(v.eta_ecsa);
 
-    // Group header row — full width break between laycan periods
     if ((currentSort.key === 'eta_ecsa' || currentSort.key === 'laycan') && laycan !== lastLaycan) {
       const colorIdx = laycan ? (laycanColors[laycan] || '0') : '0';
       rows.push(`<tr class="group-header group-color-${colorIdx}"><td colspan="99">${laycan || 'NO ETA'}</td></tr>`);
@@ -607,59 +666,61 @@ function renderTable() {
     }
 
     const laycanClass = laycan ? 'laycan-' + laycan.toLowerCase().replace(/\s+/g, '-') : '';
-    const p6 = getP6Values(v);
-    const spread = getSpread(v);
 
-    const etaText = v.eta_ecsa
-      ? `${fmtDate(v.eta_ecsa)}${v.eta_ecsa_end ? '–' + fmtDate(v.eta_ecsa_end).split(' ')[0] : ''}${v.eta_type === 'ONW' ? ' <span class="onw-badge">ONW</span>' : ''}`
-      : '—';
+    // Build cells in column order
+    const cells = visCols.map(col => {
+      const html = cellHTML(col, v, gi);
+      // cellHTML returns full <td> for most, but laycan returns just inner HTML
+      if (col === 'laycan') return `<td>${html}</td>`;
+      return html;
+    }).join('');
 
-    const lcIdx = laycan ? (laycanColors[laycan] || '0') : null;
-    const laycanBadge = laycan ? `<span class="td-laycan laycan-color-${lcIdx}">${laycan}</span>` : '<span style="color:var(--text-dim)">—</span>';
-    const scrTag = v.scrubber === true ? '<span class="scrubber-yes">SCR</span>' : '<span class="scrubber-unk">—</span>';
-
-    let spreadCell = '—';
-    if (spread != null) {
-      const cls = spread > 0 ? 'spread-pos' : spread < 0 ? 'spread-neg' : 'spread-zero';
-      spreadCell = `<span class="td-spread ${cls}">${spread > 0 ? '+' : ''}${fmtNum(spread)}</span>`;
-    }
-
-    const warnDot = v.parse_warnings && v.parse_warnings.length > 0
-      ? `<span class="warn-dot" title="${v.parse_warnings.join('; ')}"></span>` : '';
-
-    const delivery = v.delivery_basis || v.current_position || '—';
-    const statusCls = (v.status || 'OPEN').replace(/\s+/g, '_');
-    const fixedCell = v.fixed_price ? `<span class="td-fixed">${fmtNum(v.fixed_price)}</span>` : '—';
-
-    // Notes: show raw offer line or manual notes, truncated
-    const notesText = v.notes || v.raw || '';
-    const notesTrunc = notesText.length > 40 ? notesText.substring(0, 40) + '...' : notesText;
-
-    const cv = (c) => visibleColumns.includes(c) ? '' : 'display:none';
-
-    rows.push(`<tr class="${laycanClass}">
-      <td style="${cv('laycan')}">${laycanBadge}</td>
-      <td style="${cv('vessel')}" class="td-vessel editable" onclick="startEdit(this,${gi},'vessel_name',true)">${v.vessel_name || '—'}${warnDot}</td>
-      <td style="${cv('owner')}" class="td-owner editable" onclick="startEdit(this,${gi},'owner',false)">${v.owner || '—'}</td>
-      <td style="${cv('specs')}" class="td-specs editable" onclick="startEditSpecs(this,${gi})">${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '—'} / ${v.build_year || '—'}</td>
-      <td style="${cv('scr')}" class="editable" onclick="startEdit(this,${gi},'scrubber',false)">${scrTag}</td>
-      <td style="${cv('delivery')}" class="td-port editable" onclick="startEdit(this,${gi},'delivery_basis',false)">${delivery}</td>
-      <td style="${cv('eta')}" class="td-eta editable" onclick="startEdit(this,${gi},'eta_ecsa',true)">${etaText}</td>
-      <td style="${cv('p6_bid')}" class="td-p6 editable" onclick="startEdit(this,${gi},'p6_bid',true)"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>
-      <td style="${cv('p6_offer')}" class="td-p6 editable" onclick="startEdit(this,${gi},'p6_offer',true)"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>
-      <td style="${cv('spread')}">${spreadCell}</td>
-      <td style="${cv('fixed')}" class="td-fixed editable" onclick="startEdit(this,${gi},'fixed_price',true)">${fixedCell}</td>
-      <td style="${cv('charterer')}" class="td-owner editable" onclick="startEdit(this,${gi},'charterer',false)">${v.charterer || '—'}</td>
-      <td style="${cv('date_fixed')}" class="td-date editable" onclick="startEdit(this,${gi},'date_fixed',true)">${v.date_fixed ? fmtDate(v.date_fixed) : '—'}</td>
-      <td style="${cv('last_updated')}" class="td-source">${fmtTimestamp(v.last_updated)}</td>
-      <td style="${cv('notes')}" class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>
-      <td style="${cv('status')}"><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>
-      <td style="${cv('actions')}"><button class="btn-remove" onclick="removeVessel(${gi})">x</button></td>
-    </tr>`);
+    rows.push(`<tr class="${laycanClass}">${cells}</tr>`);
   }
 
   tbody.innerHTML = rows.join('');
+
+  // Attach drag-and-drop to header cells
+  initHeaderDrag();
   updateStats();
+}
+
+// ─── Column Drag-and-Drop Reorder ────────────────────────────────────────────
+
+function initHeaderDrag() {
+  let dragCol = null;
+  document.querySelectorAll('#vesselHead th[draggable]').forEach(th => {
+    th.addEventListener('dragstart', e => {
+      dragCol = th.dataset.col;
+      th.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    th.addEventListener('dragend', () => {
+      th.classList.remove('dragging');
+      document.querySelectorAll('#vesselHead th').forEach(t => t.classList.remove('drag-over'));
+      dragCol = null;
+    });
+    th.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      th.classList.add('drag-over');
+    });
+    th.addEventListener('dragleave', () => th.classList.remove('drag-over'));
+    th.addEventListener('drop', e => {
+      e.preventDefault();
+      th.classList.remove('drag-over');
+      const targetCol = th.dataset.col;
+      if (!dragCol || dragCol === targetCol) return;
+      // Reorder columnOrder
+      const fromIdx = columnOrder.indexOf(dragCol);
+      const toIdx = columnOrder.indexOf(targetCol);
+      if (fromIdx === -1 || toIdx === -1) return;
+      columnOrder.splice(fromIdx, 1);
+      columnOrder.splice(toIdx, 0, dragCol);
+      saveColumns();
+      renderTable();
+    });
+  });
 }
 
 // ─── Draggable Divider ───────────────────────────────────────────────────────
