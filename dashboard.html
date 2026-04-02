@@ -154,6 +154,12 @@
 
   .btn-remove{background:none;border:1px solid var(--border);color:var(--text-dim);padding:4px 10px;font-size:11px;border-radius:var(--radius-sm)}
   .btn-remove:hover{border-color:var(--red);color:var(--red);background:var(--red-light)}
+
+  /* Column drag-and-drop */
+  thead th{cursor:grab}
+  thead th:active{cursor:grabbing}
+  thead th.drag-over{border-left:3px solid var(--accent)!important}
+  thead th.dragging{opacity:.4}
 </style>
 </head>
 <body>
@@ -224,27 +230,7 @@ BOD ABT 1250/240
   <main class="panel-board">
     <div class="table-wrapper">
       <table id="vesselTable">
-        <thead>
-          <tr>
-            <th onclick="sortBy('laycan')">Laycan</th>
-            <th onclick="sortBy('vessel_name')">Vessel</th>
-            <th onclick="sortBy('owner')">Owner</th>
-            <th onclick="sortBy('dwt')">DWT / Built</th>
-            <th>SCR</th>
-            <th onclick="sortBy('delivery_basis')">Delivery</th>
-            <th onclick="sortBy('eta_ecsa')">ETA ECSA</th>
-            <th class="col-p6" onclick="sortBy('p6_bid')">P6 Bid</th>
-            <th class="col-p6" onclick="sortBy('p6_offer')">P6 Offer</th>
-            <th onclick="sortBy('spread')">Spread</th>
-            <th class="col-fixed" onclick="sortBy('fixed_price')">Fixed</th>
-            <th onclick="sortBy('charterer')">Charterer</th>
-            <th onclick="sortBy('date_fixed')">Date Fixed</th>
-            <th onclick="sortBy('last_updated')">Updated</th>
-            <th>Notes</th>
-            <th onclick="sortBy('status')">Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
+        <thead id="vesselHead"><tr></tr></thead>
         <tbody id="vesselBody"></tbody>
       </table>
       <div id="emptyState" class="empty-state">
