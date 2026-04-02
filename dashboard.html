@@ -46,7 +46,11 @@
   .search-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(22,101,52,.08)}
   .spacer{flex:1}
 
-  .layout{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 220px)}
+  .layout{display:grid;grid-template-columns:var(--inbox-width, 380px) 6px 1fr;height:calc(100vh - 220px)}
+  .divider{background:var(--border);cursor:col-resize;position:relative;transition:background .15s}
+  .divider:hover,.divider.dragging{background:var(--accent)}
+  .divider::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:32px;background:var(--border2);border-radius:1px}
+  .divider:hover::after,.divider.dragging::after{background:#fff}
   .panel-inbox{background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column}
   .panel-title{padding:16px 20px;font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
   .panel-title .dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
@@ -215,6 +219,8 @@ BOD ABT 1250/240
     </div>
   </aside>
 
+  <div class="divider" id="divider"></div>
+
   <main class="panel-board">
     <div class="table-wrapper">
       <table id="vesselTable">
@@ -233,6 +239,7 @@ BOD ABT 1250/240
             <th class="col-fixed" onclick="sortBy('fixed_price')">Fixed</th>
             <th onclick="sortBy('charterer')">Charterer</th>
             <th onclick="sortBy('date_fixed')">Date Fixed</th>
+            <th onclick="sortBy('last_updated')">Updated</th>
             <th>Notes</th>
             <th onclick="sortBy('status')">Status</th>
             <th>Actions</th>
