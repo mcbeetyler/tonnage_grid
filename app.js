@@ -5,11 +5,12 @@ let activeFilters = new Set(['ALL']); // multi-select status filters
 let currentSort = { key: 'eta_ecsa', dir: 'asc' };
 
 // Column visibility — stored in localStorage
-const ALL_COLUMNS = ['laycan','vessel','owner','specs','scr','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','notes','status','actions'];
-const DEFAULT_VISIBLE = ['laycan','vessel','owner','specs','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','notes','status','actions'];
+const ALL_COLUMNS = ['laycan','vessel','owner','specs','scr','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
+const DEFAULT_VISIBLE = ['laycan','vessel','owner','specs','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
 let visibleColumns = JSON.parse(localStorage.getItem('pt_columns') || 'null') || DEFAULT_VISIBLE;
 
 function save() { localStorage.setItem('pt_vessels', JSON.stringify(vessels)); }
+function touchVessel(idx) { vessels[idx].last_updated = new Date().toISOString(); }
 function saveColumns() { localStorage.setItem('pt_columns', JSON.stringify(visibleColumns)); }
 
 // ─── Formatting ──────────────────────────────────────────────────────────────
@@ -24,6 +25,16 @@ function fmtDate(iso) {
 function fmtNum(n) {
   if (n == null) return '';
   return n.toLocaleString();
+}
+
+function fmtTimestamp(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const day = d.getDate();
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const h = d.getHours().toString().padStart(2,'0');
+  const m = d.getMinutes().toString().padStart(2,'0');
+  return `${day} ${months[d.getMonth()]} ${h}:${m}`;
 }
 
 function getP6Values(v) {
@@ -68,6 +79,8 @@ function startEdit(el, vesselIdx, field, isMono) {
 function applyEdit(idx, field, val) {
   const v = vessels[idx];
   if (!v) return;
+  // Timestamp on bid/offer/fixed price changes
+  if (['p6_bid','p6_offer','fixed_price'].includes(field)) touchVessel(idx);
 
   switch (field) {
     case 'vessel_name': v.vessel_name = val || null; break;
@@ -444,7 +457,7 @@ function toggleColumn(col) {
 }
 
 function renderColumnMenu() {
-  const labels = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',specs:'DWT/Built',scr:'SCR',delivery:'Delivery',eta:'ETA',p6_bid:'P6 Bid',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',date_fixed:'Date Fixed',notes:'Notes',status:'Status',actions:'Actions'};
+  const labels = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',specs:'DWT/Built',scr:'SCR',delivery:'Delivery',eta:'ETA',p6_bid:'P6 Bid',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',date_fixed:'Date Fixed',last_updated:'Updated',notes:'Notes',status:'Status',actions:'Actions'};
   const menu = document.getElementById('columnMenu');
   menu.innerHTML = ALL_COLUMNS.map(c =>
     `<label style="display:block;padding:3px 0;cursor:pointer;font-size:11px"><input type="checkbox" ${visibleColumns.includes(c)?'checked':''} onchange="toggleColumn('${c}')" style="margin-right:6px">${labels[c]}</label>`
@@ -474,6 +487,7 @@ function getSortValue(v, key) {
     case 'spread': return getSpread(v) || 0;
     case 'fixed_price': return v.fixed_price || 0;
     case 'date_fixed': return v.date_fixed || '9999-99-99';
+    case 'last_updated': return v.last_updated || '';
     case 'dwt': return v.dwt || 0;
     case 'vessel_name': return (v.vessel_name || '').toUpperCase();
     case 'owner': return (v.owner || '').toUpperCase();
@@ -491,6 +505,7 @@ function cycleStatus(idx) {
   const cur = vessels[idx].status || 'OPEN';
   const next = states[(states.indexOf(cur) + 1) % states.length];
   vessels[idx].status = next;
+  touchVessel(idx);
 
   // Prompt for fixed price, charterer, and auto-set date when moving to ON SUBS
   if (next === 'ON SUBS' && !vessels[idx].fixed_price) {
@@ -564,7 +579,7 @@ function renderTable() {
   document.getElementById('vesselTable').style.display = filtered.length === 0 ? 'none' : '';
 
   // Update header visibility
-  const thCols = ['laycan','vessel','owner','specs','scr','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','notes','status','actions'];
+  const thCols = ['laycan','vessel','owner','specs','scr','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
   document.querySelectorAll('#vesselTable thead th').forEach((th, i) => {
     th.style.display = visibleColumns.includes(thCols[i]) ? '' : 'none';
   });
@@ -636,6 +651,7 @@ function renderTable() {
       <td style="${cv('fixed')}" class="td-fixed editable" onclick="startEdit(this,${gi},'fixed_price',true)">${fixedCell}</td>
       <td style="${cv('charterer')}" class="td-owner editable" onclick="startEdit(this,${gi},'charterer',false)">${v.charterer || '—'}</td>
       <td style="${cv('date_fixed')}" class="td-date editable" onclick="startEdit(this,${gi},'date_fixed',true)">${v.date_fixed ? fmtDate(v.date_fixed) : '—'}</td>
+      <td style="${cv('last_updated')}" class="td-source">${fmtTimestamp(v.last_updated)}</td>
       <td style="${cv('notes')}" class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>
       <td style="${cv('status')}"><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>
       <td style="${cv('actions')}"><button class="btn-remove" onclick="removeVessel(${gi})">x</button></td>
@@ -645,6 +661,40 @@ function renderTable() {
   tbody.innerHTML = rows.join('');
   updateStats();
 }
+
+// ─── Draggable Divider ───────────────────────────────────────────────────────
+
+(function initDivider() {
+  const divider = document.getElementById('divider');
+  const layout = document.querySelector('.layout');
+  if (!divider || !layout) return;
+
+  let dragging = false;
+
+  divider.addEventListener('mousedown', (e) => {
+    dragging = true;
+    divider.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const rect = layout.getBoundingClientRect();
+    let w = e.clientX - rect.left;
+    w = Math.max(240, Math.min(w, rect.width - 300));
+    layout.style.setProperty('--inbox-width', w + 'px');
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    divider.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 renderTable();
