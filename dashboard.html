@@ -154,6 +154,22 @@
   .btn-remove{background:none;border:1px solid var(--border);color:var(--text-dim);padding:4px 10px;font-size:11px;border-radius:var(--radius-sm)}
   .btn-remove:hover{border-color:var(--red);color:var(--red);background:var(--red-light)}
 
+  /* Mode toggle */
+  .mode-toggle{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-left:auto}
+  .mode-btn{background:none;border:none;padding:4px 12px;font-size:11px;font-weight:500;color:var(--text-dim);cursor:pointer;border-radius:0;transition:all .15s}
+  .mode-btn.active{background:var(--accent);color:#fff}
+
+  /* Manual entry form */
+  .manual-form{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:2px}
+  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .form-row.full{grid-template-columns:1fr}
+  .form-group{display:flex;flex-direction:column;gap:3px}
+  .form-label{font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px}
+  .form-input{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:12px;padding:6px 10px;outline:none;width:100%}
+  .form-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(24,95,165,.1)}
+  .form-select{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:12px;padding:6px 10px;outline:none;width:100%;cursor:pointer}
+  .form-select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(24,95,165,.1)}
+
   /* Column drag-and-drop */
   thead th{cursor:grab}
   thead th:active{cursor:grabbing}
@@ -201,8 +217,17 @@
 
 <div class="layout">
   <aside class="panel-inbox">
-    <div class="panel-title"><span class="dot"></span>WhatsApp Inbox</div>
-    <div class="inbox-area">
+    <div class="panel-title">
+      <span class="dot"></span>
+      <span id="panelTitleText">WhatsApp Inbox</span>
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="modeParseBtn" onclick="setMode('parse')">Parse</button>
+        <button class="mode-btn" id="modeManualBtn" onclick="setMode('manual')">Manual</button>
+      </div>
+    </div>
+
+    <!-- Parse mode -->
+    <div class="inbox-area" id="parsePanel">
       <textarea id="rawInput" placeholder="Paste WhatsApp tonnage messages here.
 
 Example:
@@ -220,6 +245,115 @@ BOD ABT 1250/240
         <input type="password" class="search-input" id="apiKeyInput" placeholder="Anthropic API Key" style="flex:1;font-size:10px" onchange="saveApiKey(this.value)">
         <button class="btn-secondary" style="padding:5px 10px;font-size:10px" onclick="toggleKeyVisibility()">Show</button>
         <button class="btn-secondary" style="padding:5px 10px;font-size:10px" onclick="handleParseRegex()">Regex</button>
+      </div>
+    </div>
+
+    <!-- Manual entry mode -->
+    <div class="inbox-area" id="manualPanel" style="display:none">
+      <div class="manual-form" id="manualForm">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Vessel Name</label>
+            <input class="form-input" id="mf_vessel_name" placeholder="SAKIZAYA MIRACLE">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Owner</label>
+            <input class="form-input" id="mf_owner" placeholder="QUADRA">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">DWT (K)</label>
+            <input class="form-input" id="mf_dwt" placeholder="81" type="number">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Built</label>
+            <input class="form-input" id="mf_build_year" placeholder="2017" type="number">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Position / Port</label>
+            <input class="form-input" id="mf_current_position" placeholder="GOA">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Delivery Basis</label>
+            <input class="form-input" id="mf_delivery_basis" placeholder="APS ECSA">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Open Date</label>
+            <input class="form-input" id="mf_open_date" type="date">
+          </div>
+          <div class="form-group">
+            <label class="form-label">ETA ECSA</label>
+            <input class="form-input" id="mf_eta_ecsa" type="date">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">ETA Type</label>
+            <select class="form-select" id="mf_eta_type">
+              <option value="EXACT">Exact</option>
+              <option value="ONW">ONW</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Scrubber</label>
+            <select class="form-select" id="mf_scrubber">
+              <option value="">Unknown</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">P6 Bid</label>
+            <input class="form-input" id="mf_p6_bid" placeholder="16700" type="number">
+          </div>
+          <div class="form-group">
+            <label class="form-label">P6 Offer</label>
+            <input class="form-input" id="mf_p6_offer" placeholder="18000" type="number">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Route</label>
+            <select class="form-select" id="mf_route">
+              <option value="ECSA FH">ECSA FH</option>
+              <option value="ECSA TA">ECSA TA</option>
+              <option value="USG FH">USG FH</option>
+              <option value="USG TA">USG TA</option>
+              <option value="NCSA FH">NCSA FH</option>
+              <option value="USEC TA">USEC TA</option>
+              <option value="WAFR">WAFR</option>
+              <option value="BSEA">BSEA</option>
+              <option value="MED">MED</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select class="form-select" id="mf_status">
+              <option value="OPEN">Open</option>
+              <option value="ON SUBS">On Subs</option>
+              <option value="FIXED">Fixed</option>
+              <option value="FAILED">Failed</option>
+              <option value="WITHDRAWN">Withdrawn</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row full">
+          <div class="form-group">
+            <label class="form-label">Notes</label>
+            <input class="form-input" id="mf_notes" placeholder="Rate/offer details, cargo notes...">
+          </div>
+        </div>
+      </div>
+      <div class="inbox-controls" style="margin-top:8px">
+        <button class="btn-primary" onclick="handleManualAdd()">Add to Board</button>
+        <button class="btn-secondary" onclick="handleManualClear()">Clear</button>
       </div>
     </div>
   </aside>

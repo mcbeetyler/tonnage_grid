@@ -172,6 +172,87 @@ function applyEdit(idx, field, val) {
   save();
 }
 
+// ─── Mode Toggle ─────────────────────────────────────────────────────────────
+
+function setMode(mode) {
+  const isManual = mode === 'manual';
+  document.getElementById('parsePanel').style.display = isManual ? 'none' : 'flex';
+  document.getElementById('manualPanel').style.display = isManual ? 'flex' : 'none';
+  document.getElementById('modeParseBtn').classList.toggle('active', !isManual);
+  document.getElementById('modeManualBtn').classList.toggle('active', isManual);
+  document.getElementById('panelTitleText').textContent = isManual ? 'Manual Entry' : 'WhatsApp Inbox';
+}
+
+// ─── Manual Entry ─────────────────────────────────────────────────────────────
+
+function handleManualAdd() {
+  const g = id => document.getElementById(id).value.trim();
+
+  const dwtRaw = parseFloat(g('mf_dwt'));
+  const dwt = isNaN(dwtRaw) ? null : (dwtRaw < 1000 ? dwtRaw * 1000 : dwtRaw);
+
+  const p6Bid = g('mf_p6_bid') ? parseFloat(g('mf_p6_bid')) : null;
+  const p6Offer = g('mf_p6_offer') ? parseFloat(g('mf_p6_offer')) : null;
+  const scrubberVal = g('mf_scrubber');
+
+  const vessel = {
+    vessel_name: g('mf_vessel_name') || null,
+    owner: g('mf_owner') || null,
+    source: g('mf_owner') || null,
+    dwt,
+    build_year: g('mf_build_year') ? parseInt(g('mf_build_year'), 10) : null,
+    scrubber: scrubberVal === 'yes' ? true : scrubberVal === 'no' ? false : null,
+    current_position: g('mf_current_position') || null,
+    delivery_basis: g('mf_delivery_basis') || null,
+    open_date: g('mf_open_date') || null,
+    eta_ecsa: g('mf_eta_ecsa') || null,
+    eta_ecsa_end: null,
+    eta_type: g('mf_eta_type') || 'EXACT',
+    market_colour: (p6Bid || p6Offer) ? [{
+      route: g('mf_route') || 'ECSA FH',
+      p6_bid: p6Bid,
+      p6_offer: p6Offer,
+      bid_usd: null,
+      offer_usd: null,
+    }] : [],
+    status: g('mf_status') || 'OPEN',
+    notes: g('mf_notes') || null,
+    raw: null,
+    parsed_at: new Date().toISOString(),
+    last_updated: new Date().toISOString(),
+    parse_warnings: [],
+  };
+
+  if (!vessel.vessel_name) {
+    alert('Vessel name is required.');
+    return;
+  }
+
+  const existIdx = vessels.findIndex(v =>
+    v.vessel_name && vessel.vessel_name &&
+    v.vessel_name.toUpperCase() === vessel.vessel_name.toUpperCase()
+  );
+  if (existIdx !== -1) {
+    vessels[existIdx] = { ...vessels[existIdx], ...vessel };
+  } else {
+    vessels.push(vessel);
+  }
+
+  save(); renderTable(); updateStats();
+  handleManualClear();
+  setMode('parse');
+}
+
+function handleManualClear() {
+  ['mf_vessel_name','mf_owner','mf_dwt','mf_build_year','mf_current_position',
+   'mf_delivery_basis','mf_open_date','mf_eta_ecsa','mf_p6_bid','mf_p6_offer','mf_notes']
+    .forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('mf_eta_type').value = 'EXACT';
+  document.getElementById('mf_scrubber').value = '';
+  document.getElementById('mf_route').value = 'ECSA FH';
+  document.getElementById('mf_status').value = 'OPEN';
+}
+
 // ─── API Key Management ──────────────────────────────────────────────────────
 
 function saveApiKey(key) {
