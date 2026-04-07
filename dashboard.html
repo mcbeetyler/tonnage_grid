@@ -7,10 +7,10 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
   :root {
-    --bg:#FAFAFA;--bg2:#FFFFFF;--bg3:#F5F5F4;--bg-hover:#F0EFED;
-    --border:#E7E5E4;--border2:#D6D3D1;
-    --text:#1C1917;--text-dim:#78716C;--text-bright:#0C0A09;
-    --accent:#166534;--accent-light:#F0FDF4;--accent-hover:#14532D;
+    --bg:#F8FAFC;--bg2:#FFFFFF;--bg3:#F1F5F9;--bg-hover:#E8F0F9;
+    --border:#E2E8F0;--border2:#CBD5E1;
+    --text:#0F172A;--text-dim:#64748B;--text-bright:#020617;
+    --accent:#1E3A5F;--accent-light:#EFF4FF;--accent-hover:#152B47;
     --green:#166534;--green-light:#F0FDF4;--green-border:#BBF7D0;
     --amber:#92400E;--amber-light:#FFFBEB;--amber-border:#FDE68A;
     --red:#991B1B;--red-light:#FEF2F2;--red-border:#FECACA;
@@ -41,9 +41,9 @@
   .controls-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
   .toolbar-label{font-size:12px;color:var(--text-dim);font-weight:500}
   .date-input{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:12px;padding:7px 12px;outline:none;width:140px}
-  .date-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(22,101,52,.08)}
+  .date-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(30,58,95,.1)}
   .search-input{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;padding:7px 14px;outline:none;width:220px}
-  .search-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(22,101,52,.08)}
+  .search-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(30,58,95,.1)}
   .spacer{flex:1}
 
   .layout{display:grid;grid-template-columns:var(--inbox-width, 380px) 6px 1fr;height:calc(100vh - 220px)}
@@ -53,11 +53,11 @@
   .divider:hover::after,.divider.dragging::after{background:#fff}
   .panel-inbox{background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column}
   .panel-title{padding:16px 20px;font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
-  .panel-title .dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
+  .panel-title .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
   .inbox-area{flex:1;display:flex;flex-direction:column;padding:16px;gap:12px;overflow:hidden}
 
   textarea#rawInput{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:11px;line-height:1.8;padding:14px;resize:none;outline:none;transition:border-color .2s,box-shadow .2s}
-  textarea#rawInput:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(22,101,52,.08)}
+  textarea#rawInput:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(30,58,95,.1)}
   textarea#rawInput::placeholder{color:var(--text-dim)}
   .inbox-controls{display:flex;gap:8px}
 
@@ -65,8 +65,8 @@
   .btn-primary{background:var(--accent);color:#fff;flex:1}
   .btn-primary:hover{background:var(--accent-hover)}
   .btn-primary:disabled{opacity:.4;cursor:not-allowed}
-  .btn-add{background:var(--teal);color:#fff;flex:1}
-  .btn-add:hover{background:#0D4F49}
+  .btn-add{background:#1565C0;color:#fff;flex:1}
+  .btn-add:hover{background:#0E4FA3}
   .btn-add:disabled{opacity:.4;cursor:not-allowed}
   .btn-secondary{background:var(--bg2);color:var(--text-dim);border:1px solid var(--border)}
   .btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
@@ -81,7 +81,7 @@
   table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
   thead th{background:var(--bg3);padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--text-dim);letter-spacing:.3px;border-bottom:1px solid var(--border2);white-space:nowrap;position:sticky;top:0;z-index:2;cursor:pointer;user-select:none;transition:color .1s}
   thead th:hover{color:var(--accent)}
-  thead th.col-p6{color:var(--green)}
+  thead th.col-p6{color:var(--accent)}
   thead th.col-fixed{color:var(--amber)}
   tbody tr{transition:background .1s}
   tbody tr:hover{background:var(--bg-hover)}
@@ -143,8 +143,8 @@
   .warn-dot{display:inline-block;width:6px;height:6px;background:var(--amber);border-radius:50%;margin-left:5px;vertical-align:middle}
 
   .editable{cursor:text;border-radius:3px;padding:2px 4px;margin:-2px -4px;transition:background .12s}
-  .editable:hover{background:rgba(22,101,52,.06)}
-  .edit-input{font-family:inherit;font-size:inherit;font-weight:inherit;color:inherit;background:var(--bg2);border:2px solid var(--accent);border-radius:4px;padding:3px 8px;outline:none;box-shadow:0 0 0 3px rgba(22,101,52,.08);width:100%;min-width:50px}
+  .editable:hover{background:rgba(30,58,95,.06)}
+  .edit-input{font-family:inherit;font-size:inherit;font-weight:inherit;color:inherit;background:var(--bg2);border:2px solid var(--accent);border-radius:4px;padding:3px 8px;outline:none;box-shadow:0 0 0 3px rgba(30,58,95,.1);width:100%;min-width:50px}
   .edit-input.mono{font-family:var(--mono)}
 
   ::-webkit-scrollbar{width:6px;height:6px}
