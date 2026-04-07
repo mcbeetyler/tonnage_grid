@@ -1,5 +1,5 @@
 // ─── App State ────────────────────────────────────────────────────────────────
-let vessels = JSON.parse(localStorage.getItem('pt_vessels') || '[]');
+let vessels = []; // loaded async from API on init
 let pendingParsed = null;
 let activeFilters = new Set(['ALL']); // multi-select status filters
 let currentSort = { key: 'eta_ecsa', dir: 'asc' };
@@ -20,7 +20,20 @@ if (oldVisible && !localStorage.getItem('pt_col_order')) {
   saveColumns();
 }
 
-function save() { localStorage.setItem('pt_vessels', JSON.stringify(vessels)); }
+let _saveTimer = null;
+function save() {
+  // Keep localStorage in sync as a fast local cache / offline fallback
+  localStorage.setItem('pt_vessels', JSON.stringify(vessels));
+  // Debounce API writes so rapid inline edits don't hammer the server
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    fetch('/api/vessels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(vessels),
+    }).catch(() => {}); // silent — localStorage is the fallback
+  }, 500);
+}
 function touchVessel(idx) { vessels[idx].last_updated = new Date().toISOString(); }
 function saveColumns() {
   localStorage.setItem('pt_col_order', JSON.stringify(columnOrder));
@@ -758,6 +771,22 @@ function initHeaderDrag() {
 })();
 
 // ─── Init ────────────────────────────────────────────────────────────────────
-renderTable();
-updateStats();
-renderColumnMenu();
+async function init() {
+  try {
+    const resp = await fetch('/api/vessels');
+    if (resp.ok) {
+      vessels = await resp.json();
+      localStorage.setItem('pt_vessels', JSON.stringify(vessels)); // refresh cache
+    } else {
+      // API not available (e.g. standalone mode) — fall back to localStorage
+      vessels = JSON.parse(localStorage.getItem('pt_vessels') || '[]');
+    }
+  } catch (e) {
+    // Offline or standalone — fall back to localStorage
+    vessels = JSON.parse(localStorage.getItem('pt_vessels') || '[]');
+  }
+  renderTable();
+  updateStats();
+  renderColumnMenu();
+}
+init();
