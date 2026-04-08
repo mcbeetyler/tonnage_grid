@@ -175,10 +175,46 @@
   thead th:active{cursor:grabbing}
   thead th.drag-over{border-left:3px solid var(--accent)!important}
   thead th.dragging{opacity:.4}
+
+  /* Tab system */
+  .tab-bar{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0;background:var(--bg2);padding:0 28px}
+  .tab-btn{padding:12px 24px;font-size:13px;font-weight:600;color:var(--text-dim);background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;transition:all .15s;letter-spacing:.2px}
+  .tab-btn:hover{color:var(--text)}
+  .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .tab-panel{display:none}
+  .tab-panel.active{display:block}
+
+  /* Cargo book styles */
+  .cargo-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:20px 28px 16px}
+  .cargo-stats{display:flex;gap:12px;margin-bottom:16px}
+  .cargo-filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .cargo-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .cargo-chart-wrap{padding:0 28px;height:340px;margin-bottom:16px}
+  .cargo-legend{display:flex;flex-wrap:wrap;gap:12px;padding:0 28px;margin-bottom:12px;align-items:center}
+  .legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-dim)}
+  .legend-dot{width:10px;height:10px;border-radius:2px}
+  .legend-line{width:16px;height:2px;background:#E24B4A;border-radius:1px}
+  .cargo-table-wrap{overflow:auto;padding:0 28px 20px}
+  .cargo-table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+  .cargo-table thead th{background:var(--bg3);padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--text-dim);letter-spacing:.3px;border-bottom:1px solid var(--border2);white-space:nowrap;position:sticky;top:0}
+  .cargo-table tbody tr{transition:background .1s}
+  .cargo-table tbody tr:hover{background:var(--bg-hover)}
+  .cargo-table tbody td{padding:8px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+  .badge-fresh{background:var(--green-light);color:var(--green);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
+  .badge-fixed{background:var(--amber-light);color:var(--amber);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
+  .cargo-paste-area{padding:20px 28px}
+  .cargo-paste-area textarea{width:100%;height:200px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-family:var(--mono);font-size:11px;line-height:1.6;padding:14px;resize:vertical;outline:none}
+  .cargo-paste-area textarea:focus{border-color:var(--accent)}
 </style>
 </head>
 <body>
 
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('tonnage')">Tonnage Board</button>
+  <button class="tab-btn" onclick="switchTab('cargo')">Cargo Book</button>
+</div>
+
+<div id="tab-tonnage" class="tab-panel active">
 <header class="header">
   <div class="header-top">
     <div>
@@ -372,8 +408,50 @@ BOD ABT 1250/240
     </div>
   </main>
 </div>
+</div><!-- end tab-tonnage -->
 
+<div id="tab-cargo" class="tab-panel">
+  <div class="cargo-header">
+    <div class="cargo-stats" id="cargoStats"></div>
+    <div class="cargo-filters" id="cargoStemFilters"></div>
+    <div class="cargo-controls">
+      <select class="form-select" id="cargoStatusFilter" onchange="renderCargo()" style="width:150px">
+        <option value="all">All status</option>
+        <option value="fresh">Fresh only</option>
+        <option value="fixed">Fixed only</option>
+      </select>
+      <select class="form-select" id="cargoTypeFilter" onchange="renderCargo()" style="width:150px">
+        <option value="all">All cargo types</option>
+        <option value="grain">Grain</option>
+        <option value="coal">Coal</option>
+        <option value="ore">Ore</option>
+        <option value="other">Other</option>
+      </select>
+      <div class="spacer"></div>
+    </div>
+  </div>
+  <div class="cargo-legend" id="cargoLegend"></div>
+  <div class="cargo-chart-wrap"><canvas id="cargoChart"></canvas></div>
+  <div class="cargo-paste-area">
+    <textarea id="cargoInput" placeholder="Paste cargo book data here (tab-separated from spreadsheet)..."></textarea>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn-primary" onclick="parseCargoPaste()">Parse Cargo Data</button>
+      <button class="btn-secondary" onclick="clearCargo()">Clear</button>
+    </div>
+  </div>
+  <div class="cargo-table-wrap">
+    <table class="cargo-table">
+      <thead><tr>
+        <th>Charterer</th><th>Stem</th><th>Cargo</th><th>Route</th><th>Laycan</th><th>Slot</th><th>Size</th><th>Updated</th><th>Status</th>
+      </tr></thead>
+      <tbody id="cargoBody"></tbody>
+    </table>
+  </div>
+</div><!-- end tab-cargo -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="parser.js"></script>
 <script src="app.js"></script>
+<script src="cargo.js"></script>
 </body>
 </html>
