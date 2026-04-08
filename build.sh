@@ -4,8 +4,8 @@
 
 cd "$(dirname "$0")"
 
-# Extract everything before the script tags
-head_end=$(grep -n '<script src="parser.js">' dashboard.html | cut -d: -f1)
+# Extract everything before the first <script src= tag
+head_end=$(grep -n '<script src=' dashboard.html | head -1 | cut -d: -f1)
 head_end=$((head_end - 1))
 head -n "$head_end" dashboard.html > dashboard-standalone.html
 
@@ -33,6 +33,13 @@ sed '/Fallback/d' \
 >> dashboard-standalone.html
 
 echo '</script>' >> dashboard-standalone.html
+
+# Inline cargo.js
+echo '<script>' >> dashboard-standalone.html
+cat cargo.js >> dashboard-standalone.html
+echo '' >> dashboard-standalone.html
+echo '</script>' >> dashboard-standalone.html
+
 echo '</body>' >> dashboard-standalone.html
 echo '</html>' >> dashboard-standalone.html
 
