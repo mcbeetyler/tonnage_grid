@@ -309,12 +309,22 @@ function setCargoStem(stem) {
   renderCargo();
 }
 
+function toggleCargoPaste() {
+  const body = document.getElementById('cargoPasteBody');
+  const arrow = document.getElementById('cargoPasteArrow');
+  body.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+
 function parseCargoPaste() {
   const text = document.getElementById('cargoInput').value.trim();
   if (!text) return;
   cargoData = parseCargoData(text);
   saveCargo();
   renderCargo();
+  // Collapse the paste area after parsing
+  document.getElementById('cargoPasteBody').classList.remove('open');
+  document.getElementById('cargoPasteArrow').classList.remove('open');
 }
 
 function clearCargo() {

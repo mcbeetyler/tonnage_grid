@@ -202,9 +202,15 @@
   .cargo-table tbody td{padding:8px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
   .badge-fresh{background:var(--green-light);color:var(--green);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
   .badge-fixed{background:var(--amber-light);color:var(--amber);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
-  .cargo-paste-area{padding:20px 28px}
-  .cargo-paste-area textarea{width:100%;height:200px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-family:var(--mono);font-size:11px;line-height:1.6;padding:14px;resize:vertical;outline:none}
-  .cargo-paste-area textarea:focus{border-color:var(--accent)}
+  .cargo-paste-area{padding:0 28px;margin-bottom:8px}
+  .cargo-paste-toggle{display:flex;align-items:center;gap:8px;padding:8px 0;cursor:pointer;font-size:12px;font-weight:500;color:var(--text-dim)}
+  .cargo-paste-toggle:hover{color:var(--accent)}
+  .cargo-paste-toggle .arrow{transition:transform .2s;font-size:10px}
+  .cargo-paste-toggle .arrow.open{transform:rotate(90deg)}
+  .cargo-paste-body{display:none;padding-bottom:8px}
+  .cargo-paste-body.open{display:block}
+  .cargo-paste-body textarea{width:100%;height:120px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-family:var(--mono);font-size:10px;line-height:1.5;padding:10px;resize:vertical;outline:none}
+  .cargo-paste-body textarea:focus{border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -430,15 +436,21 @@ BOD ABT 1250/240
       <div class="spacer"></div>
     </div>
   </div>
-  <div class="cargo-legend" id="cargoLegend"></div>
-  <div class="cargo-chart-wrap"><canvas id="cargoChart"></canvas></div>
   <div class="cargo-paste-area">
-    <textarea id="cargoInput" placeholder="Paste cargo book data here (tab-separated from spreadsheet)..."></textarea>
-    <div style="display:flex;gap:8px;margin-top:8px">
-      <button class="btn-primary" onclick="parseCargoPaste()">Parse Cargo Data</button>
-      <button class="btn-secondary" onclick="clearCargo()">Clear</button>
+    <div class="cargo-paste-toggle" onclick="toggleCargoPaste()">
+      <span class="arrow" id="cargoPasteArrow">&#9654;</span>
+      Paste cargo data
+    </div>
+    <div class="cargo-paste-body" id="cargoPasteBody">
+      <textarea id="cargoInput" placeholder="Paste tab-separated cargo book data from spreadsheet..."></textarea>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button class="btn-primary" style="flex:0;padding:6px 16px;font-size:11px" onclick="parseCargoPaste()">Parse</button>
+        <button class="btn-secondary" style="padding:6px 12px;font-size:11px" onclick="clearCargo()">Clear</button>
+      </div>
     </div>
   </div>
+  <div class="cargo-legend" id="cargoLegend"></div>
+  <div class="cargo-chart-wrap"><canvas id="cargoChart"></canvas></div>
   <div class="cargo-table-wrap">
     <table class="cargo-table">
       <thead><tr>
@@ -3047,12 +3059,22 @@ function setCargoStem(stem) {
   renderCargo();
 }
 
+function toggleCargoPaste() {
+  const body = document.getElementById('cargoPasteBody');
+  const arrow = document.getElementById('cargoPasteArrow');
+  body.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+
 function parseCargoPaste() {
   const text = document.getElementById('cargoInput').value.trim();
   if (!text) return;
   cargoData = parseCargoData(text);
   saveCargo();
   renderCargo();
+  // Collapse the paste area after parsing
+  document.getElementById('cargoPasteBody').classList.remove('open');
+  document.getElementById('cargoPasteArrow').classList.remove('open');
 }
 
 function clearCargo() {
