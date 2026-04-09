@@ -2860,7 +2860,21 @@ async function loadCargoFromServer() {
       localStorage.setItem('pt_cargo_current', JSON.stringify(cargoCurrent));
     }
   } catch (e) { /* use localStorage fallback */ }
+  backfillEnteredMarket();
   renderCargo();
+}
+
+// Backfill entered_market for old history records that don't have it
+function backfillEnteredMarket() {
+  let changed = false;
+  cargoHistory.forEach(c => {
+    if (!c.entered_market) {
+      const parsed = parseUpdatedDate(c.updated);
+      c.entered_market = parsed || c.first_seen || null;
+      if (c.entered_market) changed = true;
+    }
+  });
+  if (changed) saveCargo();
 }
 
 // ─── Slot Colors ─────────────────────────────────────────────────────────────
@@ -2922,21 +2936,52 @@ function slotSortKey(slot) {
 
 // ─── Cargo Parser ────────────────────────────────────────────────────────────
 
-// Expected column layout from Google Sheet (0-indexed):
-// 0: charterer  1: size  2: load  3: disch  4: cargo  5: laycan
-// 6: com  7: updated  8: comment  9: FRESH  10: FIXED  11: USER
-const EXPECTED_COL_HEADERS = ['charterer','size','load','disch','cargo','laycan','com','updated','comment','fresh','fixed','user'];
+// The Google Sheet uses these columns (0-indexed, from the actual sheet):
+// 0: charterer  1: size  2: age  3: delivery (load)  4: redelivery (disch)
+// 5: cargo  6: laycan  7: com  8: updated  9: comment  10: FRESH  11: FIXED  12: user
+const EXPECTED_COL_HEADERS = ['charterer','size','age','delivery','redelivery','load','disch','cargo','laycan','com','updated','comment','fresh','fixed','user'];
+
+// Normalized key → canonical cargo field name
+const HEADER_TO_FIELD = {
+  'charterer': 'charterer',
+  'size': 'size',
+  'age': 'age',
+  'delivery': 'load',      // "Delivery" in sheet = load area
+  'redelivery': 'disch',   // "Redelivery" in sheet = discharge area
+  'load': 'load',
+  'disch': 'disch',
+  'cargo': 'cargo',
+  'laycan': 'laycan',
+  'com': 'com',
+  'updated': 'updated',
+  'comment': 'comment',
+  'fresh': 'fresh',
+  'fixed': 'fixed',
+  'user': 'user',
+};
 
 function isHeaderRow(cells) {
   const joined = cells.map(c => (c || '').toLowerCase().trim()).join(' ');
-  return /\bcharterer\b/.test(joined) && /\blaycan\b/.test(joined);
+  // Robust detection: needs at least 2 of these column markers
+  const markers = ['laycan', 'cargo', 'fresh', 'fixed', 'updated', 'delivery', 'redelivery', 'size'];
+  const hits = markers.filter(m => joined.includes(m)).length;
+  return hits >= 3;
+}
+
+function isSummaryRow(cells) {
+  const joined = cells.map(c => (c || '').toLowerCase().trim()).join(' ');
+  return /\btotal cargo count\b/.test(joined) || /\bfresh\/fixed cargoes\b/.test(joined) || /^in\s+\d/.test(joined.trim());
 }
 
 function parseCargoData(text) {
   const lines = text.split('\n');
   const cargoes = [];
   let currentStem = null;
-  let columnMap = null; // detected column positions {charterer: 0, size: 1, ...}
+  // Default field→position map matching the real sheet layout
+  let fieldMap = {
+    charterer: 0, size: 1, age: 2, load: 3, disch: 4, cargo: 5,
+    laycan: 6, com: 7, updated: 8, comment: 9, fresh: 10, fixed: 11
+  };
 
   for (const line of lines) {
     // Split on tab — preserve empty cells
@@ -2944,45 +2989,48 @@ function parseCargoData(text) {
     const trimmed = cells.map(c => (c || '').trim());
     if (trimmed.length < 2 || trimmed.every(c => !c)) continue;
 
-    // Check if this is a stem header row (first cell is a known stem)
-    const firstCell = trimmed[0].toLowerCase().replace(/\s+/g, ' ').trim();
-    if (STEM_MAP[firstCell]) {
-      currentStem = STEM_MAP[firstCell];
-      columnMap = null; // reset — next row should be the header
+    // Skip summary rows
+    if (isSummaryRow(trimmed)) continue;
+
+    // Check if this is a stem header row (first non-empty cell is a known stem)
+    const firstNonEmpty = trimmed.find(c => c) || '';
+    const stemKey = firstNonEmpty.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (STEM_MAP[stemKey]) {
+      currentStem = STEM_MAP[stemKey];
       continue;
     }
 
-    // Check if this is the column header row ("charterer size load disch ...")
+    // Check if this is the column header row
     if (isHeaderRow(trimmed)) {
-      columnMap = {};
+      const newMap = {};
       trimmed.forEach((cell, i) => {
         const key = cell.toLowerCase().trim();
-        if (EXPECTED_COL_HEADERS.includes(key)) {
-          columnMap[key] = i;
+        const field = HEADER_TO_FIELD[key];
+        if (field && newMap[field] === undefined) {
+          newMap[field] = i;
         }
       });
+      // Only use the detected map if we found at least laycan+cargo
+      if (newMap.laycan !== undefined || newMap.cargo !== undefined) {
+        fieldMap = { ...fieldMap, ...newMap };
+      }
       continue;
     }
 
     // Skip if no stem context yet
     if (!currentStem) continue;
 
-    // Parse as cargo row using detected column map, falling back to default positions
-    const map = columnMap || {
-      charterer: 0, size: 1, load: 2, disch: 3, cargo: 4,
-      laycan: 5, com: 6, updated: 7, comment: 8, fresh: 9, fixed: 10
-    };
-
-    const get = (key) => {
-      const idx = map[key];
+    const get = (field) => {
+      const idx = fieldMap[field];
       return idx !== undefined ? (trimmed[idx] || '') : '';
     };
 
     const charterer = get('charterer').replace(/- NOT FOR LIST/gi, '').trim();
     if (!charterer || charterer.length < 2) continue;
 
-    // Skip if the "charterer" cell looks like a count or summary row
-    if (/^\d+$/.test(charterer) || /^total/i.test(charterer)) continue;
+    // Skip rows where "charterer" is actually a stem name or count
+    if (STEM_MAP[charterer.toLowerCase().replace(/\s+/g, ' ').trim()]) continue;
+    if (/^\d+$/.test(charterer) || /^total/i.test(charterer) || /^#$/.test(charterer)) continue;
 
     const size = get('size');
     const load = get('load');
@@ -2995,7 +3043,7 @@ function parseCargoData(text) {
     const fresh = /^true$|^yes$|^y$|^1$/.test(freshRaw);
     const fixed = /^true$|^yes$|^y$|^1$/.test(fixedRaw);
 
-    // Need a laycan OR cargo type to count as a valid row
+    // Need a laycan or cargo or size to count as a valid row
     if (!laycan && !cargo && !size) continue;
 
     const slot = parseLaycanSlot(laycan);
@@ -3006,6 +3054,22 @@ function parseCargoData(text) {
   }
 
   return cargoes;
+}
+
+// ─── Date parsing for "updated" field ────────────────────────────────────────
+
+// Parse compact date strings like "9Apr", "1Apr", "25 Mar", "2Apr onw" → ISO YYYY-MM-DD
+function parseUpdatedDate(str) {
+  if (!str) return null;
+  const clean = str.toLowerCase().replace(/\s+/g, '').replace(/onw/g, '');
+  const match = clean.match(/(\d{1,2})(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
+  if (!match) return null;
+  const day = parseInt(match[1], 10);
+  const monthIdx = MONTH_NAMES.indexOf(match[2]) + 1;
+  if (!monthIdx || day < 1 || day > 31) return null;
+  const year = new Date().getFullYear();
+  const pad = n => n.toString().padStart(2, '0');
+  return `${year}-${pad(monthIdx)}-${pad(day)}`;
 }
 
 // ─── Render ──────────────────────────────────────────────────────────────────
@@ -3202,7 +3266,12 @@ function toggleCargoPaste() {
 
 const CARGO_SYSTEM_PROMPT = `You are a dry bulk cargo book parser. Extract cargo entries from spreadsheet paste data into structured JSON.
 
-The input is tab-separated text from a Google Sheet. It contains stem header rows (like "ECSA fronthaul", "USG TA") followed by column header rows ("charterer size load disch cargo laycan ..."), then cargo rows, then another stem header, etc.
+The input is tab-separated text from a Google Sheet. Structure:
+1. Summary rows at top (like "IN 30 Total Cargo Count: 45 Fresh/Fixed cargoes: 2 0") — IGNORE these
+2. A column header row like: "charterer Size Age Delivery Redelivery Cargo Laycan Com Updated Comment FRESH FIXED USER"
+3. Stem header rows (e.g. "Cont/Baltic TA", "ECSA fronthaul") followed by a count number — these mark the section, not cargoes
+4. Cargo rows under each stem section
+5. Another stem header, more cargoes, etc.
 
 KNOWN STEM NAMES (normalize to these exactly):
 - ECSA Fronthaul, ECSA TA
@@ -3212,27 +3281,38 @@ KNOWN STEM NAMES (normalize to these exactly):
 - EC CAN TA, EC CAN Fronthaul
 - Cont/Baltic TA, Cont/Baltic Fronthaul
 - WAFR Fronthaul, WAFR TA
-- Bsea/Med Fronthaul, Bsea/Med TA
+- Bsea/Med Fronthaul, Bsea/Med TA (also accept Bsea/WMed/EMed variants)
 
-CARGO ROW FIELDS:
-- charterer: name of charterer (strip "- NOT FOR LIST" suffix silently)
-- size: vessel size like "pmx", "kmx", "66000", "pmx/kmx"
-- load: load area like "ecsa", "ncsa", "usg", "santos"
-- disch: discharge area like "china", "spore-jpn", "feast"
-- cargo: cargo type like "grain", "coal", "ore", "petcoke"
-- laycan: laycan string like "10apr onw", "15-30apr", "1-5may"
-- updated: date the cargo was last updated (like "25Mar", "2Apr")
-- fresh: boolean — true if FRESH column is TRUE
-- fixed: boolean — true if FIXED column is TRUE
-- stem: which stem section this cargo was under (e.g. "ECSA Fronthaul")
+COLUMN MEANING (the sheet uses these column names):
+- charterer: name of charterer (position 0)
+- Size: vessel size like "pmx", "kmx", "66000", "pmx/kmx"
+- Age: vessel age requirement (optional, often empty)
+- Delivery: load area like "ecsa", "ncsa", "usg", "santos" — this is the LOAD area
+- Redelivery: discharge area like "china", "spore-jpn", "feast" — this is the DISCHARGE area
+- Cargo: cargo type like "grain", "coal", "ore", "petcoke", "hss", "concentrates"
+- Laycan: laycan string like "10apr onw", "15-30apr", "1-5may"
+- Com: commission (ignore)
+- Updated: date the cargo was last updated in the sheet (like "25Mar", "2Apr", "9Apr")
+- Comment: notes (ignore for now)
+- FRESH: boolean TRUE/FALSE
+- FIXED: boolean TRUE/FALSE
+- USER: username (ignore)
+
+OUTPUT FIELDS (use exactly these names):
+- charterer: strip "- NOT FOR LIST" suffix silently
+- size, load (from Delivery), disch (from Redelivery), cargo, laycan, updated
+- fresh (boolean), fixed (boolean)
+- stem: which stem section this cargo was under
 
 RULES:
-- Stem header rows have just the stem name in the first cell (and maybe a count). Track the current stem — apply it to all following cargo rows until the next stem header.
-- Skip the column header rows ("charterer size load disch ..."), total rows, and empty rows.
+- A row where the first non-empty cell is a known stem name is a SECTION HEADER, not a cargo. Track current stem.
+- Summary rows ("Total Cargo Count", "IN 30", "Fresh/Fixed cargoes") are metadata — skip them entirely.
+- Column header rows (the "charterer Size Age Delivery..." row) are the schema — skip them.
+- Only extract rows with a real charterer name (not a stem name, not a number, not "#", not "total").
 - If a cell is empty, use empty string "".
-- Include every cargo row with a valid charterer.
+- Boolean fields: "TRUE" → true, anything else → false.
 
-Return ONLY a JSON array of cargo objects. No markdown, no explanation.`;
+Return ONLY a JSON array of cargo objects. No markdown, no explanation. Start with [ and end with ].`;
 
 async function parseCargoWithAI(text) {
   const apiKey = localStorage.getItem('pt_api_key') || '';
@@ -3335,6 +3415,9 @@ async function parseCargoPaste() {
   for (const c of parsed) {
     const id = cargoId(c);
     c.id = id;
+    // entered_market = parsed date from the "updated" field (when cargo
+    // actually came to market), falling back to paste date
+    const enteredMarket = parseUpdatedDate(c.updated) || today;
     newCurrentIds.push(id);
 
     if (historyMap.has(id)) {
@@ -3351,13 +3434,16 @@ async function parseCargoPaste() {
       existing.laycan = c.laycan || existing.laycan;
       existing.slot = c.slot || existing.slot;
       existing.stem = c.stem || existing.stem;
+      // Backfill entered_market if missing (from older records)
+      if (!existing.entered_market) existing.entered_market = enteredMarket;
       updatedCount++;
     } else {
-      // New cargo — add with first_seen
+      // New cargo — add with first_seen and entered_market
       cargoHistory.push({
         ...c,
         first_seen: today,
         last_seen: today,
+        entered_market: enteredMarket,
       });
       historyMap.set(id, cargoHistory[cargoHistory.length - 1]);
       addedCount++;
@@ -3489,10 +3575,13 @@ function renderTrends() {
 
   const avgTimeInMarket = (() => {
     const days = departedCargoes.map(c => {
-      const start = new Date(c.first_seen);
+      // Prefer entered_market (from cargo's "updated" field), fall back to first_seen
+      const startStr = c.entered_market || c.first_seen;
+      if (!startStr) return null;
+      const start = new Date(startStr);
       const end = new Date(c.departed_at);
       return Math.round((end - start) / 86400000);
-    });
+    }).filter(d => d !== null && d >= 0);
     if (days.length === 0) return '—';
     return (days.reduce((a, b) => a + b, 0) / days.length).toFixed(1) + ' d';
   })();
@@ -3602,9 +3691,10 @@ function renderStemVelocity() {
     if (!stemStats[stem]) stemStats[stem] = { total: 0, times: [], live: 0 };
     stemStats[stem].total++;
     if (cargoCurrent.includes(c.id)) stemStats[stem].live++;
-    if (c.first_seen && c.departed_at) {
-      const days = Math.round((new Date(c.departed_at) - new Date(c.first_seen)) / 86400000);
-      stemStats[stem].times.push(days);
+    const startStr = c.entered_market || c.first_seen;
+    if (startStr && c.departed_at) {
+      const days = Math.round((new Date(c.departed_at) - new Date(startStr)) / 86400000);
+      if (days >= 0) stemStats[stem].times.push(days);
     }
   });
 
