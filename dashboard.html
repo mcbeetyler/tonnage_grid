@@ -202,9 +202,15 @@
   .cargo-table tbody td{padding:8px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
   .badge-fresh{background:var(--green-light);color:var(--green);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
   .badge-fixed{background:var(--amber-light);color:var(--amber);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
-  .cargo-paste-area{padding:20px 28px}
-  .cargo-paste-area textarea{width:100%;height:200px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-family:var(--mono);font-size:11px;line-height:1.6;padding:14px;resize:vertical;outline:none}
-  .cargo-paste-area textarea:focus{border-color:var(--accent)}
+  .cargo-paste-area{padding:0 28px;margin-bottom:8px}
+  .cargo-paste-toggle{display:flex;align-items:center;gap:8px;padding:8px 0;cursor:pointer;font-size:12px;font-weight:500;color:var(--text-dim)}
+  .cargo-paste-toggle:hover{color:var(--accent)}
+  .cargo-paste-toggle .arrow{transition:transform .2s;font-size:10px}
+  .cargo-paste-toggle .arrow.open{transform:rotate(90deg)}
+  .cargo-paste-body{display:none;padding-bottom:8px}
+  .cargo-paste-body.open{display:block}
+  .cargo-paste-body textarea{width:100%;height:120px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-family:var(--mono);font-size:10px;line-height:1.5;padding:10px;resize:vertical;outline:none}
+  .cargo-paste-body textarea:focus{border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -411,41 +417,93 @@ BOD ABT 1250/240
 </div><!-- end tab-tonnage -->
 
 <div id="tab-cargo" class="tab-panel">
-  <div class="cargo-header">
-    <div class="cargo-stats" id="cargoStats"></div>
-    <div class="cargo-filters" id="cargoStemFilters"></div>
-    <div class="cargo-controls">
-      <select class="form-select" id="cargoStatusFilter" onchange="renderCargo()" style="width:150px">
-        <option value="all">All status</option>
-        <option value="fresh">Fresh only</option>
-        <option value="fixed">Fixed only</option>
-      </select>
-      <select class="form-select" id="cargoTypeFilter" onchange="renderCargo()" style="width:150px">
-        <option value="all">All cargo types</option>
-        <option value="grain">Grain</option>
-        <option value="coal">Coal</option>
-        <option value="ore">Ore</option>
-        <option value="other">Other</option>
-      </select>
-      <div class="spacer"></div>
+  <!-- Sub-view toggle + paste bar -->
+  <div style="padding:14px 28px 0;display:flex;gap:16px;align-items:center">
+    <div class="mode-toggle" style="margin-left:0">
+      <button class="mode-btn cargo-view-btn active" data-view="current" onclick="setCargoView('current')">Current</button>
+      <button class="mode-btn cargo-view-btn" data-view="trends" onclick="setCargoView('trends')">Trends</button>
+    </div>
+    <div class="cargo-paste-area" style="flex:1;padding:0">
+      <div class="cargo-paste-toggle" onclick="toggleCargoPaste()">
+        <span class="arrow" id="cargoPasteArrow">&#9654;</span>
+        Paste cargo data
+      </div>
+      <div class="cargo-paste-body" id="cargoPasteBody">
+        <textarea id="cargoInput" placeholder="Paste tab-separated cargo book data from spreadsheet..."></textarea>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button class="btn-primary" style="flex:0;padding:6px 16px;font-size:11px" onclick="parseCargoPaste()">Parse</button>
+          <button class="btn-secondary" style="padding:6px 12px;font-size:11px" onclick="clearCargo()">Clear all history</button>
+        </div>
+      </div>
     </div>
   </div>
-  <div class="cargo-legend" id="cargoLegend"></div>
-  <div class="cargo-chart-wrap"><canvas id="cargoChart"></canvas></div>
-  <div class="cargo-paste-area">
-    <textarea id="cargoInput" placeholder="Paste cargo book data here (tab-separated from spreadsheet)..."></textarea>
-    <div style="display:flex;gap:8px;margin-top:8px">
-      <button class="btn-primary" onclick="parseCargoPaste()">Parse Cargo Data</button>
-      <button class="btn-secondary" onclick="clearCargo()">Clear</button>
+
+  <!-- Current view -->
+  <div id="cargoCurrentView">
+    <div class="cargo-header" style="border-bottom:none;padding-top:12px">
+      <div class="cargo-stats" id="cargoStats"></div>
+      <div class="cargo-filters" id="cargoStemFilters"></div>
+      <div class="cargo-controls">
+        <select class="form-select" id="cargoStatusFilter" onchange="renderCargo()" style="width:150px">
+          <option value="all">All status</option>
+          <option value="fresh">Fresh only</option>
+          <option value="fixed">Fixed only</option>
+        </select>
+        <select class="form-select" id="cargoTypeFilter" onchange="renderCargo()" style="width:150px">
+          <option value="all">All cargo types</option>
+          <option value="grain">Grain</option>
+          <option value="coal">Coal</option>
+          <option value="ore">Ore</option>
+          <option value="other">Other</option>
+        </select>
+        <div class="spacer"></div>
+      </div>
+    </div>
+    <div class="cargo-legend" id="cargoLegend"></div>
+    <div class="cargo-chart-wrap"><canvas id="cargoChart"></canvas></div>
+    <div class="cargo-table-wrap">
+      <table class="cargo-table">
+        <thead><tr>
+          <th>Charterer</th><th>Stem</th><th>Cargo</th><th>Route</th><th>Laycan</th><th>Slot</th><th>Size</th><th>Updated</th><th>Status</th>
+        </tr></thead>
+        <tbody id="cargoBody"></tbody>
+      </table>
     </div>
   </div>
-  <div class="cargo-table-wrap">
-    <table class="cargo-table">
-      <thead><tr>
-        <th>Charterer</th><th>Stem</th><th>Cargo</th><th>Route</th><th>Laycan</th><th>Slot</th><th>Size</th><th>Updated</th><th>Status</th>
-      </tr></thead>
-      <tbody id="cargoBody"></tbody>
-    </table>
+
+  <!-- Trends view -->
+  <div id="cargoTrendsView" style="display:none">
+    <div class="cargo-header" style="border-bottom:none;padding-top:12px">
+      <div class="cargo-stats" id="trendStats"></div>
+      <div class="cargo-controls">
+        <span class="toolbar-label">View</span>
+        <select class="form-select" id="trendType" onchange="renderTrends()" style="width:180px">
+          <option value="charterer">Charterer activity</option>
+          <option value="stem">Stem activity</option>
+          <option value="cargo">Cargo type mix</option>
+        </select>
+        <span class="toolbar-label">Top</span>
+        <select class="form-select" id="trendTopN" onchange="renderTrends()" style="width:80px">
+          <option value="5">5</option>
+          <option value="10" selected>10</option>
+          <option value="15">15</option>
+          <option value="20">20</option>
+        </select>
+        <span class="toolbar-label">Granularity</span>
+        <div class="mode-toggle" style="margin:0">
+          <button class="mode-btn trend-gran-btn" data-gran="daily" onclick="setTrendGranularity('daily')">Daily</button>
+          <button class="mode-btn trend-gran-btn active" data-gran="weekly" onclick="setTrendGranularity('weekly')">Weekly</button>
+          <button class="mode-btn trend-gran-btn" data-gran="monthly" onclick="setTrendGranularity('monthly')">Monthly</button>
+        </div>
+        <div class="spacer"></div>
+      </div>
+    </div>
+    <div class="cargo-legend" id="trendLegend"></div>
+    <div class="cargo-chart-wrap" style="height:400px"><canvas id="trendChart"></canvas></div>
+    <div class="cargo-table-wrap">
+      <h3 style="font-size:12px;text-transform:uppercase;color:var(--text-dim);letter-spacing:.5px;margin-bottom:4px">Stem Velocity</h3>
+      <div id="stemVelocityWrap"></div>
+    </div>
   </div>
 </div><!-- end tab-cargo -->
 

@@ -6,16 +6,62 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
   document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`).classList.add('active');
-  if (tab === 'cargo' && cargoData.length > 0) renderCargo();
+  if (tab === 'cargo') {
+    loadCargoFromServer();
+  }
 }
 
 // ─── Cargo State ─────────────────────────────────────────────────────────────
 
-let cargoData = JSON.parse(localStorage.getItem('pt_cargo') || '[]');
+// Current cargoes = IDs present in the latest paste (what's "live" in the market)
+// History = every cargo ever seen, with first_seen/last_seen timestamps
+let cargoHistory = JSON.parse(localStorage.getItem('pt_cargo_history') || '[]');
+let cargoCurrent = JSON.parse(localStorage.getItem('pt_cargo_current') || '[]');
 let activeCargoStem = 'ALL';
+let activeCargoView = 'current'; // 'current' or 'trends'
+let trendGranularity = 'weekly';  // 'daily', 'weekly', 'monthly'
 let cargoChart = null;
+let trendChart = null;
 
-function saveCargo() { localStorage.setItem('pt_cargo', JSON.stringify(cargoData)); }
+// Get the currently visible (non-departed) cargoes for the dashboard view
+function getCargoData() {
+  return cargoHistory.filter(c => cargoCurrent.includes(c.id));
+}
+
+// Deterministic ID for a cargo: charterer + cargo + load + disch + laycan + updated
+function cargoId(c) {
+  const norm = s => (s || '').toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+  return `${norm(c.charterer)}|${norm(c.cargo)}|${norm(c.load)}|${norm(c.disch)}|${norm(c.laycan)}|${norm(c.updated)}`;
+}
+
+let _cargoSaveTimer = null;
+function saveCargo() {
+  localStorage.setItem('pt_cargo_history', JSON.stringify(cargoHistory));
+  localStorage.setItem('pt_cargo_current', JSON.stringify(cargoCurrent));
+  clearTimeout(_cargoSaveTimer);
+  _cargoSaveTimer = setTimeout(() => {
+    fetch('/api/cargo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ history: cargoHistory, current: cargoCurrent }),
+    }).catch(() => {}); // silent fallback to localStorage
+  }, 500);
+}
+
+async function loadCargoFromServer() {
+  try {
+    const resp = await fetch('/api/cargo');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.history && Array.isArray(data.history)) {
+      cargoHistory = data.history;
+      cargoCurrent = data.current || [];
+      localStorage.setItem('pt_cargo_history', JSON.stringify(cargoHistory));
+      localStorage.setItem('pt_cargo_current', JSON.stringify(cargoCurrent));
+    }
+  } catch (e) { /* use localStorage fallback */ }
+  renderCargo();
+}
 
 // ─── Slot Colors ─────────────────────────────────────────────────────────────
 
@@ -164,6 +210,16 @@ function parseCargoData(text) {
 // ─── Render ──────────────────────────────────────────────────────────────────
 
 function renderCargo() {
+  // Show/hide the right sub-view
+  const currentView = document.getElementById('cargoCurrentView');
+  const trendsView = document.getElementById('cargoTrendsView');
+  if (currentView && trendsView) {
+    currentView.style.display = activeCargoView === 'current' ? '' : 'none';
+    trendsView.style.display = activeCargoView === 'trends' ? '' : 'none';
+  }
+  if (activeCargoView === 'trends') { renderTrends(); return; }
+
+  const cargoData = getCargoData();
   const statusFilter = document.getElementById('cargoStatusFilter').value;
   const typeFilter = document.getElementById('cargoTypeFilter').value;
 
@@ -171,7 +227,7 @@ function renderCargo() {
     if (activeCargoStem !== 'ALL' && c.stem !== activeCargoStem) return false;
     if (statusFilter === 'fresh' && !c.fresh) return false;
     if (statusFilter === 'fixed' && !c.fixed) return false;
-    if (typeFilter !== 'all' && c.cargo.toLowerCase().indexOf(typeFilter) === -1) return false;
+    if (typeFilter !== 'all' && (c.cargo || '').toLowerCase().indexOf(typeFilter) === -1) return false;
     return true;
   });
 
@@ -309,16 +365,98 @@ function setCargoStem(stem) {
   renderCargo();
 }
 
+function toggleCargoPaste() {
+  const body = document.getElementById('cargoPasteBody');
+  const arrow = document.getElementById('cargoPasteArrow');
+  body.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+
 function parseCargoPaste() {
   const text = document.getElementById('cargoInput').value.trim();
   if (!text) return;
-  cargoData = parseCargoData(text);
+
+  const parsed = parseCargoData(text);
+  const today = new Date().toISOString().split('T')[0];
+
+  // Build map of existing history for fast lookup
+  const historyMap = new Map();
+  cargoHistory.forEach(c => historyMap.set(c.id, c));
+
+  // New current IDs seen in this paste
+  const newCurrentIds = [];
+  let addedCount = 0;
+  let updatedCount = 0;
+
+  for (const c of parsed) {
+    const id = cargoId(c);
+    c.id = id;
+    newCurrentIds.push(id);
+
+    if (historyMap.has(id)) {
+      // Existing cargo — update last_seen and refresh live fields
+      const existing = historyMap.get(id);
+      existing.last_seen = today;
+      existing.fresh = c.fresh;
+      existing.fixed = c.fixed;
+      // Keep any enrichments, update latest data
+      existing.cargo = c.cargo || existing.cargo;
+      existing.size = c.size || existing.size;
+      existing.load = c.load || existing.load;
+      existing.disch = c.disch || existing.disch;
+      existing.laycan = c.laycan || existing.laycan;
+      existing.slot = c.slot || existing.slot;
+      existing.stem = c.stem || existing.stem;
+      updatedCount++;
+    } else {
+      // New cargo — add with first_seen
+      cargoHistory.push({
+        ...c,
+        first_seen: today,
+        last_seen: today,
+      });
+      historyMap.set(id, cargoHistory[cargoHistory.length - 1]);
+      addedCount++;
+    }
+  }
+
+  // Mark cargoes that were in current but not in new paste as "departed"
+  // by not including them in newCurrentIds. They remain in history.
+  const departedIds = cargoCurrent.filter(id => !newCurrentIds.includes(id));
+  const departedCount = departedIds.length;
+
+  // For departed cargoes, set departed_at = today if not already set
+  for (const id of departedIds) {
+    const c = historyMap.get(id);
+    if (c && !c.departed_at) c.departed_at = today;
+  }
+
+  cargoCurrent = newCurrentIds;
   saveCargo();
   renderCargo();
+
+  // Show summary
+  const preview = document.createElement('div');
+  preview.style.cssText = 'padding:8px 12px;margin-top:6px;background:var(--green-light);color:var(--green);border-radius:6px;font-size:11px';
+  preview.textContent = `Parsed ${parsed.length} cargoes: ${addedCount} new, ${updatedCount} still live, ${departedCount} departed.`;
+  const body = document.getElementById('cargoPasteBody');
+  const existing = body.querySelector('.parse-summary');
+  if (existing) existing.remove();
+  preview.className = 'parse-summary';
+  body.appendChild(preview);
+
+  // Auto-collapse after 3s
+  setTimeout(() => {
+    document.getElementById('cargoPasteBody').classList.remove('open');
+    document.getElementById('cargoPasteArrow').classList.remove('open');
+    if (preview.parentNode) preview.remove();
+  }, 3000);
 }
 
 function clearCargo() {
-  cargoData = [];
+  if (!confirm('Clear all cargo history? This cannot be undone.')) return;
+  cargoHistory = [];
+  cargoCurrent = [];
   saveCargo();
   document.getElementById('cargoInput').value = '';
   document.getElementById('cargoBody').innerHTML = '';
@@ -326,9 +464,234 @@ function clearCargo() {
   document.getElementById('cargoStemFilters').innerHTML = '';
   document.getElementById('cargoLegend').innerHTML = '';
   if (cargoChart) { cargoChart.destroy(); cargoChart = null; }
+  if (trendChart) { trendChart.destroy(); trendChart = null; }
+}
+
+function setCargoView(view) {
+  activeCargoView = view;
+  document.querySelectorAll('.cargo-view-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === view);
+  });
+  renderCargo();
+}
+
+function setTrendGranularity(g) {
+  trendGranularity = g;
+  document.querySelectorAll('.trend-gran-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.gran === g);
+  });
+  if (activeCargoView === 'trends') renderTrends();
+}
+
+// ─── Trends View ─────────────────────────────────────────────────────────────
+
+function getBucket(dateStr, granularity) {
+  // dateStr is ISO YYYY-MM-DD
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d)) return null;
+  const y = d.getFullYear();
+  const m = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+
+  if (granularity === 'daily') return `${y}-${m}-${day}`;
+  if (granularity === 'monthly') return `${y}-${m}`;
+  // weekly — ISO week start (Monday)
+  const dow = (d.getDay() + 6) % 7; // 0 = Monday
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - dow);
+  const my = monday.getFullYear();
+  const mm = (monday.getMonth() + 1).toString().padStart(2, '0');
+  const md = monday.getDate().toString().padStart(2, '0');
+  return `${my}-${mm}-${md}`;
+}
+
+function fmtBucket(bucket, granularity) {
+  if (!bucket) return '';
+  if (granularity === 'monthly') {
+    const [y, m] = bucket.split('-');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${months[parseInt(m, 10) - 1]} ${y.slice(2)}`;
+  }
+  if (granularity === 'weekly') {
+    const [y, m, d] = bucket.split('-');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `Wk ${parseInt(d,10)} ${months[parseInt(m,10) - 1]}`;
+  }
+  // daily
+  const [y, m, d] = bucket.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${parseInt(d,10)} ${months[parseInt(m,10) - 1]}`;
+}
+
+// Palette for trend lines (distinct colors that look decent on white)
+const TREND_COLORS = ['#185FA5','#0F6E56','#854F0B','#993C1D','#533AB7','#B91C56','#0E7490','#A16207','#4F46E5','#0B7A5F','#D97706','#BE185D','#1D4ED8','#047857','#C2410C','#6D28D9'];
+
+function renderTrends() {
+  if (cargoHistory.length === 0) {
+    document.getElementById('trendStats').innerHTML = '<div style="padding:40px;color:var(--text-dim);font-size:13px">No cargo history yet. Paste cargo data to start building trends.</div>';
+    document.getElementById('trendLegend').innerHTML = '';
+    if (trendChart) { trendChart.destroy(); trendChart = null; }
+    return;
+  }
+
+  const trendType = document.getElementById('trendType').value;
+  const topN = parseInt(document.getElementById('trendTopN').value || '10', 10);
+
+  // Time in market stats
+  const withBothDates = cargoHistory.filter(c => c.first_seen && c.last_seen);
+  const departedCargoes = cargoHistory.filter(c => c.departed_at);
+  const stillLive = cargoHistory.filter(c => cargoCurrent.includes(c.id));
+
+  const avgTimeInMarket = (() => {
+    const days = departedCargoes.map(c => {
+      const start = new Date(c.first_seen);
+      const end = new Date(c.departed_at);
+      return Math.round((end - start) / 86400000);
+    });
+    if (days.length === 0) return '—';
+    return (days.reduce((a, b) => a + b, 0) / days.length).toFixed(1) + ' d';
+  })();
+
+  const totalEverSeen = cargoHistory.length;
+  const fixedCount = cargoHistory.filter(c => c.fixed).length;
+  const fixRate = totalEverSeen > 0 ? ((fixedCount / totalEverSeen) * 100).toFixed(0) + '%' : '—';
+
+  document.getElementById('trendStats').innerHTML = [
+    { label: 'Total ever seen', value: totalEverSeen },
+    { label: 'Currently live', value: stillLive.length },
+    { label: 'Avg time in market', value: avgTimeInMarket },
+    { label: 'Departed', value: departedCargoes.length },
+    { label: 'Fix rate', value: fixRate },
+  ].map(s => `<div class="stat"><div class="stat-label">${s.label}</div><div class="stat-value">${s.value}</div></div>`).join('');
+
+  // Group cargoes by bucket and category (charterer/stem/cargo type)
+  const bucketSet = new Set();
+  const seriesMap = {}; // category -> bucket -> count
+  const totalByCategory = {}; // for top-N sorting
+
+  cargoHistory.forEach(c => {
+    const bucket = getBucket(c.first_seen, trendGranularity);
+    if (!bucket) return;
+    bucketSet.add(bucket);
+
+    let category;
+    if (trendType === 'charterer') category = (c.charterer || 'Unknown').toLowerCase();
+    else if (trendType === 'stem') category = c.stem || 'Unknown';
+    else if (trendType === 'cargo') category = (c.cargo || 'Unknown').toLowerCase();
+    else category = 'All';
+
+    if (!seriesMap[category]) seriesMap[category] = {};
+    seriesMap[category][bucket] = (seriesMap[category][bucket] || 0) + 1;
+    totalByCategory[category] = (totalByCategory[category] || 0) + 1;
+  });
+
+  // Sort buckets chronologically
+  const buckets = [...bucketSet].sort();
+
+  // Top-N categories by total count
+  const topCategories = Object.keys(totalByCategory)
+    .sort((a, b) => totalByCategory[b] - totalByCategory[a])
+    .slice(0, topN);
+
+  // Build datasets
+  const datasets = topCategories.map((cat, i) => ({
+    label: cat + ` (${totalByCategory[cat]})`,
+    data: buckets.map(b => seriesMap[cat][b] || 0),
+    borderColor: TREND_COLORS[i % TREND_COLORS.length],
+    backgroundColor: TREND_COLORS[i % TREND_COLORS.length] + '22',
+    borderWidth: 2,
+    tension: 0.2,
+    pointRadius: 3,
+    pointHoverRadius: 5,
+    fill: false,
+  }));
+
+  // Legend
+  document.getElementById('trendLegend').innerHTML = topCategories.map((cat, i) =>
+    `<span class="legend-item"><span class="legend-dot" style="background:${TREND_COLORS[i % TREND_COLORS.length]}"></span>${cat} <span style="opacity:.6">(${totalByCategory[cat]})</span></span>`
+  ).join('');
+
+  // Render chart
+  const ctx = document.getElementById('trendChart');
+  if (trendChart) trendChart.destroy();
+
+  trendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: buckets.map(b => fmtBucket(b, trendGranularity)),
+      datasets: datasets,
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: ctx => ctx[0].label,
+            label: ctx => ctx.raw > 0 ? ` ${ctx.dataset.label.split(' (')[0]}: ${ctx.raw}` : null,
+            filter: item => item.raw > 0,
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { autoSkip: true, maxRotation: 0 } },
+        y: { beginAtZero: true, ticks: { stepSize: 1 } },
+      }
+    }
+  });
+
+  // Stem velocity table (only show for 'stem' view)
+  renderStemVelocity();
+}
+
+function renderStemVelocity() {
+  const wrap = document.getElementById('stemVelocityWrap');
+  if (!wrap) return;
+
+  // For each stem, calculate: total ever seen, avg time in market, current live
+  const stemStats = {};
+  cargoHistory.forEach(c => {
+    const stem = c.stem || 'Unknown';
+    if (!stemStats[stem]) stemStats[stem] = { total: 0, times: [], live: 0 };
+    stemStats[stem].total++;
+    if (cargoCurrent.includes(c.id)) stemStats[stem].live++;
+    if (c.first_seen && c.departed_at) {
+      const days = Math.round((new Date(c.departed_at) - new Date(c.first_seen)) / 86400000);
+      stemStats[stem].times.push(days);
+    }
+  });
+
+  const rows = Object.entries(stemStats)
+    .map(([stem, s]) => ({
+      stem,
+      total: s.total,
+      live: s.live,
+      avgTime: s.times.length > 0 ? (s.times.reduce((a, b) => a + b, 0) / s.times.length).toFixed(1) : '—',
+      velocity: s.times.length > 0 ? (s.total / (Math.max(...s.times, 1))).toFixed(2) : '—',
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  wrap.innerHTML = `
+    <table class="cargo-table" style="margin-top:8px">
+      <thead><tr>
+        <th>Stem</th><th>Total Ever</th><th>Currently Live</th><th>Avg Days in Market</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `<tr>
+          <td style="font-weight:500">${r.stem}</td>
+          <td style="font-family:var(--mono)">${r.total}</td>
+          <td style="font-family:var(--mono)">${r.live}</td>
+          <td style="font-family:var(--mono)">${r.avgTime}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  `;
 }
 
 // Init cargo if data exists
-if (cargoData.length > 0 && document.getElementById('tab-cargo').classList.contains('active')) {
+if (cargoHistory.length > 0 && document.getElementById('tab-cargo') && document.getElementById('tab-cargo').classList.contains('active')) {
   renderCargo();
 }
