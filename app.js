@@ -853,18 +853,26 @@ function initHeaderDrag() {
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 async function init() {
+  // Always start with localStorage as the baseline so we don't lose data
+  const localVessels = JSON.parse(localStorage.getItem('pt_vessels') || '[]');
+  vessels = localVessels;
+
   try {
     const resp = await fetch('/api/vessels');
     if (resp.ok) {
-      vessels = await resp.json();
-      localStorage.setItem('pt_vessels', JSON.stringify(vessels)); // refresh cache
-    } else {
-      // API not available (e.g. standalone mode) — fall back to localStorage
-      vessels = JSON.parse(localStorage.getItem('pt_vessels') || '[]');
+      const serverVessels = await resp.json();
+      // Only overwrite local with server data if server has MORE entries OR local is empty.
+      // Protects against losing edits if the server is empty (e.g. fresh deploy, auth fail).
+      if (Array.isArray(serverVessels) && (serverVessels.length > localVessels.length || localVessels.length === 0)) {
+        vessels = serverVessels;
+        localStorage.setItem('pt_vessels', JSON.stringify(vessels));
+      } else if (localVessels.length > (serverVessels?.length || 0)) {
+        // Local is ahead — push to server to sync up
+        save();
+      }
     }
   } catch (e) {
-    // Offline or standalone — fall back to localStorage
-    vessels = JSON.parse(localStorage.getItem('pt_vessels') || '[]');
+    // Offline or standalone — keep localStorage
   }
   renderTable();
   updateStats();
