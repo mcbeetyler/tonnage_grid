@@ -51,13 +51,23 @@ function saveCargo() {
 async function loadCargoFromServer() {
   try {
     const resp = await fetch('/api/cargo');
-    if (!resp.ok) return;
+    if (!resp.ok) { backfillEnteredMarket(); renderCargo(); return; }
     const data = await resp.json();
-    if (data.history && Array.isArray(data.history)) {
-      cargoHistory = data.history;
+    if (!data || !Array.isArray(data.history)) { backfillEnteredMarket(); renderCargo(); return; }
+
+    const serverHist = data.history;
+    const localHist = cargoHistory || [];
+
+    // Only overwrite local with server data if server has MORE entries, or local is empty.
+    // Protects against losing local edits when server returns empty.
+    if (serverHist.length > localHist.length || localHist.length === 0) {
+      cargoHistory = serverHist;
       cargoCurrent = data.current || [];
       localStorage.setItem('pt_cargo_history', JSON.stringify(cargoHistory));
       localStorage.setItem('pt_cargo_current', JSON.stringify(cargoCurrent));
+    } else if (localHist.length > serverHist.length) {
+      // Local is ahead — push to server to sync
+      saveCargo();
     }
   } catch (e) { /* use localStorage fallback */ }
   backfillEnteredMarket();

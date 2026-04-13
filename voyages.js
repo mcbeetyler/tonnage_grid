@@ -35,11 +35,24 @@ function saveVoyages() {
 async function loadVoyagesFromServer() {
   try {
     const resp = await fetch('/api/voyages');
-    if (!resp.ok) return;
+    if (!resp.ok) { renderVoyages(); return; }
     const data = await resp.json();
-    if (data && (Array.isArray(data.p7) || Array.isArray(data.p8))) {
-      voyageData = { p7: data.p7 || [], p8: data.p8 || [] };
+    if (!data) { renderVoyages(); return; }
+
+    const serverP7 = Array.isArray(data.p7) ? data.p7 : [];
+    const serverP8 = Array.isArray(data.p8) ? data.p8 : [];
+    const serverTotal = serverP7.length + serverP8.length;
+    const localTotal = (voyageData.p7 || []).length + (voyageData.p8 || []).length;
+
+    // Only overwrite local with server data if server has MORE data, or if local is empty.
+    // This protects against silently losing local edits when the server is empty
+    // (e.g. file:// usage, failed middleware auth, fresh deployment).
+    if (serverTotal > localTotal || localTotal === 0) {
+      voyageData = { p7: serverP7, p8: serverP8 };
       localStorage.setItem('pt_voyages', JSON.stringify(voyageData));
+    } else if (localTotal > serverTotal) {
+      // Local is ahead — push to server to sync
+      saveVoyages();
     }
   } catch (e) { /* localStorage fallback */ }
   renderVoyages();
@@ -160,14 +173,14 @@ function renderVoyageSection(section) {
   // Live table
   const tbody = document.getElementById(section + 'Body');
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="11" class="voyage-empty">No live voyages. Click "+ Add row" or paste data above.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="voyage-empty">No live voyages. Click "+ Add row" or paste data above.</td></tr>`;
   } else {
     const rows = [];
     let lastMonth = null;
     for (const v of filtered) {
       const month = laycanMonth(v.laycan);
       if (month !== lastMonth) {
-        rows.push(`<tr><td colspan="11" class="laycan-month">${month || 'No laycan'}</td></tr>`);
+        rows.push(`<tr><td colspan="12" class="laycan-month">${month || 'No laycan'}</td></tr>`);
         lastMonth = month;
       }
       rows.push(renderVoyageRow(section, v, false));
@@ -236,8 +249,10 @@ function renderVoyageRow(section, v, isFixed) {
     ? `<button class="btn-remove" onclick="unfixVoyage('${section}','${v.id}')" title="Move back to live" style="border-color:var(--green);color:var(--green)">Unfix</button>`
     : `<button class="voyage-fix-btn" onclick="fixVoyage('${section}','${v.id}')" title="Mark as fixed">✓ Fix</button>`;
 
-  const checked = v.is_133 ? 'checked' : '';
-  const draftCell = `<td style="text-align:center"><input type="checkbox" ${checked} onclick="toggle133('${section}','${v.id}')" style="cursor:pointer;width:16px;height:16px;accent-color:var(--accent)"></td>`;
+  const draftChecked = v.is_133 ? 'checked' : '';
+  const draftCell = `<td style="text-align:center"><input type="checkbox" ${draftChecked} onclick="toggle133('${section}','${v.id}')" style="cursor:pointer;width:16px;height:16px;accent-color:var(--accent)"></td>`;
+  const commChecked = v.is_125 ? 'checked' : '';
+  const commCell = `<td style="text-align:center"><input type="checkbox" ${commChecked} onclick="toggle125('${section}','${v.id}')" style="cursor:pointer;width:16px;height:16px;accent-color:var(--accent)"></td>`;
 
   return `<tr ${isFixed ? 'class="voyage-row-fixed"' : ''}>
     ${editable('laycan', v.laycan)}
@@ -246,6 +261,7 @@ function renderVoyageRow(section, v, isFixed) {
     ${editable('offer', v.offer, 'voyage-offer')}
     ${editable('cgo_stem', v.cgo_stem, 'voyage-stem')}
     ${draftCell}
+    ${commCell}
     ${editable('relets', v.relets)}
     ${editable('comments', v.comments)}
     ${dateField}
@@ -257,6 +273,15 @@ function toggle133(section, id) {
   const v = voyageData[section].find(x => x.id === id);
   if (!v) return;
   v.is_133 = !v.is_133;
+  v.last_update = todayCompact();
+  saveVoyages();
+  renderVoyageSection(section);
+}
+
+function toggle125(section, id) {
+  const v = voyageData[section].find(x => x.id === id);
+  if (!v) return;
+  v.is_125 = !v.is_125;
   v.last_update = todayCompact();
   saveVoyages();
   renderVoyageSection(section);
@@ -317,7 +342,7 @@ function addVoyageRow(section) {
   const newVoyage = {
     id: genVoyageId(),
     laycan: '', buyer_seller: '', bid: '', offer: '',
-    cgo_stem: '', is_133: false, relets: '', comments: '', last_update: todayCompact(),
+    cgo_stem: '', is_133: false, is_125: false, relets: '', comments: '', last_update: todayCompact(),
   };
   voyageData[section].push(newVoyage);
   saveVoyages();
@@ -381,6 +406,7 @@ OUTPUT FIELDS (use exactly these names):
 - offer: offer price string
 - cgo_stem: cargo stem string like "66/10 ITAQUI/PRC 13.3M". If empty in row, return empty string (the route default applies).
 - is_133: boolean — true if the cgo_stem mentions 13.3 draft (e.g. "13.3M", "13.3m"), or if there's an explicit 13.3 column showing TRUE/checked. Default false.
+- is_125: boolean — true if the row mentions 1.25% commission (e.g. "1.25%" or "1.25 ttl"), or if there's an explicit 1.25% column showing TRUE/checked. Default false.
 - relets: relets string (often empty)
 - comments: free-text comments like "SEEING MID 42'S"
 - last_update: date string like "7Jul", "12Aug"
@@ -464,6 +490,7 @@ function parseVoyageDataPositional(text) {
     }
 
     const cgoStem = cells[4] || '';
+    const comments = cells[6] || '';
     voyages.push({
       laycan,
       buyer_seller: cells[1] || '',
@@ -471,8 +498,9 @@ function parseVoyageDataPositional(text) {
       offer: cells[3] || '',
       cgo_stem: cgoStem,
       is_133: /13\.3/.test(cgoStem),
+      is_125: /1\.25\s*%/.test(cgoStem) || /1\.25\s*%/.test(comments),
       relets: cells[5] || '',
-      comments: cells[6] || '',
+      comments,
       last_update: cells[7] || '',
     });
   }
@@ -515,6 +543,7 @@ async function parseVoyagePaste() {
       offer: p.offer || '',
       cgo_stem: p.cgo_stem || '',
       is_133: !!p.is_133 || /13\.3/.test(p.cgo_stem || ''),
+      is_125: !!p.is_125 || /1\.25\s*%/.test(p.cgo_stem || '') || /1\.25\s*%/.test(p.comments || ''),
       relets: p.relets || '',
       comments: p.comments || '',
       last_update: p.last_update || today,
