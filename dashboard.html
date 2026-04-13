@@ -249,6 +249,12 @@
   .voyage-row-fixed td{background:rgba(45,109,17,.04);color:var(--text-dim)}
   .voyage-row-fixed .voyage-bid{color:var(--text-dim)}
   .voyage-row-fixed .voyage-offer{color:var(--text-dim)}
+
+  /* Voyage column drag-and-drop */
+  .voyage-table thead th[draggable]{cursor:grab;user-select:none}
+  .voyage-table thead th[draggable]:active{cursor:grabbing}
+  .voyage-table thead th.dragging{opacity:.4}
+  .voyage-table thead th.drag-over{border-left:3px solid var(--accent)!important}
 </style>
 </head>
 <body>

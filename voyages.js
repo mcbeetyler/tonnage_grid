@@ -9,6 +9,31 @@ let voyageRouteHeaders = JSON.parse(localStorage.getItem('pt_voyage_headers') ||
 let voyageStemFilters = { p7: 'ALL', p8: 'ALL' };
 let voyageFixedExpanded = JSON.parse(localStorage.getItem('pt_voyage_fixed_expanded') || '{"p7":false,"p8":false}');
 
+// ─── Column Definitions & Reorder State ──────────────────────────────────────
+
+// Column metadata: key, header label, header class, header tooltip
+const VOYAGE_COLUMNS = {
+  laycan:       { label: 'Laycan', cls: '', title: '' },
+  buyer_seller: { label: 'Buyer/Seller', cls: '', title: '' },
+  bid:          { label: 'Bid', cls: '', title: '' },
+  offer:        { label: 'Offer', cls: '', title: '' },
+  cgo_stem:     { label: 'Cgo Stem', cls: '', title: '' },
+  is_133:       { label: '13.3', cls: 'col-center', title: '13.3m draft' },
+  is_125:       { label: '1.25%', cls: 'col-center', title: '1.25% commission' },
+  relets:       { label: 'Relets', cls: '', title: '' },
+  comments:     { label: 'Comments', cls: '', title: '' },
+  date:         { label: 'Last Update', cls: '', title: '' },
+  actions:      { label: '', cls: '', title: '' },
+};
+const DEFAULT_VOYAGE_ORDER = ['laycan','buyer_seller','bid','offer','cgo_stem','is_133','is_125','relets','comments','date','actions'];
+let voyageColumnOrder = JSON.parse(localStorage.getItem('pt_voyage_col_order') || 'null') || [...DEFAULT_VOYAGE_ORDER];
+// Make sure all columns are present (in case new columns were added since last save)
+DEFAULT_VOYAGE_ORDER.forEach(c => { if (!voyageColumnOrder.includes(c)) voyageColumnOrder.push(c); });
+
+function saveVoyageColumnOrder() {
+  localStorage.setItem('pt_voyage_col_order', JSON.stringify(voyageColumnOrder));
+}
+
 const DEFAULT_HEADERS = {
   p8: '63/10 SANTOS / N.CHINA 13M 8x/8x 5%ttl',
   p7: 'USG / N.CHINA 13M 8x/8x 5%ttl',
@@ -170,23 +195,28 @@ function renderVoyageSection(section) {
   document.getElementById(section + 'Count').textContent =
     `${live.length} live${fixed.length ? ` · ${fixed.length} fixed` : ''}`;
 
-  // Live table
+  // Live table — dynamic head built from voyageColumnOrder
+  const table = document.getElementById(section + 'Table');
+  const thead = table.querySelector('thead');
+  thead.innerHTML = renderVoyageHead();
   const tbody = document.getElementById(section + 'Body');
+  const colCount = voyageColumnOrder.length;
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="12" class="voyage-empty">No live voyages. Click "+ Add row" or paste data above.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${colCount}" class="voyage-empty">No live voyages. Click "+ Add row" or paste data above.</td></tr>`;
   } else {
     const rows = [];
     let lastMonth = null;
     for (const v of filtered) {
       const month = laycanMonth(v.laycan);
       if (month !== lastMonth) {
-        rows.push(`<tr><td colspan="12" class="laycan-month">${month || 'No laycan'}</td></tr>`);
+        rows.push(`<tr><td colspan="${colCount}" class="laycan-month">${month || 'No laycan'}</td></tr>`);
         lastMonth = month;
       }
       rows.push(renderVoyageRow(section, v, false));
     }
     tbody.innerHTML = rows.join('');
   }
+  initVoyageHeaderDrag(section);
 
   // Fixed section
   renderVoyageFixed(section, fixed);
@@ -219,9 +249,7 @@ function renderVoyageFixed(section, fixed) {
     const rows = sortedFixed.map(v => renderVoyageRow(section, v, true)).join('');
     inner += `<div class="voyage-table-wrap" style="border-radius:0 0 var(--radius) var(--radius);margin-top:0">
       <table class="voyage-table">
-        <thead><tr>
-          <th>Laycan</th><th>Buyer/Seller</th><th>Bid</th><th>Offer</th><th>Cgo Stem</th><th>Relets</th><th>Comments</th><th>Fixed At</th><th></th>
-        </tr></thead>
+        <thead>${renderVoyageHead('Fixed At')}</thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
@@ -236,37 +264,95 @@ function toggleVoyageFixed(section) {
   renderVoyageSection(section);
 }
 
-function renderVoyageRow(section, v, isFixed) {
+function renderVoyageHead(headerText) {
+  // headerText overrides the default label for the date column on Fixed tables
+  return '<tr>' + voyageColumnOrder.map(col => {
+    const meta = VOYAGE_COLUMNS[col];
+    if (!meta) return '';
+    let label = meta.label;
+    if (col === 'date' && headerText) label = headerText;
+    const titleAttr = meta.title ? ` title="${meta.title}"` : '';
+    const styleAttr = col === 'is_133' || col === 'is_125' ? ' style="text-align:center"' : '';
+    return `<th draggable="true" data-col="${col}"${styleAttr}${titleAttr}>${label}</th>`;
+  }).join('') + '</tr>';
+}
+
+function voyageCellHTML(col, v, section, isFixed) {
   const editable = (field, value, cls) => {
     return `<td class="voyage-cell-edit ${cls || ''}" onclick="editVoyageCell(this,'${section}','${v.id}','${field}')">${value || '—'}</td>`;
   };
-  // For fixed rows, show fixed_at instead of last_update in the date column
-  const dateField = isFixed
-    ? `<td class="voyage-update" style="color:var(--green);font-weight:600">${v.fixed_at || '—'}</td>`
-    : editable('last_update', v.last_update, 'voyage-update');
 
-  const actionBtn = isFixed
-    ? `<button class="btn-remove" onclick="unfixVoyage('${section}','${v.id}')" title="Move back to live" style="border-color:var(--green);color:var(--green)">Unfix</button>`
-    : `<button class="voyage-fix-btn" onclick="fixVoyage('${section}','${v.id}')" title="Mark as fixed">✓ Fix</button>`;
+  switch (col) {
+    case 'laycan':       return editable('laycan', v.laycan);
+    case 'buyer_seller': return editable('buyer_seller', v.buyer_seller);
+    case 'bid':          return editable('bid', v.bid, 'voyage-bid');
+    case 'offer':        return editable('offer', v.offer, 'voyage-offer');
+    case 'cgo_stem':     return editable('cgo_stem', v.cgo_stem, 'voyage-stem');
+    case 'relets':       return editable('relets', v.relets);
+    case 'comments':     return editable('comments', v.comments);
+    case 'is_133': {
+      const checked = v.is_133 ? 'checked' : '';
+      return `<td style="text-align:center"><input type="checkbox" ${checked} onclick="toggle133('${section}','${v.id}')" style="cursor:pointer;width:16px;height:16px;accent-color:var(--accent)"></td>`;
+    }
+    case 'is_125': {
+      const checked = v.is_125 ? 'checked' : '';
+      return `<td style="text-align:center"><input type="checkbox" ${checked} onclick="toggle125('${section}','${v.id}')" style="cursor:pointer;width:16px;height:16px;accent-color:var(--accent)"></td>`;
+    }
+    case 'date':
+      return isFixed
+        ? `<td class="voyage-update" style="color:var(--green);font-weight:600">${v.fixed_at || '—'}</td>`
+        : editable('last_update', v.last_update, 'voyage-update');
+    case 'actions': {
+      const actionBtn = isFixed
+        ? `<button class="btn-remove" onclick="unfixVoyage('${section}','${v.id}')" title="Move back to live" style="border-color:var(--green);color:var(--green)">Unfix</button>`
+        : `<button class="voyage-fix-btn" onclick="fixVoyage('${section}','${v.id}')" title="Mark as fixed">✓ Fix</button>`;
+      return `<td style="white-space:nowrap">${actionBtn} <button class="btn-remove" onclick="removeVoyage('${section}','${v.id}')" style="margin-left:4px">x</button></td>`;
+    }
+    default: return '<td></td>';
+  }
+}
 
-  const draftChecked = v.is_133 ? 'checked' : '';
-  const draftCell = `<td style="text-align:center"><input type="checkbox" ${draftChecked} onclick="toggle133('${section}','${v.id}')" style="cursor:pointer;width:16px;height:16px;accent-color:var(--accent)"></td>`;
-  const commChecked = v.is_125 ? 'checked' : '';
-  const commCell = `<td style="text-align:center"><input type="checkbox" ${commChecked} onclick="toggle125('${section}','${v.id}')" style="cursor:pointer;width:16px;height:16px;accent-color:var(--accent)"></td>`;
+function renderVoyageRow(section, v, isFixed) {
+  const cells = voyageColumnOrder.map(col => voyageCellHTML(col, v, section, isFixed)).join('');
+  return `<tr ${isFixed ? 'class="voyage-row-fixed"' : ''}>${cells}</tr>`;
+}
 
-  return `<tr ${isFixed ? 'class="voyage-row-fixed"' : ''}>
-    ${editable('laycan', v.laycan)}
-    ${editable('buyer_seller', v.buyer_seller)}
-    ${editable('bid', v.bid, 'voyage-bid')}
-    ${editable('offer', v.offer, 'voyage-offer')}
-    ${editable('cgo_stem', v.cgo_stem, 'voyage-stem')}
-    ${draftCell}
-    ${commCell}
-    ${editable('relets', v.relets)}
-    ${editable('comments', v.comments)}
-    ${dateField}
-    <td style="white-space:nowrap">${actionBtn} <button class="btn-remove" onclick="removeVoyage('${section}','${v.id}')" style="margin-left:4px">x</button></td>
-  </tr>`;
+// ─── Column drag-and-drop reorder ────────────────────────────────────────────
+
+function initVoyageHeaderDrag(section) {
+  const headThs = document.querySelectorAll(`#${section}Table thead th[draggable]`);
+  let dragCol = null;
+  headThs.forEach(th => {
+    th.addEventListener('dragstart', e => {
+      dragCol = th.dataset.col;
+      th.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    th.addEventListener('dragend', () => {
+      th.classList.remove('dragging');
+      headThs.forEach(t => t.classList.remove('drag-over'));
+      dragCol = null;
+    });
+    th.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      th.classList.add('drag-over');
+    });
+    th.addEventListener('dragleave', () => th.classList.remove('drag-over'));
+    th.addEventListener('drop', e => {
+      e.preventDefault();
+      th.classList.remove('drag-over');
+      const targetCol = th.dataset.col;
+      if (!dragCol || dragCol === targetCol) return;
+      const fromIdx = voyageColumnOrder.indexOf(dragCol);
+      const toIdx = voyageColumnOrder.indexOf(targetCol);
+      if (fromIdx === -1 || toIdx === -1) return;
+      voyageColumnOrder.splice(fromIdx, 1);
+      voyageColumnOrder.splice(toIdx, 0, dragCol);
+      saveVoyageColumnOrder();
+      renderVoyages();
+    });
+  });
 }
 
 function toggle133(section, id) {
