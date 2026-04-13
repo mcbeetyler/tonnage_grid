@@ -40,6 +40,12 @@ cat cargo.js >> dashboard-standalone.html
 echo '' >> dashboard-standalone.html
 echo '</script>' >> dashboard-standalone.html
 
+# Inline voyages.js
+echo '<script>' >> dashboard-standalone.html
+cat voyages.js >> dashboard-standalone.html
+echo '' >> dashboard-standalone.html
+echo '</script>' >> dashboard-standalone.html
+
 echo '</body>' >> dashboard-standalone.html
 echo '</html>' >> dashboard-standalone.html
 

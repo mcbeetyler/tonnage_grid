@@ -211,6 +211,33 @@
   .cargo-paste-body.open{display:block}
   .cargo-paste-body textarea{width:100%;height:120px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-family:var(--mono);font-size:10px;line-height:1.5;padding:10px;resize:vertical;outline:none}
   .cargo-paste-body textarea:focus{border-color:var(--accent)}
+
+  /* Voyages tab */
+  .voyage-section{padding:0 28px 24px}
+  .voyage-route-header{background:var(--accent);color:#fff;padding:10px 16px;font-size:13px;font-weight:700;border-radius:var(--radius) var(--radius) 0 0;letter-spacing:.3px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .voyage-route-header .route-meta{font-size:11px;font-weight:500;opacity:.85}
+  .voyage-route-edit{margin-left:auto;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:10px;padding:3px 10px;border-radius:4px;cursor:pointer}
+  .voyage-route-edit:hover{background:rgba(255,255,255,.25)}
+  .voyage-table-wrap{border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius) var(--radius);overflow:auto}
+  .voyage-table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+  .voyage-table thead th{background:var(--bg3);padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--text-dim);letter-spacing:.3px;border-bottom:1px solid var(--border2);white-space:nowrap}
+  .voyage-table tbody tr{transition:background .1s}
+  .voyage-table tbody tr:hover{background:var(--bg-hover)}
+  .voyage-table tbody td{padding:8px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+  .voyage-table .laycan-month{background:var(--accent-light);color:var(--accent);font-weight:700;padding:8px 14px;font-size:11px;letter-spacing:.5px;text-transform:uppercase}
+  .voyage-bid{color:var(--green);font-weight:600;font-family:var(--mono)}
+  .voyage-offer{color:var(--red);font-weight:600;font-family:var(--mono)}
+  .voyage-stem{font-family:var(--mono);font-size:12px;color:var(--text-dim)}
+  .voyage-update{font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+  .voyage-controls{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  .voyage-add-btn{background:var(--accent);color:#fff;font-size:11px;padding:6px 14px;border-radius:var(--radius-sm);border:none;cursor:pointer;font-weight:500}
+  .voyage-add-btn:hover{background:var(--accent-hover)}
+  .voyage-empty{padding:40px 14px;text-align:center;color:var(--text-dim);font-size:12px}
+  .voyage-stem-pill{font-size:11px;font-weight:500;padding:5px 11px;border-radius:14px;border:1px solid var(--border);background:var(--bg2);color:var(--text-dim);cursor:pointer;transition:all .15s}
+  .voyage-stem-pill:hover{border-color:var(--accent);color:var(--accent)}
+  .voyage-stem-pill.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .voyage-cell-edit{cursor:text;border-radius:3px;padding:1px 4px;margin:-1px -4px;transition:background .12s}
+  .voyage-cell-edit:hover{background:rgba(24,95,165,.06)}
 </style>
 </head>
 <body>
@@ -218,6 +245,7 @@
 <div class="tab-bar">
   <button class="tab-btn active" onclick="switchTab('tonnage')">Tonnage Board</button>
   <button class="tab-btn" onclick="switchTab('cargo')">Cargo Book</button>
+  <button class="tab-btn" onclick="switchTab('voyages')">Voyages</button>
 </div>
 
 <div id="tab-tonnage" class="tab-panel active">
@@ -511,9 +539,90 @@ BOD ABT 1250/240
   </div>
 </div><!-- end tab-cargo -->
 
+<div id="tab-voyages" class="tab-panel">
+  <!-- Paste bar -->
+  <div style="padding:14px 28px 0">
+    <div class="cargo-paste-area" style="padding:0">
+      <div class="cargo-paste-toggle" onclick="toggleVoyagePaste()">
+        <span class="arrow" id="voyagePasteArrow">&#9654;</span>
+        Paste voyage data (P7 or P8)
+      </div>
+      <div class="cargo-paste-body" id="voyagePasteBody">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+          <span class="toolbar-label">Section:</span>
+          <select class="form-select" id="voyagePasteSection" style="width:200px">
+            <option value="p8">P8 — Santos / N.China</option>
+            <option value="p7">P7 — USG / China</option>
+          </select>
+        </div>
+        <textarea id="voyageInput" placeholder="Paste voyage data (tab-separated rows: laycan, buyer/seller, bid, offer, cargo stem, relets, comments, last update)..."></textarea>
+        <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+          <button class="btn-primary" style="flex:0;padding:6px 16px;font-size:11px" onclick="parseVoyagePaste()">Parse</button>
+          <button class="btn-secondary" style="padding:6px 12px;font-size:11px" onclick="clearVoyageInput()">Clear input</button>
+          <label style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:6px;margin-left:8px;cursor:pointer">
+            <input type="checkbox" id="voyageAIToggle" checked>
+            AI parse
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- P8 Section -->
+  <div class="voyage-section" id="voyageP8Section">
+    <div class="voyage-route-header">
+      <span id="p8RouteName">P8 — 63/10 SANTOS / N.CHINA 13M 8x/8x 5%ttl</span>
+      <span class="route-meta" id="p8Count">0 voyages</span>
+      <button class="voyage-route-edit" onclick="editRouteHeader('p8')">Edit header</button>
+    </div>
+    <div style="padding:12px 16px;background:var(--bg2);border-left:1px solid var(--border);border-right:1px solid var(--border)">
+      <div class="voyage-controls">
+        <span class="toolbar-label">Stem size:</span>
+        <div id="p8StemFilters" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+        <div class="spacer"></div>
+        <button class="voyage-add-btn" onclick="addVoyageRow('p8')">+ Add row</button>
+      </div>
+    </div>
+    <div class="voyage-table-wrap">
+      <table class="voyage-table" id="p8Table">
+        <thead><tr>
+          <th>Laycan</th><th>Buyer/Seller</th><th>Bid</th><th>Offer</th><th>Cgo Stem</th><th>Relets</th><th>Comments</th><th>Last Update</th><th></th>
+        </tr></thead>
+        <tbody id="p8Body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- P7 Section -->
+  <div class="voyage-section" id="voyageP7Section">
+    <div class="voyage-route-header" style="background:var(--green)">
+      <span id="p7RouteName">P7 — USG / N.CHINA</span>
+      <span class="route-meta" id="p7Count">0 voyages</span>
+      <button class="voyage-route-edit" onclick="editRouteHeader('p7')">Edit header</button>
+    </div>
+    <div style="padding:12px 16px;background:var(--bg2);border-left:1px solid var(--border);border-right:1px solid var(--border)">
+      <div class="voyage-controls">
+        <span class="toolbar-label">Stem size:</span>
+        <div id="p7StemFilters" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+        <div class="spacer"></div>
+        <button class="voyage-add-btn" onclick="addVoyageRow('p7')">+ Add row</button>
+      </div>
+    </div>
+    <div class="voyage-table-wrap">
+      <table class="voyage-table" id="p7Table">
+        <thead><tr>
+          <th>Laycan</th><th>Buyer/Seller</th><th>Bid</th><th>Offer</th><th>Cgo Stem</th><th>Relets</th><th>Comments</th><th>Last Update</th><th></th>
+        </tr></thead>
+        <tbody id="p7Body"></tbody>
+      </table>
+    </div>
+  </div>
+</div><!-- end tab-voyages -->
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="parser.js"></script>
 <script src="app.js"></script>
 <script src="cargo.js"></script>
+<script src="voyages.js"></script>
 </body>
 </html>
