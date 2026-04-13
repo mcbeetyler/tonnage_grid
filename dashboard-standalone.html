@@ -238,6 +238,17 @@
   .voyage-stem-pill.active{background:var(--accent);border-color:var(--accent);color:#fff}
   .voyage-cell-edit{cursor:text;border-radius:3px;padding:1px 4px;margin:-1px -4px;transition:background .12s}
   .voyage-cell-edit:hover{background:rgba(24,95,165,.06)}
+
+  /* Fix button + fixed section */
+  .voyage-fix-btn{background:var(--green-light);color:var(--green);border:1px solid var(--green-border);padding:4px 10px;font-size:11px;font-weight:600;border-radius:var(--radius-sm);cursor:pointer;transition:all .15s}
+  .voyage-fix-btn:hover{background:var(--green);color:#fff}
+  .voyage-fixed-wrap{margin-top:8px}
+  .voyage-fixed-toggle{padding:8px 14px;background:var(--green-light);color:var(--green);border:1px solid var(--green-border);border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .voyage-fixed-toggle:hover{background:var(--green);color:#fff}
+  .voyage-fixed-toggle .arrow{font-size:10px;transition:transform .15s}
+  .voyage-row-fixed td{background:rgba(45,109,17,.04);color:var(--text-dim)}
+  .voyage-row-fixed .voyage-bid{color:var(--text-dim)}
+  .voyage-row-fixed .voyage-offer{color:var(--text-dim)}
 </style>
 </head>
 <body>
@@ -591,6 +602,7 @@ BOD ABT 1250/240
         <tbody id="p8Body"></tbody>
       </table>
     </div>
+    <div class="voyage-fixed-wrap" id="p8FixedWrap" style="display:none"></div>
   </div>
 
   <!-- P7 Section -->
@@ -616,6 +628,7 @@ BOD ABT 1250/240
         <tbody id="p7Body"></tbody>
       </table>
     </div>
+    <div class="voyage-fixed-wrap" id="p7FixedWrap" style="display:none"></div>
   </div>
 </div><!-- end tab-voyages -->
 
@@ -3849,6 +3862,7 @@ if (cargoHistory.length > 0 && document.getElementById('tab-cargo') && document.
 let voyageData = JSON.parse(localStorage.getItem('pt_voyages') || '{"p7":[],"p8":[]}');
 let voyageRouteHeaders = JSON.parse(localStorage.getItem('pt_voyage_headers') || '{}');
 let voyageStemFilters = { p7: 'ALL', p8: 'ALL' };
+let voyageFixedExpanded = JSON.parse(localStorage.getItem('pt_voyage_fixed_expanded') || '{"p7":false,"p8":false}');
 
 const DEFAULT_HEADERS = {
   p8: '63/10 SANTOS / N.CHINA 13M 8x/8x 5%ttl',
@@ -3957,11 +3971,15 @@ function renderVoyageSection(section) {
     section.toUpperCase() + ' — ' + getRouteHeader(section);
 
   const all = voyageData[section] || [];
+  // Split live vs fixed
+  const live = all.filter(v => v.status !== 'FIXED');
+  const fixed = all.filter(v => v.status === 'FIXED');
 
   // Stem filter pills — extract sizes from default header + each voyage's cgo_stem override
+  // (only consider live voyages for the filter counts)
   const defaultSize = extractStemSize(getRouteHeader(section)) || '63/10';
   const stemSet = new Set([defaultSize]);
-  all.forEach(v => {
+  live.forEach(v => {
     const s = extractStemSize(v.cgo_stem);
     if (s) stemSet.add(s);
   });
@@ -3969,9 +3987,9 @@ function renderVoyageSection(section) {
   const stemFilters = document.getElementById(section + 'StemFilters');
   const activeStem = voyageStemFilters[section];
   stemFilters.innerHTML =
-    `<button class="voyage-stem-pill ${activeStem === 'ALL' ? 'active' : ''}" onclick="setVoyageStem('${section}','ALL')">All (${all.length})</button>` +
+    `<button class="voyage-stem-pill ${activeStem === 'ALL' ? 'active' : ''}" onclick="setVoyageStem('${section}','ALL')">All (${live.length})</button>` +
     stems.map(s => {
-      const cnt = all.filter(v => {
+      const cnt = live.filter(v => {
         const sz = extractStemSize(v.cgo_stem) || defaultSize;
         return sz === s;
       }).length;
@@ -3979,9 +3997,9 @@ function renderVoyageSection(section) {
     }).join('');
 
   // Filter
-  let filtered = all;
+  let filtered = live;
   if (activeStem !== 'ALL') {
-    filtered = all.filter(v => {
+    filtered = live.filter(v => {
       const sz = extractStemSize(v.cgo_stem) || defaultSize;
       return sz === activeStem;
     });
@@ -3990,34 +4008,90 @@ function renderVoyageSection(section) {
   // Sort by laycan
   filtered = [...filtered].sort((a, b) => laycanSortKey(a.laycan) - laycanSortKey(b.laycan));
 
-  // Group by month
-  document.getElementById(section + 'Count').textContent = `${all.length} voyage${all.length === 1 ? '' : 's'}`;
+  // Counts
+  document.getElementById(section + 'Count').textContent =
+    `${live.length} live${fixed.length ? ` · ${fixed.length} fixed` : ''}`;
 
+  // Live table
   const tbody = document.getElementById(section + 'Body');
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" class="voyage-empty">No voyages yet. Click "+ Add row" or paste data above.</td></tr>`;
-    return;
+    tbody.innerHTML = `<tr><td colspan="10" class="voyage-empty">No live voyages. Click "+ Add row" or paste data above.</td></tr>`;
+  } else {
+    const rows = [];
+    let lastMonth = null;
+    for (const v of filtered) {
+      const month = laycanMonth(v.laycan);
+      if (month !== lastMonth) {
+        rows.push(`<tr><td colspan="10" class="laycan-month">${month || 'No laycan'}</td></tr>`);
+        lastMonth = month;
+      }
+      rows.push(renderVoyageRow(section, v, false));
+    }
+    tbody.innerHTML = rows.join('');
   }
 
-  const rows = [];
-  let lastMonth = null;
-  for (const v of filtered) {
-    const month = laycanMonth(v.laycan);
-    if (month !== lastMonth) {
-      rows.push(`<tr><td colspan="9" class="laycan-month">${month || 'No laycan'}</td></tr>`);
-      lastMonth = month;
-    }
-    rows.push(renderVoyageRow(section, v));
-  }
-  tbody.innerHTML = rows.join('');
+  // Fixed section
+  renderVoyageFixed(section, fixed);
 }
 
-function renderVoyageRow(section, v) {
+function renderVoyageFixed(section, fixed) {
+  const wrap = document.getElementById(section + 'FixedWrap');
+  if (!wrap) return;
+
+  if (fixed.length === 0) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = '';
+
+  const expanded = voyageFixedExpanded[section];
+  const arrow = expanded ? '&#9660;' : '&#9654;';
+
+  const sortedFixed = [...fixed].sort((a, b) => {
+    // Most recently fixed first
+    return (b.fixed_at || '').localeCompare(a.fixed_at || '');
+  });
+
+  let inner = `<div class="voyage-fixed-toggle" onclick="toggleVoyageFixed('${section}')">
+    <span class="arrow">${arrow}</span>
+    Fixed (${fixed.length})
+  </div>`;
+
+  if (expanded) {
+    const rows = sortedFixed.map(v => renderVoyageRow(section, v, true)).join('');
+    inner += `<div class="voyage-table-wrap" style="border-radius:0 0 var(--radius) var(--radius);margin-top:0">
+      <table class="voyage-table">
+        <thead><tr>
+          <th>Laycan</th><th>Buyer/Seller</th><th>Bid</th><th>Offer</th><th>Cgo Stem</th><th>Relets</th><th>Comments</th><th>Fixed At</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }
+
+  wrap.innerHTML = inner;
+}
+
+function toggleVoyageFixed(section) {
+  voyageFixedExpanded[section] = !voyageFixedExpanded[section];
+  localStorage.setItem('pt_voyage_fixed_expanded', JSON.stringify(voyageFixedExpanded));
+  renderVoyageSection(section);
+}
+
+function renderVoyageRow(section, v, isFixed) {
   const editable = (field, value, cls) => {
-    const safeVal = (value || '').toString().replace(/"/g, '&quot;');
     return `<td class="voyage-cell-edit ${cls || ''}" onclick="editVoyageCell(this,'${section}','${v.id}','${field}')">${value || '—'}</td>`;
   };
-  return `<tr>
+  // For fixed rows, show fixed_at instead of last_update in the date column
+  const dateField = isFixed
+    ? `<td class="voyage-update" style="color:var(--green);font-weight:600">${v.fixed_at || '—'}</td>`
+    : editable('last_update', v.last_update, 'voyage-update');
+
+  const actionBtn = isFixed
+    ? `<button class="btn-remove" onclick="unfixVoyage('${section}','${v.id}')" title="Move back to live" style="border-color:var(--green);color:var(--green)">Unfix</button>`
+    : `<button class="voyage-fix-btn" onclick="fixVoyage('${section}','${v.id}')" title="Mark as fixed">✓ Fix</button>`;
+
+  return `<tr ${isFixed ? 'class="voyage-row-fixed"' : ''}>
     ${editable('laycan', v.laycan)}
     ${editable('buyer_seller', v.buyer_seller)}
     ${editable('bid', v.bid, 'voyage-bid')}
@@ -4025,9 +4099,27 @@ function renderVoyageRow(section, v) {
     ${editable('cgo_stem', v.cgo_stem, 'voyage-stem')}
     ${editable('relets', v.relets)}
     ${editable('comments', v.comments)}
-    ${editable('last_update', v.last_update, 'voyage-update')}
-    <td><button class="btn-remove" onclick="removeVoyage('${section}','${v.id}')">x</button></td>
+    ${dateField}
+    <td style="white-space:nowrap">${actionBtn} <button class="btn-remove" onclick="removeVoyage('${section}','${v.id}')" style="margin-left:4px">x</button></td>
   </tr>`;
+}
+
+function fixVoyage(section, id) {
+  const v = voyageData[section].find(x => x.id === id);
+  if (!v) return;
+  v.status = 'FIXED';
+  v.fixed_at = todayCompact();
+  saveVoyages();
+  renderVoyageSection(section);
+}
+
+function unfixVoyage(section, id) {
+  const v = voyageData[section].find(x => x.id === id);
+  if (!v) return;
+  v.status = 'OPEN';
+  v.fixed_at = null;
+  saveVoyages();
+  renderVoyageSection(section);
 }
 
 // ─── Editing ─────────────────────────────────────────────────────────────────

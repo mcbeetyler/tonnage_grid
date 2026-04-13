@@ -238,6 +238,17 @@
   .voyage-stem-pill.active{background:var(--accent);border-color:var(--accent);color:#fff}
   .voyage-cell-edit{cursor:text;border-radius:3px;padding:1px 4px;margin:-1px -4px;transition:background .12s}
   .voyage-cell-edit:hover{background:rgba(24,95,165,.06)}
+
+  /* Fix button + fixed section */
+  .voyage-fix-btn{background:var(--green-light);color:var(--green);border:1px solid var(--green-border);padding:4px 10px;font-size:11px;font-weight:600;border-radius:var(--radius-sm);cursor:pointer;transition:all .15s}
+  .voyage-fix-btn:hover{background:var(--green);color:#fff}
+  .voyage-fixed-wrap{margin-top:8px}
+  .voyage-fixed-toggle{padding:8px 14px;background:var(--green-light);color:var(--green);border:1px solid var(--green-border);border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .voyage-fixed-toggle:hover{background:var(--green);color:#fff}
+  .voyage-fixed-toggle .arrow{font-size:10px;transition:transform .15s}
+  .voyage-row-fixed td{background:rgba(45,109,17,.04);color:var(--text-dim)}
+  .voyage-row-fixed .voyage-bid{color:var(--text-dim)}
+  .voyage-row-fixed .voyage-offer{color:var(--text-dim)}
 </style>
 </head>
 <body>
@@ -591,6 +602,7 @@ BOD ABT 1250/240
         <tbody id="p8Body"></tbody>
       </table>
     </div>
+    <div class="voyage-fixed-wrap" id="p8FixedWrap" style="display:none"></div>
   </div>
 
   <!-- P7 Section -->
@@ -616,6 +628,7 @@ BOD ABT 1250/240
         <tbody id="p7Body"></tbody>
       </table>
     </div>
+    <div class="voyage-fixed-wrap" id="p7FixedWrap" style="display:none"></div>
   </div>
 </div><!-- end tab-voyages -->
 
