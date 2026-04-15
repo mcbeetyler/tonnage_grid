@@ -315,12 +315,17 @@
 
     <!-- Parse mode -->
     <div class="inbox-area" id="parsePanel">
-      <textarea id="rawInput" placeholder="Paste WhatsApp tonnage messages here.
+      <textarea id="rawInput" placeholder="Paste WhatsApp messages OR spreadsheet data (TSV/CSV with headers).
 
-Example:
+WhatsApp example:
 QUADRA - MV SAKIZAYA MIRACLE (81/17) GOA 31 MARCH / ETA 25 APR ONW
 BOD ABT 1250/240
-= ECSA FH: Claims seeing 20k multiple times vs 21,500 (p6: 16,700 vs 18k)"></textarea>
+
+Spreadsheet example (first row = headers):
+VESSEL  DWT  AGE  DRAFT  YARD  ORIGIN  DELY  LAYDAY  HIRE  BB  ETA  OWNER  BKI EQVT  ...
+Anastasia 75K  75,331  Jan-2006  14.17  STX JINHAE  KR  Vizag via CGH  15-Apr  $15,500  ...
+
+CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charterer, Status are preserved."></textarea>
       <div id="previewBox" class="preview-box">Parsed output will appear here</div>
       <div class="inbox-controls">
         <button class="btn-primary" id="btnParse" onclick="handleParse()">Parse (AI)</button>

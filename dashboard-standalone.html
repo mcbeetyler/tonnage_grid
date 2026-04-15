@@ -315,12 +315,17 @@
 
     <!-- Parse mode -->
     <div class="inbox-area" id="parsePanel">
-      <textarea id="rawInput" placeholder="Paste WhatsApp tonnage messages here.
+      <textarea id="rawInput" placeholder="Paste WhatsApp messages OR spreadsheet data (TSV/CSV with headers).
 
-Example:
+WhatsApp example:
 QUADRA - MV SAKIZAYA MIRACLE (81/17) GOA 31 MARCH / ETA 25 APR ONW
 BOD ABT 1250/240
-= ECSA FH: Claims seeing 20k multiple times vs 21,500 (p6: 16,700 vs 18k)"></textarea>
+
+Spreadsheet example (first row = headers):
+VESSEL  DWT  AGE  DRAFT  YARD  ORIGIN  DELY  LAYDAY  HIRE  BB  ETA  OWNER  BKI EQVT  ...
+Anastasia 75K  75,331  Jan-2006  14.17  STX JINHAE  KR  Vizag via CGH  15-Apr  $15,500  ...
+
+CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charterer, Status are preserved."></textarea>
       <div id="previewBox" class="preview-box">Parsed output will appear here</div>
       <div class="inbox-controls">
         <button class="btn-primary" id="btnParse" onclick="handleParse()">Parse (AI)</button>
@@ -2057,10 +2062,19 @@ let activeFilters = new Set(['ALL']); // multi-select status filters
 let currentSort = { key: 'eta_ecsa', dir: 'asc' };
 
 // Column visibility AND order — stored in localStorage
-const ALL_COLUMNS = ['laycan','vessel','owner','specs','scr','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
+const ALL_COLUMNS = ['laycan','vessel','owner','specs','draft','yard','origin','scr','delivery','laycan_date','eta','hire_offer','bb_offer','bki_eqvt','rate_pmt','arrow_eqvt','bunker','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
 const DEFAULT_ORDER = ['laycan','vessel','owner','specs','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
 let columnOrder = JSON.parse(localStorage.getItem('pt_col_order') || 'null') || [...DEFAULT_ORDER];
 let hiddenColumns = new Set(JSON.parse(localStorage.getItem('pt_col_hidden') || '[]'));
+
+// Hide new columns by default (existing users won't suddenly see them)
+const NEW_HIDDEN_BY_DEFAULT = ['draft','yard','origin','laycan_date','hire_offer','bb_offer','bki_eqvt','rate_pmt','arrow_eqvt','bunker'];
+NEW_HIDDEN_BY_DEFAULT.forEach(c => {
+  if (!columnOrder.includes(c)) {
+    columnOrder.push(c);
+    hiddenColumns.add(c);
+  }
+});
 
 // Migrate old format
 const oldVisible = JSON.parse(localStorage.getItem('pt_columns') || 'null');
@@ -2220,6 +2234,40 @@ function applyEdit(idx, field, val) {
       if (!isNaN(y)) v.build_year = y < 100 ? 2000 + y : y;
       break;
     }
+    case 'draft': {
+      const n = parseFloat(val);
+      v.draft = isNaN(n) ? null : n;
+      break;
+    }
+    case 'yard': v.yard = val || null; break;
+    case 'origin': v.origin = val || null; break;
+    case 'laycan_date': v.laycan_date = val || null; break;
+    case 'hire_offer': {
+      const n = parseFloat((val || '').replace(/[$,]/g, ''));
+      v.hire_offer = isNaN(n) ? null : n;
+      break;
+    }
+    case 'bb_offer': {
+      const n = parseFloat((val || '').replace(/[$,]/g, ''));
+      v.bb_offer = isNaN(n) ? null : n;
+      break;
+    }
+    case 'bki_eqvt': {
+      const n = parseFloat((val || '').replace(/[$,]/g, ''));
+      v.bki_eqvt = isNaN(n) ? null : n;
+      break;
+    }
+    case 'rate_pmt': {
+      const n = parseFloat((val || '').replace(/[$,]/g, ''));
+      v.rate_pmt = isNaN(n) ? null : n;
+      break;
+    }
+    case 'arrow_eqvt': {
+      const n = parseFloat((val || '').replace(/[$,]/g, ''));
+      v.arrow_eqvt = isNaN(n) ? null : n;
+      break;
+    }
+    case 'bunker': v.bunker = val || null; break;
   }
   save();
 }
@@ -2447,6 +2495,284 @@ function startEditSpecs(el, vesselIdx) {
   });
 }
 
+// ─── CSV/TSV Paste Parser ───────────────────────────────────────────────────
+// Paste from spreadsheet (tab-separated) or CSV. First row must be headers.
+// Known headers (case-insensitive, flexible whitespace/punctuation):
+//   vessel, dwt, age, draft, yard, origin, dely (delivery), layday, hire (offer),
+//   bb (offer), eta, owner, bki eqvt, rate $/pmt, arrow eqvt, comments, bunker
+
+const CSV_HEADER_MAP = {
+  'vessel': 'vessel_name',
+  'vessel name': 'vessel_name',
+  'name': 'vessel_name',
+  'dwt': 'dwt',
+  'age': 'build_year_raw', // special parsing
+  'built': 'build_year_raw',
+  'year': 'build_year_raw',
+  'draft': 'draft',
+  'yard': 'yard',
+  'origin': 'origin',
+  'flag': 'origin',
+  'dely': 'delivery_basis',
+  'delivery': 'delivery_basis',
+  'layday': 'laycan_date',
+  'laycan': 'laycan_date',
+  'open': 'open_date_raw',
+  'hire': 'hire_offer',
+  'hire (offer)': 'hire_offer',
+  'hire offer': 'hire_offer',
+  'bb': 'bb_offer',
+  'bb (offer)': 'bb_offer',
+  'bb offer': 'bb_offer',
+  'ballast bonus': 'bb_offer',
+  'eta': 'eta_ecsa_raw',
+  'owner': 'owner',
+  'bki eqvt': 'bki_eqvt',
+  'bki equivalent': 'bki_eqvt',
+  'bki': 'bki_eqvt',
+  'rate $/pmt': 'rate_pmt',
+  'rate': 'rate_pmt',
+  'rate $': 'rate_pmt',
+  '$/pmt': 'rate_pmt',
+  'arrow eqvt': 'arrow_eqvt',
+  'arrow equivalent': 'arrow_eqvt',
+  'arrow': 'arrow_eqvt',
+  'comments': 'notes',
+  'comment': 'notes',
+  'bunker': 'bunker',
+  'bunkers': 'bunker',
+  'scrubber': 'scrubber_raw',
+  'scr': 'scrubber_raw',
+};
+
+function normalizeHeader(h) {
+  return (h || '')
+    .toLowerCase()
+    .replace(/[\n\r]+/g, ' ')
+    .replace(/["'`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function detectDelimiter(line) {
+  // Prefer tabs; fall back to comma if no tabs
+  if (line.indexOf('\t') !== -1) return '\t';
+  return ',';
+}
+
+// Simple CSV splitter that respects double-quoted fields
+function splitCSVRow(line, delim) {
+  if (delim === '\t') return line.split('\t');
+  const out = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; continue; }
+      inQuotes = !inQuotes;
+      continue;
+    }
+    if (c === delim && !inQuotes) { out.push(cur); cur = ''; continue; }
+    cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
+function parseMoney(s) {
+  if (!s) return null;
+  const n = parseFloat(s.toString().replace(/[$,\s]/g, ''));
+  return isNaN(n) ? null : n;
+}
+
+function parseAgeField(s) {
+  // "Jan-2006" → 2006;  "2016" → 2016;  "16" → 2016
+  if (!s) return null;
+  const m = s.match(/(19|20)\d{2}/);
+  if (m) return parseInt(m[0], 10);
+  const n = parseInt(s, 10);
+  if (!isNaN(n) && n < 100) return 2000 + n;
+  return null;
+}
+
+function parseLaydayDate(s) {
+  if (!s) return null;
+  // Accept "15-Apr", "15 Apr", "15-Apr-26", "2026-04-15"
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const m = s.match(/(\d{1,2})[\s-]+([A-Za-z]{3,})/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10);
+  const monthMap = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+  const monthKey = m[2].slice(0, 3).toLowerCase();
+  const month = monthMap[monthKey];
+  if (!month) return null;
+  const year = new Date().getFullYear();
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+// Detect if the input looks like tabular data (CSV/TSV with a header row)
+function looksLikeCSV(raw) {
+  const firstLine = raw.split('\n')[0];
+  if (!firstLine) return false;
+  const delim = detectDelimiter(firstLine);
+  const cells = splitCSVRow(firstLine, delim).map(c => normalizeHeader(c));
+  // Need at least a vessel column + 2 other recognisable columns
+  const vesselHit = cells.some(c => CSV_HEADER_MAP[c] === 'vessel_name');
+  const others = cells.filter(c => CSV_HEADER_MAP[c] && CSV_HEADER_MAP[c] !== 'vessel_name').length;
+  return vesselHit && others >= 2;
+}
+
+function parseCSVVessels(raw) {
+  const lines = raw.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const delim = detectDelimiter(lines[0]);
+
+  // Build column map from header row
+  const headerCells = splitCSVRow(lines[0], delim).map(normalizeHeader);
+  const colMap = headerCells.map(h => CSV_HEADER_MAP[h] || null);
+
+  const vessels = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = splitCSVRow(lines[i], delim).map(c => (c || '').trim());
+    // Skip empty rows
+    if (cells.every(c => !c)) continue;
+
+    const v = {
+      vessel_name: null, dwt: null, build_year: null, draft: null, yard: null,
+      origin: null, delivery_basis: null, laycan_date: null,
+      hire_offer: null, bb_offer: null, eta_ecsa: null, eta_type: null,
+      owner: null, bki_eqvt: null, rate_pmt: null, arrow_eqvt: null,
+      notes: null, bunker: null, scrubber: null,
+      market_colour: [],
+      status: 'OPEN',
+      raw: lines[i],
+      parsed_at: new Date().toISOString(),
+      parse_warnings: [],
+    };
+
+    for (let j = 0; j < cells.length; j++) {
+      const field = colMap[j];
+      const val = cells[j];
+      if (!field || !val) continue;
+
+      switch (field) {
+        case 'vessel_name':
+          // strip trailing "75Dwt"-style suffix so we keep just the name
+          v.vessel_name = val.replace(/\s+\d+\s*dwt$/i, '').trim();
+          break;
+        case 'dwt': {
+          const n = parseFloat(val.replace(/[,\s]/g, ''));
+          if (!isNaN(n)) v.dwt = n < 1000 ? n * 1000 : n;
+          break;
+        }
+        case 'build_year_raw':
+          v.build_year = parseAgeField(val);
+          break;
+        case 'draft': {
+          const n = parseFloat(val);
+          if (!isNaN(n)) v.draft = n;
+          break;
+        }
+        case 'yard': v.yard = val; break;
+        case 'origin': v.origin = val; break;
+        case 'delivery_basis': v.delivery_basis = val.toUpperCase(); break;
+        case 'laycan_date': {
+          v.laycan_date = val;
+          // Also set open_date if parseable
+          const d = parseLaydayDate(val);
+          if (d) v.open_date = d;
+          break;
+        }
+        case 'open_date_raw': {
+          const d = parseLaydayDate(val);
+          if (d) v.open_date = d;
+          break;
+        }
+        case 'hire_offer': v.hire_offer = parseMoney(val); break;
+        case 'bb_offer': v.bb_offer = parseMoney(val); break;
+        case 'eta_ecsa_raw': {
+          const d = parseLaydayDate(val);
+          if (d) { v.eta_ecsa = d; v.eta_type = 'EXACT'; }
+          else { v.notes = (v.notes ? v.notes + ' · ' : '') + 'ETA: ' + val; }
+          break;
+        }
+        case 'owner': v.owner = val; break;
+        case 'bki_eqvt': v.bki_eqvt = parseMoney(val); break;
+        case 'rate_pmt': v.rate_pmt = parseMoney(val); break;
+        case 'arrow_eqvt': v.arrow_eqvt = parseMoney(val); break;
+        case 'notes': v.notes = val; break;
+        case 'bunker': v.bunker = val; break;
+        case 'scrubber_raw': {
+          const s = val.toLowerCase();
+          if (/yes|true|scr|fitted/.test(s)) v.scrubber = true;
+          else if (/no|false|none/.test(s)) v.scrubber = false;
+          break;
+        }
+      }
+    }
+
+    // Populate market_colour from hire_offer so P6 offer / spread can flow
+    if (v.hire_offer || v.bki_eqvt) {
+      v.market_colour = [{
+        route: 'ECSA FH',
+        bid_usd: null, offer_usd: v.hire_offer, bb_usd: v.bb_offer,
+        p6_bid: null, p6_offer: v.bki_eqvt || null,
+        bid_multiple_claims: false, is_bid: false, is_idea: false,
+        collecting: false, notes: null,
+      }];
+    }
+
+    if (v.vessel_name) vessels.push(v);
+  }
+
+  return vessels;
+}
+
+// Add or merge CSV-parsed vessels into the main vessels array.
+// Dedup: match on normalized vessel_name (case-insensitive, ignoring punctuation).
+// Existing vessels get live-field updates (hire offer, BKI, comments, last_updated)
+// while user-added fields (p6_bid, fixed_price, charterer, date_fixed, status) are PRESERVED.
+function mergeCSVVessels(newVessels) {
+  const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  let added = 0, updated = 0;
+
+  for (const nv of newVessels) {
+    const existIdx = vessels.findIndex(v => norm(v.vessel_name) === norm(nv.vessel_name));
+    if (existIdx === -1) {
+      vessels.push(nv);
+      added++;
+    } else {
+      const existing = vessels[existIdx];
+      // Update "live" fields from CSV (what the spreadsheet tracks)
+      const liveFields = ['dwt','build_year','draft','yard','origin','delivery_basis',
+        'laycan_date','hire_offer','bb_offer','owner','bki_eqvt','rate_pmt',
+        'arrow_eqvt','notes','bunker','eta_ecsa','eta_type','open_date'];
+      for (const f of liveFields) {
+        if (nv[f] != null && nv[f] !== '') existing[f] = nv[f];
+      }
+      // Merge market_colour — refresh offer/p6_offer from CSV, keep user's p6_bid
+      if (nv.market_colour && nv.market_colour[0]) {
+        const newMc = nv.market_colour[0];
+        const existMc = existing.market_colour && existing.market_colour[0];
+        if (existMc) {
+          if (newMc.offer_usd != null) existMc.offer_usd = newMc.offer_usd;
+          if (newMc.bb_usd != null) existMc.bb_usd = newMc.bb_usd;
+          if (newMc.p6_offer != null) existMc.p6_offer = newMc.p6_offer;
+          // keep existMc.p6_bid (user-entered)
+        } else {
+          existing.market_colour = [newMc];
+        }
+      }
+      existing.last_updated = new Date().toISOString();
+      // Status / charterer / fixed_price / date_fixed / p6_bid are preserved
+      updated++;
+    }
+  }
+
+  return { added, updated };
+}
+
 // ─── Inbox Handlers ──────────────────────────────────────────────────────────
 
 async function handleParse() {
@@ -2455,6 +2781,31 @@ async function handleParse() {
   const preview = document.getElementById('previewBox');
   const btnAdd = document.getElementById('btnAdd');
   const btnParse = document.getElementById('btnParse');
+
+  // If the paste looks like CSV/TSV with a header row, parse + merge directly (no API)
+  if (looksLikeCSV(raw)) {
+    try {
+      const parsed = parseCSVVessels(raw);
+      if (parsed.length === 0) {
+        preview.textContent = 'CSV detected but no valid rows parsed.';
+        preview.className = 'preview-box has-error';
+        return;
+      }
+      const { added, updated } = mergeCSVVessels(parsed);
+      save();
+      renderTable();
+      updateStats();
+      preview.textContent = `CSV parsed: ${parsed.length} row(s) → ${added} added, ${updated} updated.\n\nExisting vessels keep: P6 bid, fixed price, charterer, date fixed, status.`;
+      preview.className = 'preview-box has-content';
+      document.getElementById('rawInput').value = '';
+      pendingParsed = null;
+      btnAdd.disabled = true;
+    } catch (e) {
+      preview.textContent = 'CSV parse error: ' + e.message;
+      preview.className = 'preview-box has-error';
+    }
+    return;
+  }
 
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -2603,7 +2954,7 @@ function clearDateFilter() {
 
 // ─── Column Visibility & Reordering ──────────────────────────────────────────
 
-const COL_LABELS = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',specs:'DWT/Built',scr:'SCR',delivery:'Delivery',eta:'ETA',p6_bid:'P6 Bid',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',date_fixed:'Date Fixed',last_updated:'Updated',notes:'Notes',status:'Status',actions:'Actions'};
+const COL_LABELS = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',specs:'DWT/Built',draft:'Draft',yard:'Yard',origin:'Origin',scr:'SCR',delivery:'Delivery',laycan_date:'Layday',eta:'ETA',hire_offer:'Hire Offer',bb_offer:'BB Offer',bki_eqvt:'BKI Eqvt',rate_pmt:'Rate $/PMT',arrow_eqvt:'Arrow Eqvt',bunker:'Bunker',p6_bid:'P6 Bid',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',date_fixed:'Date Fixed',last_updated:'Updated',notes:'Notes',status:'Status',actions:'Actions'};
 
 function toggleColumnMenu() {
   const menu = document.getElementById('columnMenu');
@@ -2653,6 +3004,16 @@ function getSortValue(v, key) {
     case 'source': return (v.source || '').toUpperCase();
     case 'delivery_basis': return (v.delivery_basis || '').toUpperCase();
     case 'status': return v.status || '';
+    case 'draft': return v.draft || 0;
+    case 'yard': return (v.yard || '').toUpperCase();
+    case 'origin': return (v.origin || '').toUpperCase();
+    case 'hire_offer': return v.hire_offer || 0;
+    case 'bb_offer': return v.bb_offer || 0;
+    case 'bki_eqvt': return v.bki_eqvt || 0;
+    case 'rate_pmt': return v.rate_pmt || 0;
+    case 'arrow_eqvt': return v.arrow_eqvt || 0;
+    case 'bunker': return (v.bunker || '').toUpperCase();
+    case 'laycan_date': return v.laycan_date || '';
     default: return '';
   }
 }
@@ -2797,6 +3158,17 @@ function renderTable() {
       case 'notes': return `<td class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>`;
       case 'status': return `<td><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>`;
       case 'actions': return `<td><button class="btn-remove" onclick="removeVessel(${gi})">x</button></td>`;
+      // New CSV columns
+      case 'draft': return `<td class="td-specs editable" onclick="startEdit(this,${gi},'draft',true)">${v.draft != null ? v.draft : '—'}</td>`;
+      case 'yard': return `<td class="td-source editable" onclick="startEdit(this,${gi},'yard',false)">${v.yard || '—'}</td>`;
+      case 'origin': return `<td class="td-source editable" onclick="startEdit(this,${gi},'origin',false)">${v.origin || '—'}</td>`;
+      case 'laycan_date': return `<td class="td-date editable" onclick="startEdit(this,${gi},'laycan_date',false)">${v.laycan_date || '—'}</td>`;
+      case 'hire_offer': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'hire_offer',true)"><span class="offer">${v.hire_offer ? '$' + fmtNum(v.hire_offer) : '—'}</span></td>`;
+      case 'bb_offer': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'bb_offer',true)">${v.bb_offer ? '$' + fmtNum(v.bb_offer) : '—'}</td>`;
+      case 'bki_eqvt': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'bki_eqvt',true)">${v.bki_eqvt ? '$' + fmtNum(v.bki_eqvt) : '—'}</td>`;
+      case 'rate_pmt': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'rate_pmt',true)">${v.rate_pmt ? '$' + v.rate_pmt.toFixed(2) : '—'}</td>`;
+      case 'arrow_eqvt': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'arrow_eqvt',true)">${v.arrow_eqvt ? '$' + fmtNum(v.arrow_eqvt) : '—'}</td>`;
+      case 'bunker': return `<td class="td-source editable" onclick="startEdit(this,${gi},'bunker',false)">${v.bunker || '—'}</td>`;
       default: return '<td>—</td>';
     }
   }
