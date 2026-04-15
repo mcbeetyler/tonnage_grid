@@ -2,6 +2,7 @@
 let vessels = []; // loaded async from API on init
 let pendingParsed = null;
 let activeFilters = new Set(['ALL']); // multi-select status filters
+let p6OfferOnly = localStorage.getItem('pt_p6_offer_only') === '1';
 let currentSort = { key: 'eta_ecsa', dir: 'asc' };
 
 // Column visibility AND order — stored in localStorage
@@ -967,6 +968,14 @@ function toggleFilter(f) {
   renderTable();
 }
 
+function toggleP6OfferFilter() {
+  p6OfferOnly = !p6OfferOnly;
+  localStorage.setItem('pt_p6_offer_only', p6OfferOnly ? '1' : '0');
+  const btn = document.getElementById('p6OfferToggle');
+  if (btn) btn.classList.toggle('active', p6OfferOnly);
+  renderTable();
+}
+
 function clearDateFilter() {
   document.getElementById('etaFrom').value = '';
   document.getElementById('etaTo').value = '';
@@ -1098,6 +1107,10 @@ function renderTable() {
     if (!activeFilters.has('ALL') && !activeFilters.has(v.status)) return false;
     if (etaFrom && (!v.eta_ecsa || v.eta_ecsa < etaFrom)) return false;
     if (etaTo && (!v.eta_ecsa || v.eta_ecsa > etaTo)) return false;
+    if (p6OfferOnly) {
+      const p6 = getP6Values(v);
+      if (p6.offer == null) return false;
+    }
     if (search) {
       const hay = `${v.vessel_name||''} ${v.owner||''} ${v.source||''} ${v.current_position||''} ${v.delivery_basis||''}`.toLowerCase();
       if (!hay.includes(search)) return false;
@@ -1319,6 +1332,9 @@ async function init() {
   } catch (e) {
     // Offline or standalone — keep localStorage
   }
+  // Restore persisted filter toggle states
+  const p6Btn = document.getElementById('p6OfferToggle');
+  if (p6Btn && p6OfferOnly) p6Btn.classList.add('active');
   renderTable();
   updateStats();
   renderColumnMenu();
