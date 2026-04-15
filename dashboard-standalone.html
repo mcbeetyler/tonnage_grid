@@ -334,6 +334,10 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
         <button class="btn-secondary" onclick="loadSample()">Sample</button>
       </div>
       <div style="display:flex;gap:6px;align-items:center">
+        <input type="file" id="csvFileInput" accept=".csv,.tsv,.txt" style="display:none" onchange="handleCSVFileUpload(event)">
+        <button class="btn-secondary" style="padding:5px 10px;font-size:10px;flex:1" onclick="document.getElementById('csvFileInput').click()">Upload CSV file</button>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
         <input type="password" class="search-input" id="apiKeyInput" placeholder="Anthropic API Key" style="flex:1;font-size:10px" onchange="saveApiKey(this.value)">
         <button class="btn-secondary" style="padding:5px 10px;font-size:10px" onclick="toggleKeyVisibility()">Show</button>
         <button class="btn-secondary" style="padding:5px 10px;font-size:10px" onclick="handleParseRegex()">Regex</button>
@@ -2560,7 +2564,52 @@ function detectDelimiter(line) {
   return ',';
 }
 
-// Simple CSV splitter that respects double-quoted fields
+// Proper CSV/TSV tokenizer that respects quoted fields spanning multiple lines.
+// Returns a 2D array: rows of cells. This is the fix for multi-line headers
+// like "HIRE\n(offer)" that would otherwise break a naive line split.
+function tokenizeCSV(text, delim) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (!inQuotes && c === delim) {
+      row.push(field);
+      field = '';
+      continue;
+    }
+    if (!inQuotes && (c === '\n' || c === '\r')) {
+      // Handle \r\n as a single line break
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(field);
+      field = '';
+      // Skip entirely-empty rows
+      if (row.some(f => f && f.trim())) rows.push(row);
+      row = [];
+      continue;
+    }
+    field += c;
+  }
+  // Flush last field/row
+  if (field || row.length) {
+    row.push(field);
+    if (row.some(f => f && f.trim())) rows.push(row);
+  }
+  return rows;
+}
+
+// Simple CSV splitter that respects double-quoted fields (for single-line usage)
 function splitCSVRow(line, delim) {
   if (delim === '\t') return line.split('\t');
   const out = [];
@@ -2616,26 +2665,30 @@ function looksLikeCSV(raw) {
   const firstLine = raw.split('\n')[0];
   if (!firstLine) return false;
   const delim = detectDelimiter(firstLine);
-  const cells = splitCSVRow(firstLine, delim).map(c => normalizeHeader(c));
-  // Need at least a vessel column + 2 other recognisable columns
-  const vesselHit = cells.some(c => CSV_HEADER_MAP[c] === 'vessel_name');
-  const others = cells.filter(c => CSV_HEADER_MAP[c] && CSV_HEADER_MAP[c] !== 'vessel_name').length;
+  // Use tokenizer so multi-line headers don't break detection
+  const rows = tokenizeCSV(raw, delim);
+  if (rows.length < 2) return false;
+  const headerCells = rows[0].map(c => normalizeHeader(c));
+  const vesselHit = headerCells.some(c => CSV_HEADER_MAP[c] === 'vessel_name');
+  const others = headerCells.filter(c => CSV_HEADER_MAP[c] && CSV_HEADER_MAP[c] !== 'vessel_name').length;
   return vesselHit && others >= 2;
 }
 
 function parseCSVVessels(raw) {
-  const lines = raw.split('\n').filter(l => l.trim());
-  if (lines.length < 2) return [];
-  const delim = detectDelimiter(lines[0]);
+  const firstLine = raw.split('\n')[0];
+  const delim = detectDelimiter(firstLine);
+  const rows = tokenizeCSV(raw, delim);
+  if (rows.length < 2) return { vessels: [], headers: [], mapping: {} };
 
   // Build column map from header row
-  const headerCells = splitCSVRow(lines[0], delim).map(normalizeHeader);
+  const headerCells = rows[0].map(normalizeHeader);
   const colMap = headerCells.map(h => CSV_HEADER_MAP[h] || null);
+  const mapping = {};
+  headerCells.forEach((h, i) => { mapping[h || `col${i}`] = colMap[i] || '(skipped)'; });
 
   const vessels = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cells = splitCSVRow(lines[i], delim).map(c => (c || '').trim());
-    // Skip empty rows
+  for (let r = 1; r < rows.length; r++) {
+    const cells = rows[r].map(c => (c || '').trim());
     if (cells.every(c => !c)) continue;
 
     const v = {
@@ -2646,7 +2699,7 @@ function parseCSVVessels(raw) {
       notes: null, bunker: null, scrubber: null,
       market_colour: [],
       status: 'OPEN',
-      raw: lines[i],
+      raw: cells.join('\t'),
       parsed_at: new Date().toISOString(),
       parse_warnings: [],
     };
@@ -2658,7 +2711,6 @@ function parseCSVVessels(raw) {
 
       switch (field) {
         case 'vessel_name':
-          // strip trailing "75Dwt"-style suffix so we keep just the name
           v.vessel_name = val.replace(/\s+\d+\s*dwt$/i, '').trim();
           break;
         case 'dwt': {
@@ -2679,7 +2731,6 @@ function parseCSVVessels(raw) {
         case 'delivery_basis': v.delivery_basis = val.toUpperCase(); break;
         case 'laycan_date': {
           v.laycan_date = val;
-          // Also set open_date if parseable
           const d = parseLaydayDate(val);
           if (d) v.open_date = d;
           break;
@@ -2712,7 +2763,6 @@ function parseCSVVessels(raw) {
       }
     }
 
-    // Populate market_colour from hire_offer so P6 offer / spread can flow
     if (v.hire_offer || v.bki_eqvt) {
       v.market_colour = [{
         route: 'ECSA FH',
@@ -2726,7 +2776,7 @@ function parseCSVVessels(raw) {
     if (v.vessel_name) vessels.push(v);
   }
 
-  return vessels;
+  return { vessels, headers: headerCells, mapping };
 }
 
 // Add or merge CSV-parsed vessels into the main vessels array.
@@ -2773,6 +2823,27 @@ function mergeCSVVessels(newVessels) {
   return { added, updated };
 }
 
+// ─── CSV File Upload ─────────────────────────────────────────────────────────
+
+function handleCSVFileUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target.result;
+    document.getElementById('rawInput').value = text;
+    handleParse();
+    // Clear the file input so re-uploading the same file works
+    event.target.value = '';
+  };
+  reader.onerror = () => {
+    const preview = document.getElementById('previewBox');
+    preview.textContent = 'Failed to read file: ' + file.name;
+    preview.className = 'preview-box has-error';
+  };
+  reader.readAsText(file);
+}
+
 // ─── Inbox Handlers ──────────────────────────────────────────────────────────
 
 async function handleParse() {
@@ -2785,9 +2856,9 @@ async function handleParse() {
   // If the paste looks like CSV/TSV with a header row, parse + merge directly (no API)
   if (looksLikeCSV(raw)) {
     try {
-      const parsed = parseCSVVessels(raw);
+      const { vessels: parsed, headers, mapping } = parseCSVVessels(raw);
       if (parsed.length === 0) {
-        preview.textContent = 'CSV detected but no valid rows parsed.';
+        preview.textContent = 'CSV detected but no valid rows parsed.\n\nHeaders seen: ' + headers.join(' | ');
         preview.className = 'preview-box has-error';
         return;
       }
@@ -2795,7 +2866,18 @@ async function handleParse() {
       save();
       renderTable();
       updateStats();
-      preview.textContent = `CSV parsed: ${parsed.length} row(s) → ${added} added, ${updated} updated.\n\nExisting vessels keep: P6 bid, fixed price, charterer, date fixed, status.`;
+
+      // Build column mapping debug summary
+      const mapped = Object.entries(mapping).filter(([_, v]) => v && v !== '(skipped)');
+      const skipped = Object.entries(mapping).filter(([_, v]) => v === '(skipped)');
+      let mapSummary = `Column mapping (${mapped.length} mapped, ${skipped.length} skipped):\n`;
+      mapped.forEach(([h, f]) => { mapSummary += `  ✓ ${h} → ${f}\n`; });
+      if (skipped.length) {
+        mapSummary += '\nUnmapped columns (not imported):\n';
+        skipped.forEach(([h]) => { mapSummary += `  • ${h}\n`; });
+      }
+
+      preview.textContent = `CSV parsed: ${parsed.length} row(s) → ${added} added, ${updated} updated.\n\n` + mapSummary;
       preview.className = 'preview-box has-content';
       document.getElementById('rawInput').value = '';
       pendingParsed = null;

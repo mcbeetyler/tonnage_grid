@@ -334,6 +334,10 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
         <button class="btn-secondary" onclick="loadSample()">Sample</button>
       </div>
       <div style="display:flex;gap:6px;align-items:center">
+        <input type="file" id="csvFileInput" accept=".csv,.tsv,.txt" style="display:none" onchange="handleCSVFileUpload(event)">
+        <button class="btn-secondary" style="padding:5px 10px;font-size:10px;flex:1" onclick="document.getElementById('csvFileInput').click()">Upload CSV file</button>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
         <input type="password" class="search-input" id="apiKeyInput" placeholder="Anthropic API Key" style="flex:1;font-size:10px" onchange="saveApiKey(this.value)">
         <button class="btn-secondary" style="padding:5px 10px;font-size:10px" onclick="toggleKeyVisibility()">Show</button>
         <button class="btn-secondary" style="padding:5px 10px;font-size:10px" onclick="handleParseRegex()">Regex</button>
