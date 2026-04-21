@@ -2068,10 +2068,19 @@ let p6OfferOnly = localStorage.getItem('pt_p6_offer_only') === '1';
 let currentSort = { key: 'eta_ecsa', dir: 'asc' };
 
 // Column visibility AND order — stored in localStorage
-const ALL_COLUMNS = ['laycan','vessel','owner','specs','draft','yard','origin','scr','delivery','laycan_date','eta','hire_offer','bb_offer','bki_eqvt','rate_pmt','arrow_eqvt','bunker','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
-const DEFAULT_ORDER = ['laycan','vessel','owner','specs','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
+const ALL_COLUMNS = ['laycan','vessel','owner','dwt','built','draft','yard','origin','scr','delivery','laycan_date','eta','hire_offer','bb_offer','bki_eqvt','rate_pmt','arrow_eqvt','bunker','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
+const DEFAULT_ORDER = ['laycan','vessel','owner','dwt','built','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
 let columnOrder = JSON.parse(localStorage.getItem('pt_col_order') || 'null') || [...DEFAULT_ORDER];
 let hiddenColumns = new Set(JSON.parse(localStorage.getItem('pt_col_hidden') || '[]'));
+
+// Migrate combined 'specs' column → separate 'dwt' + 'built' columns
+const _specsIdx = columnOrder.indexOf('specs');
+if (_specsIdx !== -1) {
+  const specsHidden = hiddenColumns.has('specs');
+  columnOrder.splice(_specsIdx, 1, 'dwt', 'built');
+  hiddenColumns.delete('specs');
+  if (specsHidden) { hiddenColumns.add('dwt'); hiddenColumns.add('built'); }
+}
 
 // Hide new columns by default (existing users won't suddenly see them)
 const NEW_HIDDEN_BY_DEFAULT = ['draft','yard','origin','laycan_date','hire_offer','bb_offer','bki_eqvt','rate_pmt','arrow_eqvt','bunker'];
@@ -2470,37 +2479,6 @@ async function parseWithAPI(rawText) {
   }));
 }
 
-function startEditSpecs(el, vesselIdx) {
-  if (el.querySelector('input')) return;
-  const v = vessels[vesselIdx];
-  const dwtVal = v.dwt ? (v.dwt/1000).toFixed(0) : '';
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.value = `${dwtVal}/${v.build_year || ''}`;
-  input.className = 'edit-input mono';
-  input.placeholder = '82/19';
-  input.style.width = Math.max(el.offsetWidth - 8, 60) + 'px';
-  el.textContent = '';
-  el.appendChild(input);
-  input.focus();
-  input.select();
-
-  function commit() {
-    const val = input.value.trim();
-    const match = val.match(/(\d+)\s*\/\s*(\d+)/);
-    if (match) {
-      applyEdit(vesselIdx, 'dwt', match[1]);
-      applyEdit(vesselIdx, 'build_year', match[2]);
-    }
-    renderTable();
-  }
-  input.addEventListener('blur', commit);
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    if (e.key === 'Escape') renderTable();
-  });
-}
-
 // ─── CSV/TSV Paste Parser ───────────────────────────────────────────────────
 // Paste from spreadsheet (tab-separated) or CSV. First row must be headers.
 // Known headers (case-insensitive, flexible whitespace/punctuation):
@@ -2639,11 +2617,12 @@ function parseMoney(s) {
 
 function parseAgeField(s) {
   // "Jan-2006" → 2006;  "2016" → 2016;  "16" → 2016
+  // Reject "1-Jan" etc. where Excel has dropped the year — would otherwise be misread as 2001.
   if (!s) return null;
-  const m = s.match(/(19|20)\d{2}/);
+  const trimmed = s.trim();
+  const m = trimmed.match(/(19|20)\d{2}/);
   if (m) return parseInt(m[0], 10);
-  const n = parseInt(s, 10);
-  if (!isNaN(n) && n < 100) return 2000 + n;
+  if (/^\d{1,2}$/.test(trimmed)) return 2000 + parseInt(trimmed, 10);
   return null;
 }
 
@@ -3046,7 +3025,7 @@ function clearDateFilter() {
 
 // ─── Column Visibility & Reordering ──────────────────────────────────────────
 
-const COL_LABELS = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',specs:'DWT/Built',draft:'Draft',yard:'Yard',origin:'Origin',scr:'SCR',delivery:'Delivery',laycan_date:'Layday',eta:'ETA',hire_offer:'Hire Offer',bb_offer:'BB Offer',bki_eqvt:'BKI Eqvt',rate_pmt:'Rate $/PMT',arrow_eqvt:'Arrow Eqvt',bunker:'Bunker',p6_bid:'P6 Bid',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',date_fixed:'Date Fixed',last_updated:'Updated',notes:'Notes',status:'Status',actions:'Actions'};
+const COL_LABELS = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',dwt:'DWT',built:'Built',draft:'Draft',yard:'Yard',origin:'Origin',scr:'SCR',delivery:'Delivery',laycan_date:'Layday',eta:'ETA',hire_offer:'Hire Offer',bb_offer:'BB Offer',bki_eqvt:'BKI Eqvt',rate_pmt:'Rate $/PMT',arrow_eqvt:'Arrow Eqvt',bunker:'Bunker',p6_bid:'P6 Bid',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',date_fixed:'Date Fixed',last_updated:'Updated',notes:'Notes',status:'Status',actions:'Actions'};
 
 function toggleColumnMenu() {
   const menu = document.getElementById('columnMenu');
@@ -3091,6 +3070,7 @@ function getSortValue(v, key) {
     case 'date_fixed': return v.date_fixed || '9999-99-99';
     case 'last_updated': return v.last_updated || '';
     case 'dwt': return v.dwt || 0;
+    case 'build_year': return v.build_year || 0;
     case 'vessel_name': return (v.vessel_name || '').toUpperCase();
     case 'owner': return (v.owner || '').toUpperCase();
     case 'source': return (v.source || '').toUpperCase();
@@ -3195,7 +3175,7 @@ function renderTable() {
   document.getElementById('vesselTable').style.display = filtered.length === 0 ? 'none' : '';
 
   // Build headers dynamically from columnOrder
-  const sortKeys = {laycan:'laycan',vessel:'vessel_name',owner:'owner',specs:'dwt',scr:null,delivery:'delivery_basis',eta:'eta_ecsa',p6_bid:'p6_bid',p6_offer:'p6_offer',spread:'spread',fixed:'fixed_price',charterer:'charterer',date_fixed:'date_fixed',last_updated:'last_updated',notes:null,status:'status',actions:null};
+  const sortKeys = {laycan:'laycan',vessel:'vessel_name',owner:'owner',dwt:'dwt',built:'build_year',scr:null,delivery:'delivery_basis',eta:'eta_ecsa',p6_bid:'p6_bid',p6_offer:'p6_offer',spread:'spread',fixed:'fixed_price',charterer:'charterer',date_fixed:'date_fixed',last_updated:'last_updated',notes:null,status:'status',actions:null};
   const thClasses = {p6_bid:'col-p6',p6_offer:'col-p6',fixed:'col-fixed'};
   const visCols = columnOrder.filter(c => !hiddenColumns.has(c));
   const headRow = document.querySelector('#vesselHead tr');
@@ -3233,7 +3213,8 @@ function renderTable() {
       case 'laycan': return laycan ? `<span class="td-laycan laycan-color-${lcIdx}">${laycan}</span>` : '<span style="color:var(--text-dim)">—</span>';
       case 'vessel': return `<td class="td-vessel editable" onclick="startEdit(this,${gi},'vessel_name',true)">${v.vessel_name || '—'}${warnDot}</td>`;
       case 'owner': return `<td class="td-owner editable" onclick="startEdit(this,${gi},'owner',false)">${v.owner || '—'}</td>`;
-      case 'specs': return `<td class="td-specs editable" onclick="startEditSpecs(this,${gi})">${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '—'} / ${v.build_year || '—'}</td>`;
+      case 'dwt': return `<td class="td-specs editable" onclick="startEdit(this,${gi},'dwt',true)">${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '—'}</td>`;
+      case 'built': return `<td class="td-specs editable" onclick="startEdit(this,${gi},'build_year',true)">${v.build_year || '—'}</td>`;
       case 'scr': return `<td class="editable" onclick="startEdit(this,${gi},'scrubber',false)">${v.scrubber === true ? '<span class="scrubber-yes">SCR</span>' : '<span class="scrubber-unk">—</span>'}</td>`;
       case 'delivery': return `<td class="td-port editable" onclick="startEdit(this,${gi},'delivery_basis',false)">${v.delivery_basis || v.current_position || '—'}</td>`;
       case 'eta': {
