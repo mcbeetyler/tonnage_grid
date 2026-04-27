@@ -1,4 +1,11 @@
-import { kv } from '@vercel/kv';
+import { createClient } from '@vercel/kv';
+
+// Upstash integration injects env vars with a `tonnage_grid_KV_` prefix
+// rather than the unprefixed names the default `kv` export expects.
+const kv = createClient({
+  url: process.env.tonnage_grid_KV_REST_API_URL,
+  token: process.env.tonnage_grid_KV_REST_API_TOKEN,
+});
 
 export const config = {
   api: { bodyParser: { sizeLimit: '4mb' } },
