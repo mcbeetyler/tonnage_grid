@@ -249,7 +249,24 @@
   .voyage-row-fixed .voyage-offer{color:var(--text-dim)}
 
   /* Report tab */
-  .report-wrap{padding:24px 28px;max-width:1100px}
+  .report-wrap{padding:24px 28px;max-width:1450px;display:flex;gap:24px;align-items:flex-start}
+  .report-main{flex:1;min-width:0}
+  .report-sidebar{width:320px;flex-shrink:0;position:sticky;top:16px}
+  .p6-index-panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .p6-index-header{padding:12px 14px;background:var(--bg3);border-bottom:1px solid var(--border)}
+  .p6-index-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-dim)}
+  .p6-index-dates{font-size:14px;font-weight:700;color:var(--text-bright);margin-top:2px}
+  .p6-index-meta{font-size:11px;color:var(--text-dim);margin-top:2px}
+  .p6-index-section-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;padding:8px 14px 4px;color:var(--text-dim);background:var(--bg2)}
+  .p6-index-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;padding:6px 14px;border-bottom:1px solid var(--border);font-size:11px;align-items:baseline}
+  .p6-index-row:last-child{border-bottom:none}
+  .p6-index-row-name{font-weight:600;font-size:12px;color:var(--text-bright);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .p6-index-row-eta{font-size:10px;color:var(--text-dim);font-family:var(--mono)}
+  .p6-index-row-val{font-family:var(--mono);font-weight:700;font-size:12px;text-align:right}
+  .p6-index-row-val.offer{color:var(--red)}
+  .p6-index-row-val.bid{color:var(--green)}
+  .p6-index-row-ts{grid-column:1 / -1;font-size:10px;color:var(--text-dim);margin-top:-2px}
+  .p6-index-empty{padding:16px 14px;font-size:11px;color:var(--text-dim);font-style:italic;text-align:center}
   .report-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:24px}
   .report-window{margin-bottom:24px}
   .report-window-header{display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:10px 14px;background:var(--bg3);border-radius:var(--radius);border-left:4px solid var(--accent)}
@@ -679,27 +696,32 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 
 <div id="tab-report" class="tab-panel">
   <div class="report-wrap">
-    <div class="report-controls">
-      <span class="toolbar-label" style="font-size:14px;font-weight:700;color:var(--text-bright)">Tonnage Report</span>
-      <div class="spacer"></div>
-      <span class="toolbar-label">Month</span>
-      <select class="form-select" id="reportMonth" onchange="renderReport()" style="width:130px"></select>
-      <span class="toolbar-label">Top</span>
-      <select class="form-select" id="reportTopN" onchange="renderReport()" style="width:70px">
-        <option value="3">3</option>
-        <option value="5" selected>5</option>
-        <option value="10">10</option>
-        <option value="999">All</option>
-      </select>
-      <span class="toolbar-label">Show</span>
-      <select class="form-select" id="reportType" onchange="renderReport()" style="width:140px">
-        <option value="both">Offers + Bids</option>
-        <option value="offers">Offers only</option>
-        <option value="bids">Bids only</option>
-      </select>
-      <button class="report-copy-btn" onclick="copyFullReport()">Copy Full Report</button>
+    <div class="report-main">
+      <div class="report-controls">
+        <span class="toolbar-label" style="font-size:14px;font-weight:700;color:var(--text-bright)">Tonnage Report</span>
+        <div class="spacer"></div>
+        <span class="toolbar-label">Month</span>
+        <select class="form-select" id="reportMonth" onchange="renderReport()" style="width:130px"></select>
+        <span class="toolbar-label">Top</span>
+        <select class="form-select" id="reportTopN" onchange="renderReport()" style="width:70px">
+          <option value="3">3</option>
+          <option value="5" selected>5</option>
+          <option value="10">10</option>
+          <option value="999">All</option>
+        </select>
+        <span class="toolbar-label">Show</span>
+        <select class="form-select" id="reportType" onchange="renderReport()" style="width:140px">
+          <option value="both">Offers + Bids</option>
+          <option value="offers">Offers only</option>
+          <option value="bids">Bids only</option>
+        </select>
+        <button class="report-copy-btn" onclick="copyFullReport()">Copy Full Report</button>
+      </div>
+      <div id="reportContent"></div>
     </div>
-    <div id="reportContent"></div>
+    <aside class="report-sidebar">
+      <div id="p6IndexPanel"></div>
+    </aside>
   </div>
   <div class="report-copy-toast" id="copyToast">Copied to clipboard</div>
 </div><!-- end tab-report -->
@@ -5412,6 +5434,8 @@ function renderReport() {
   // Filter to only OPEN/ON SUBS vessels
   const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name));
 
+  renderP6IndexSidebar(eligible);
+
   let html = '';
   for (const win of windows) {
     // Find vessels whose ETA falls in this window
@@ -5473,6 +5497,64 @@ function renderReport() {
   }
 
   container.innerHTML = html;
+}
+
+// P6 index window: 30-35 days from today. Shows latest bids/offers for
+// vessels whose ETA falls in that range, sorted by last_updated desc.
+function renderP6IndexSidebar(eligible) {
+  const panel = document.getElementById('p6IndexPanel');
+  if (!panel) return;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const fromDate = addDays(today, 30);
+  const toDate = addDays(today, 35);
+  const monthAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmtShort = d => `${d.getDate()} ${monthAbbr[d.getMonth()]}`;
+
+  const inWindow = eligible.filter(v => {
+    if (!v.eta_ecsa) return false;
+    const eta = new Date(v.eta_ecsa);
+    return eta >= fromDate && eta <= toDate;
+  });
+
+  const byUpdated = (a, b) => (b.last_updated || '').localeCompare(a.last_updated || '');
+  const offers = inWindow.filter(v => getP6Values(v).offer != null).sort(byUpdated).slice(0, 8);
+  const bids = inWindow.filter(v => getP6Values(v).bid != null).sort(byUpdated).slice(0, 8);
+
+  let html = `<div class="p6-index-panel">
+    <div class="p6-index-header">
+      <div class="p6-index-title">P6 Index Window</div>
+      <div class="p6-index-dates">${fmtShort(fromDate)} – ${fmtShort(toDate)}</div>
+      <div class="p6-index-meta">${inWindow.length} vessel${inWindow.length === 1 ? '' : 's'} • 30–35 days out</div>
+    </div>`;
+
+  if (offers.length === 0 && bids.length === 0) {
+    html += `<div class="p6-index-empty">No quotes in this window</div>`;
+  } else {
+    if (offers.length > 0) {
+      html += `<div class="p6-index-section-label" style="color:var(--red)">Latest Offers</div>`;
+      offers.forEach(v => { html += renderP6IndexRow(v, 'offer'); });
+    }
+    if (bids.length > 0) {
+      html += `<div class="p6-index-section-label" style="color:var(--green)">Latest Bids</div>`;
+      bids.forEach(v => { html += renderP6IndexRow(v, 'bid'); });
+    }
+  }
+
+  html += `</div>`;
+  panel.innerHTML = html;
+}
+
+function renderP6IndexRow(v, type) {
+  const p6 = getP6Values(v);
+  const val = type === 'offer' ? p6.offer : p6.bid;
+  const eta = v.eta_ecsa ? fmtDateReport(v.eta_ecsa) : '';
+  const ts = v.last_updated ? fmtTimestamp(v.last_updated) : '';
+  return `<div class="p6-index-row">
+    <div class="p6-index-row-name" title="${(v.vessel_name || '').replace(/"/g,'&quot;')}">${v.vessel_name || '?'}</div>
+    <div class="p6-index-row-eta">${eta}</div>
+    <div class="p6-index-row-val ${type}">${val != null ? val.toLocaleString() : '—'}</div>
+    ${ts ? `<div class="p6-index-row-ts">${ts}</div>` : ''}
+  </div>`;
 }
 
 function renderReportCard(v, rank, type) {

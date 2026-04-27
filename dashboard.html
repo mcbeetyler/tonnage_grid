@@ -249,7 +249,24 @@
   .voyage-row-fixed .voyage-offer{color:var(--text-dim)}
 
   /* Report tab */
-  .report-wrap{padding:24px 28px;max-width:1100px}
+  .report-wrap{padding:24px 28px;max-width:1450px;display:flex;gap:24px;align-items:flex-start}
+  .report-main{flex:1;min-width:0}
+  .report-sidebar{width:320px;flex-shrink:0;position:sticky;top:16px}
+  .p6-index-panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .p6-index-header{padding:12px 14px;background:var(--bg3);border-bottom:1px solid var(--border)}
+  .p6-index-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-dim)}
+  .p6-index-dates{font-size:14px;font-weight:700;color:var(--text-bright);margin-top:2px}
+  .p6-index-meta{font-size:11px;color:var(--text-dim);margin-top:2px}
+  .p6-index-section-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;padding:8px 14px 4px;color:var(--text-dim);background:var(--bg2)}
+  .p6-index-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;padding:6px 14px;border-bottom:1px solid var(--border);font-size:11px;align-items:baseline}
+  .p6-index-row:last-child{border-bottom:none}
+  .p6-index-row-name{font-weight:600;font-size:12px;color:var(--text-bright);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .p6-index-row-eta{font-size:10px;color:var(--text-dim);font-family:var(--mono)}
+  .p6-index-row-val{font-family:var(--mono);font-weight:700;font-size:12px;text-align:right}
+  .p6-index-row-val.offer{color:var(--red)}
+  .p6-index-row-val.bid{color:var(--green)}
+  .p6-index-row-ts{grid-column:1 / -1;font-size:10px;color:var(--text-dim);margin-top:-2px}
+  .p6-index-empty{padding:16px 14px;font-size:11px;color:var(--text-dim);font-style:italic;text-align:center}
   .report-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:24px}
   .report-window{margin-bottom:24px}
   .report-window-header{display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:10px 14px;background:var(--bg3);border-radius:var(--radius);border-left:4px solid var(--accent)}
@@ -679,27 +696,32 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 
 <div id="tab-report" class="tab-panel">
   <div class="report-wrap">
-    <div class="report-controls">
-      <span class="toolbar-label" style="font-size:14px;font-weight:700;color:var(--text-bright)">Tonnage Report</span>
-      <div class="spacer"></div>
-      <span class="toolbar-label">Month</span>
-      <select class="form-select" id="reportMonth" onchange="renderReport()" style="width:130px"></select>
-      <span class="toolbar-label">Top</span>
-      <select class="form-select" id="reportTopN" onchange="renderReport()" style="width:70px">
-        <option value="3">3</option>
-        <option value="5" selected>5</option>
-        <option value="10">10</option>
-        <option value="999">All</option>
-      </select>
-      <span class="toolbar-label">Show</span>
-      <select class="form-select" id="reportType" onchange="renderReport()" style="width:140px">
-        <option value="both">Offers + Bids</option>
-        <option value="offers">Offers only</option>
-        <option value="bids">Bids only</option>
-      </select>
-      <button class="report-copy-btn" onclick="copyFullReport()">Copy Full Report</button>
+    <div class="report-main">
+      <div class="report-controls">
+        <span class="toolbar-label" style="font-size:14px;font-weight:700;color:var(--text-bright)">Tonnage Report</span>
+        <div class="spacer"></div>
+        <span class="toolbar-label">Month</span>
+        <select class="form-select" id="reportMonth" onchange="renderReport()" style="width:130px"></select>
+        <span class="toolbar-label">Top</span>
+        <select class="form-select" id="reportTopN" onchange="renderReport()" style="width:70px">
+          <option value="3">3</option>
+          <option value="5" selected>5</option>
+          <option value="10">10</option>
+          <option value="999">All</option>
+        </select>
+        <span class="toolbar-label">Show</span>
+        <select class="form-select" id="reportType" onchange="renderReport()" style="width:140px">
+          <option value="both">Offers + Bids</option>
+          <option value="offers">Offers only</option>
+          <option value="bids">Bids only</option>
+        </select>
+        <button class="report-copy-btn" onclick="copyFullReport()">Copy Full Report</button>
+      </div>
+      <div id="reportContent"></div>
     </div>
-    <div id="reportContent"></div>
+    <aside class="report-sidebar">
+      <div id="p6IndexPanel"></div>
+    </aside>
   </div>
   <div class="report-copy-toast" id="copyToast">Copied to clipboard</div>
 </div><!-- end tab-report -->

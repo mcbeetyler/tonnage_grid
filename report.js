@@ -96,6 +96,8 @@ function renderReport() {
   // Filter to only OPEN/ON SUBS vessels
   const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name));
 
+  renderP6IndexSidebar(eligible);
+
   let html = '';
   for (const win of windows) {
     // Find vessels whose ETA falls in this window
@@ -157,6 +159,64 @@ function renderReport() {
   }
 
   container.innerHTML = html;
+}
+
+// P6 index window: 30-35 days from today. Shows latest bids/offers for
+// vessels whose ETA falls in that range, sorted by last_updated desc.
+function renderP6IndexSidebar(eligible) {
+  const panel = document.getElementById('p6IndexPanel');
+  if (!panel) return;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const fromDate = addDays(today, 30);
+  const toDate = addDays(today, 35);
+  const monthAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmtShort = d => `${d.getDate()} ${monthAbbr[d.getMonth()]}`;
+
+  const inWindow = eligible.filter(v => {
+    if (!v.eta_ecsa) return false;
+    const eta = new Date(v.eta_ecsa);
+    return eta >= fromDate && eta <= toDate;
+  });
+
+  const byUpdated = (a, b) => (b.last_updated || '').localeCompare(a.last_updated || '');
+  const offers = inWindow.filter(v => getP6Values(v).offer != null).sort(byUpdated).slice(0, 8);
+  const bids = inWindow.filter(v => getP6Values(v).bid != null).sort(byUpdated).slice(0, 8);
+
+  let html = `<div class="p6-index-panel">
+    <div class="p6-index-header">
+      <div class="p6-index-title">P6 Index Window</div>
+      <div class="p6-index-dates">${fmtShort(fromDate)} – ${fmtShort(toDate)}</div>
+      <div class="p6-index-meta">${inWindow.length} vessel${inWindow.length === 1 ? '' : 's'} • 30–35 days out</div>
+    </div>`;
+
+  if (offers.length === 0 && bids.length === 0) {
+    html += `<div class="p6-index-empty">No quotes in this window</div>`;
+  } else {
+    if (offers.length > 0) {
+      html += `<div class="p6-index-section-label" style="color:var(--red)">Latest Offers</div>`;
+      offers.forEach(v => { html += renderP6IndexRow(v, 'offer'); });
+    }
+    if (bids.length > 0) {
+      html += `<div class="p6-index-section-label" style="color:var(--green)">Latest Bids</div>`;
+      bids.forEach(v => { html += renderP6IndexRow(v, 'bid'); });
+    }
+  }
+
+  html += `</div>`;
+  panel.innerHTML = html;
+}
+
+function renderP6IndexRow(v, type) {
+  const p6 = getP6Values(v);
+  const val = type === 'offer' ? p6.offer : p6.bid;
+  const eta = v.eta_ecsa ? fmtDateReport(v.eta_ecsa) : '';
+  const ts = v.last_updated ? fmtTimestamp(v.last_updated) : '';
+  return `<div class="p6-index-row">
+    <div class="p6-index-row-name" title="${(v.vessel_name || '').replace(/"/g,'&quot;')}">${v.vessel_name || '?'}</div>
+    <div class="p6-index-row-eta">${eta}</div>
+    <div class="p6-index-row-val ${type}">${val != null ? val.toLocaleString() : '—'}</div>
+    ${ts ? `<div class="p6-index-row-ts">${ts}</div>` : ''}
+  </div>`;
 }
 
 function renderReportCard(v, rank, type) {
