@@ -741,48 +741,24 @@ function parseCSVVessels(raw) {
   return { vessels, headers: headerCells, mapping };
 }
 
-// Add or merge CSV-parsed vessels into the main vessels array.
+// Add CSV-parsed vessels into the main vessels array (add-only).
 // Dedup: match on normalized vessel_name (case-insensitive, ignoring punctuation).
-// Existing vessels get live-field updates (hire offer, BKI, comments, last_updated)
-// while user-added fields (p6_bid, fixed_price, charterer, date_fixed, status) are PRESERVED.
+// Existing vessels are LEFT UNTOUCHED so manual edits aren't clobbered on re-upload.
 function mergeCSVVessels(newVessels) {
   const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  let added = 0, updated = 0;
+  let added = 0, skipped = 0;
 
   for (const nv of newVessels) {
-    const existIdx = vessels.findIndex(v => norm(v.vessel_name) === norm(nv.vessel_name));
-    if (existIdx === -1) {
+    const exists = vessels.some(v => norm(v.vessel_name) === norm(nv.vessel_name));
+    if (exists) {
+      skipped++;
+    } else {
       vessels.push(nv);
       added++;
-    } else {
-      const existing = vessels[existIdx];
-      // Update "live" fields from CSV (what the spreadsheet tracks)
-      const liveFields = ['dwt','build_year','draft','yard','origin','delivery_basis',
-        'laycan_date','hire_offer','bb_offer','owner','bki_eqvt','rate_pmt',
-        'arrow_eqvt','notes','bunker','eta_ecsa','eta_type','open_date'];
-      for (const f of liveFields) {
-        if (nv[f] != null && nv[f] !== '') existing[f] = nv[f];
-      }
-      // Merge market_colour — refresh offer/p6_offer from CSV, keep user's p6_bid
-      if (nv.market_colour && nv.market_colour[0]) {
-        const newMc = nv.market_colour[0];
-        const existMc = existing.market_colour && existing.market_colour[0];
-        if (existMc) {
-          if (newMc.offer_usd != null) existMc.offer_usd = newMc.offer_usd;
-          if (newMc.bb_usd != null) existMc.bb_usd = newMc.bb_usd;
-          if (newMc.p6_offer != null) existMc.p6_offer = newMc.p6_offer;
-          // keep existMc.p6_bid (user-entered)
-        } else {
-          existing.market_colour = [newMc];
-        }
-      }
-      existing.last_updated = new Date().toISOString();
-      // Status / charterer / fixed_price / date_fixed / p6_bid are preserved
-      updated++;
     }
   }
 
-  return { added, updated };
+  return { added, skipped };
 }
 
 // ─── Fixture Message Parser ──────────────────────────────────────────────────
@@ -937,22 +913,22 @@ async function handleParse() {
         preview.className = 'preview-box has-error';
         return;
       }
-      const { added, updated } = mergeCSVVessels(parsed);
+      const { added, skipped: skippedExisting } = mergeCSVVessels(parsed);
       save();
       renderTable();
       updateStats();
 
       // Build column mapping debug summary
       const mapped = Object.entries(mapping).filter(([_, v]) => v && v !== '(skipped)');
-      const skipped = Object.entries(mapping).filter(([_, v]) => v === '(skipped)');
-      let mapSummary = `Column mapping (${mapped.length} mapped, ${skipped.length} skipped):\n`;
+      const unmapped = Object.entries(mapping).filter(([_, v]) => v === '(skipped)');
+      let mapSummary = `Column mapping (${mapped.length} mapped, ${unmapped.length} skipped):\n`;
       mapped.forEach(([h, f]) => { mapSummary += `  ✓ ${h} → ${f}\n`; });
-      if (skipped.length) {
+      if (unmapped.length) {
         mapSummary += '\nUnmapped columns (not imported):\n';
-        skipped.forEach(([h]) => { mapSummary += `  • ${h}\n`; });
+        unmapped.forEach(([h]) => { mapSummary += `  • ${h}\n`; });
       }
 
-      preview.textContent = `CSV parsed: ${parsed.length} row(s) → ${added} added, ${updated} updated.\n\n` + mapSummary;
+      preview.textContent = `CSV parsed: ${parsed.length} row(s) → ${added} new vessel${added === 1 ? '' : 's'} added, ${skippedExisting} already on board (left untouched).\n\n` + mapSummary;
       preview.className = 'preview-box has-content';
       document.getElementById('rawInput').value = '';
       pendingParsed = null;
