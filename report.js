@@ -1,7 +1,7 @@
 // ─── Tonnage Report ──────────────────────────────────────────────────────────
 // Shows best (cheapest) offers and best bids per ETA window.
-// Windows are relative to today: Spot (0-10d), Near (11-20d), 21-30d, 31-40d, 41-50d, 50d+
-// Also supports filtering by specific month.
+// Windows are laycan tags: 1-10 / 11-20 / 21+ of each month, matching the
+// tonnage grid's laycan tags exactly.
 
 // Vessels excluded from the current report (reset when switching tabs or changing filters)
 let reportExcluded = new Set();
@@ -24,8 +24,8 @@ function populateReportMonths() {
   const curMonth = now.getMonth();
   const curYear = now.getFullYear();
 
-  // Build options: "Relative" (spot/near/etc) + next 6 months
-  let html = '<option value="relative">By Days Out (Spot / Near / ...)</option>';
+  // Build options: "By Laycan Tag" (current + next ~6 buckets) + next 6 months
+  let html = '<option value="relative">By Laycan Tag</option>';
   for (let i = 0; i < 8; i++) {
     const m = (curMonth + i) % 12;
     const y = curYear + Math.floor((curMonth + i) / 12);
@@ -35,23 +35,37 @@ function populateReportMonths() {
 }
 
 function getEtaWindows(mode) {
+  const months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const pad = n => String(n).padStart(2, '0');
+
   if (mode === 'relative') {
+    // Generate the next ~7 laycan-tag buckets starting from today's bucket.
+    // Each month contributes 3 buckets (1-10, 11-20, 21+), so ~7 buckets ≈ 2.5 months.
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return [
-      { label: 'Spot (0-10 days)', from: addDays(today, 0), to: addDays(today, 10) },
-      { label: 'Near (11-20 days)', from: addDays(today, 11), to: addDays(today, 20) },
-      { label: '21-30 days out', from: addDays(today, 21), to: addDays(today, 30) },
-      { label: '31-40 days out', from: addDays(today, 31), to: addDays(today, 40) },
-      { label: '41-50 days out', from: addDays(today, 41), to: addDays(today, 50) },
-      { label: '50+ days out', from: addDays(today, 51), to: addDays(today, 365) },
-    ];
+    let y = today.getFullYear();
+    let m = today.getMonth() + 1;
+    const d = today.getDate();
+    let tier = d <= 10 ? 0 : d <= 20 ? 1 : 2;
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+      const lastDay = new Date(y, m, 0).getDate();
+      let fromDay, toDay, tagLabel;
+      if (tier === 0) { fromDay = 1;  toDay = 10;      tagLabel = '1-10'; }
+      else if (tier === 1) { fromDay = 11; toDay = 20; tagLabel = '11-20'; }
+      else { fromDay = 21; toDay = lastDay;            tagLabel = '21+'; }
+      out.push({
+        label: `${tagLabel} ${months[m]} ${y}`,
+        from: new Date(`${y}-${pad(m)}-${pad(fromDay)}`),
+        to: new Date(`${y}-${pad(m)}-${pad(toDay)}`),
+      });
+      tier++;
+      if (tier > 2) { tier = 0; m++; if (m > 12) { m = 1; y++; } }
+    }
+    return out;
   }
   // Monthly mode: split into 1-10, 11-20, 21+
   const [y, m] = mode.split('-').map(Number);
-  const months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const lastDay = new Date(y, m, 0).getDate();
-  const pad = n => String(n).padStart(2, '0');
   return [
     { label: `1-10 ${months[m]} ${y}`, from: new Date(`${y}-${pad(m)}-01`), to: new Date(`${y}-${pad(m)}-10`) },
     { label: `11-20 ${months[m]} ${y}`, from: new Date(`${y}-${pad(m)}-11`), to: new Date(`${y}-${pad(m)}-20`) },

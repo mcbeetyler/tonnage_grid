@@ -1253,13 +1253,21 @@ function renderTable() {
   });
 
   filtered.sort((a, b) => {
+    // ETA/laycan sort: bucket by laycan tag (1-10/11-20/21+ per month),
+    // then within each bucket sort by P6 offer descending.
+    if (currentSort.key === 'eta_ecsa' || currentSort.key === 'laycan') {
+      const ka = laycanBucketKey(a.eta_ecsa);
+      const kb = laycanBucketKey(b.eta_ecsa);
+      if (ka !== kb) {
+        const cmp = ka.localeCompare(kb);
+        return currentSort.dir === 'desc' ? -cmp : cmp;
+      }
+      return (getP6Values(b).offer || 0) - (getP6Values(a).offer || 0);
+    }
     const va = getSortValue(a, currentSort.key);
     const vb = getSortValue(b, currentSort.key);
     let cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
     if (currentSort.dir === 'desc') cmp = -cmp;
-    if (cmp === 0 && (currentSort.key === 'eta_ecsa' || currentSort.key === 'laycan')) {
-      return (getP6Values(b).offer || 0) - (getP6Values(a).offer || 0);
-    }
     return cmp;
   });
 

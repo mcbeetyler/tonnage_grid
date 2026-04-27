@@ -88,6 +88,15 @@ function getLaycanPeriod(isoDate) {
   return `${tier} ${months[m]}`;
 }
 
+// Chronologically-sortable key for the laycan bucket — the bucket's start date.
+function laycanBucketKey(isoDate) {
+  if (!isoDate) return '9999-99-99';
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const startDay = d <= 10 ? 1 : d <= 20 ? 11 : 21;
+  const pad = n => String(n).padStart(2, '0');
+  return `${y}-${pad(m)}-${pad(startDay)}`;
+}
+
 function laycanSortKey(isoDate) {
   if (!isoDate) return '9999-99-99';
   return isoDate;

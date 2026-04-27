@@ -784,6 +784,15 @@ function detectScrubber(text) {
 
 // ─── Laycan Period Helpers ───────────────────────────────────────────────────
 
+// Chronologically-sortable key for the laycan bucket — the bucket's start date.
+function laycanBucketKey(isoDate) {
+  if (!isoDate) return '9999-99-99';
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const startDay = d <= 10 ? 1 : d <= 20 ? 11 : 21;
+  const pad = n => String(n).padStart(2, '0');
+  return `${y}-${pad(m)}-${pad(startDay)}`;
+}
+
 function getLaycanPeriod(isoDate) {
   if (!isoDate) return null;
   const [y, m, d] = isoDate.split('-').map(Number);
@@ -3374,13 +3383,21 @@ function renderTable() {
   });
 
   filtered.sort((a, b) => {
+    // ETA/laycan sort: bucket by laycan tag (1-10/11-20/21+ per month),
+    // then within each bucket sort by P6 offer descending.
+    if (currentSort.key === 'eta_ecsa' || currentSort.key === 'laycan') {
+      const ka = laycanBucketKey(a.eta_ecsa);
+      const kb = laycanBucketKey(b.eta_ecsa);
+      if (ka !== kb) {
+        const cmp = ka.localeCompare(kb);
+        return currentSort.dir === 'desc' ? -cmp : cmp;
+      }
+      return (getP6Values(b).offer || 0) - (getP6Values(a).offer || 0);
+    }
     const va = getSortValue(a, currentSort.key);
     const vb = getSortValue(b, currentSort.key);
     let cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
     if (currentSort.dir === 'desc') cmp = -cmp;
-    if (cmp === 0 && (currentSort.key === 'eta_ecsa' || currentSort.key === 'laycan')) {
-      return (getP6Values(b).offer || 0) - (getP6Values(a).offer || 0);
-    }
     return cmp;
   });
 
@@ -5318,8 +5335,8 @@ function populateReportMonths() {
   const curMonth = now.getMonth();
   const curYear = now.getFullYear();
 
-  // Build options: "Relative" (spot/near/etc) + next 6 months
-  let html = '<option value="relative">By Days Out (Spot / Near / ...)</option>';
+  // Build options: "By Laycan Tag" (current + next ~6 buckets) + next 6 months
+  let html = '<option value="relative">By Laycan Tag</option>';
   for (let i = 0; i < 8; i++) {
     const m = (curMonth + i) % 12;
     const y = curYear + Math.floor((curMonth + i) / 12);
@@ -5329,23 +5346,36 @@ function populateReportMonths() {
 }
 
 function getEtaWindows(mode) {
+  const months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const pad = n => String(n).padStart(2, '0');
+
   if (mode === 'relative') {
+    // Generate the next ~7 laycan-tag buckets starting from today's bucket.
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return [
-      { label: 'Spot (0-10 days)', from: addDays(today, 0), to: addDays(today, 10) },
-      { label: 'Near (11-20 days)', from: addDays(today, 11), to: addDays(today, 20) },
-      { label: '21-30 days out', from: addDays(today, 21), to: addDays(today, 30) },
-      { label: '31-40 days out', from: addDays(today, 31), to: addDays(today, 40) },
-      { label: '41-50 days out', from: addDays(today, 41), to: addDays(today, 50) },
-      { label: '50+ days out', from: addDays(today, 51), to: addDays(today, 365) },
-    ];
+    let y = today.getFullYear();
+    let m = today.getMonth() + 1;
+    const d = today.getDate();
+    let tier = d <= 10 ? 0 : d <= 20 ? 1 : 2;
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+      const lastDay = new Date(y, m, 0).getDate();
+      let fromDay, toDay, tagLabel;
+      if (tier === 0) { fromDay = 1;  toDay = 10;      tagLabel = '1-10'; }
+      else if (tier === 1) { fromDay = 11; toDay = 20; tagLabel = '11-20'; }
+      else { fromDay = 21; toDay = lastDay;            tagLabel = '21+'; }
+      out.push({
+        label: `${tagLabel} ${months[m]} ${y}`,
+        from: new Date(`${y}-${pad(m)}-${pad(fromDay)}`),
+        to: new Date(`${y}-${pad(m)}-${pad(toDay)}`),
+      });
+      tier++;
+      if (tier > 2) { tier = 0; m++; if (m > 12) { m = 1; y++; } }
+    }
+    return out;
   }
   // Monthly mode: split into 1-10, 11-20, 21+
   const [y, m] = mode.split('-').map(Number);
-  const months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const lastDay = new Date(y, m, 0).getDate();
-  const pad = n => String(n).padStart(2, '0');
   return [
     { label: `1-10 ${months[m]} ${y}`, from: new Date(`${y}-${pad(m)}-01`), to: new Date(`${y}-${pad(m)}-10`) },
     { label: `11-20 ${months[m]} ${y}`, from: new Date(`${y}-${pad(m)}-11`), to: new Date(`${y}-${pad(m)}-20`) },
