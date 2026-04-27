@@ -122,11 +122,10 @@
   .spread-zero{color:var(--text-dim)}
   .td-fixed{font-family:var(--mono);font-weight:600;font-size:13px;color:var(--amber)}
 
-  /* Row shading — FH lighter, LH slightly deeper, unified blue tint */
-  .laycan-fh-jan td,.laycan-fh-feb td,.laycan-fh-mar td,.laycan-fh-apr td,.laycan-fh-may td,.laycan-fh-jun td,
-  .laycan-fh-jul td,.laycan-fh-aug td,.laycan-fh-sep td,.laycan-fh-oct td,.laycan-fh-nov td,.laycan-fh-dec td{background:rgba(24,95,165,.02)}
-  .laycan-lh-jan td,.laycan-lh-feb td,.laycan-lh-mar td,.laycan-lh-apr td,.laycan-lh-may td,.laycan-lh-jun td,
-  .laycan-lh-jul td,.laycan-lh-aug td,.laycan-lh-sep td,.laycan-lh-oct td,.laycan-lh-nov td,.laycan-lh-dec td{background:rgba(24,95,165,.045)}
+  /* Row shading — 3 tiers per month, progressively deeper tint */
+  [class*="laycan-1-10-"] td{background:rgba(24,95,165,.015)}
+  [class*="laycan-11-20-"] td{background:rgba(24,95,165,.035)}
+  [class*="laycan-21"] td{background:rgba(24,95,165,.055)}
 
   .status-badge{font-size:11px;padding:4px 12px;border-radius:4px;font-weight:600;cursor:pointer;transition:opacity .15s;display:inline-block}
   .status-badge:hover{opacity:.75}

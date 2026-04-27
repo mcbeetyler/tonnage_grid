@@ -81,8 +81,11 @@ function getLaycanPeriod(isoDate) {
   if (!isoDate) return null;
   const [y, m, d] = isoDate.split('-').map(Number);
   const months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const half = d <= 15 ? 'FH' : 'LH';
-  return `${half} ${months[m]}`;
+  let tier;
+  if (d <= 10) tier = '1-10';
+  else if (d <= 20) tier = '11-20';
+  else tier = '21+';
+  return `${tier} ${months[m]}`;
 }
 
 function laycanSortKey(isoDate) {
