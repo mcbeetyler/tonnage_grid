@@ -298,6 +298,7 @@
       <div class="header-title">Panamax Tonnage Tracker</div>
       <div class="header-subtitle">Arrow Shipbroking — Geneva Atlantic Desk</div>
     </div>
+    <span id="syncBadge" onclick="forceSync()" style="font-size:10px;padding:3px 8px;border-radius:10px;background:var(--bg3);color:var(--text-dim);font-weight:500;cursor:pointer" title="Click to force sync to server">—</span>
   </div>
   <div class="header-stats">
     <div class="stat"><div class="stat-label">Total vessels</div><div class="stat-value" id="statTotal">0</div></div>
@@ -2147,18 +2148,61 @@ if (oldVisible && !localStorage.getItem('pt_col_order')) {
 }
 
 let _saveTimer = null;
+let lastSyncStatus = null; // 'ok', 'error', 'pending'
+
+function updateSyncBadge(status, detail) {
+  lastSyncStatus = status;
+  const badge = document.getElementById('syncBadge');
+  if (!badge) return;
+  if (status === 'ok') {
+    badge.textContent = 'Synced';
+    badge.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:10px;background:#EAF3DE;color:#3B6D11;font-weight:500;cursor:pointer';
+  } else if (status === 'error') {
+    badge.textContent = 'Sync failed';
+    badge.title = detail || 'Click to retry';
+    badge.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:10px;background:#FAEAEA;color:#A32D2D;font-weight:500;cursor:pointer';
+  } else {
+    badge.textContent = 'Syncing...';
+    badge.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:10px;background:#FAEEDA;color:#BA7517;font-weight:500;cursor:pointer';
+  }
+}
+
 function save() {
-  // Keep localStorage in sync as a fast local cache / offline fallback
   localStorage.setItem('pt_vessels', JSON.stringify(vessels));
-  // Debounce API writes so rapid inline edits don't hammer the server
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
+    updateSyncBadge('pending');
     fetch('/api/vessels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(vessels),
-    }).catch(() => {}); // silent — localStorage is the fallback
+    }).then(resp => {
+      if (resp.ok) updateSyncBadge('ok');
+      else updateSyncBadge('error', `Server returned ${resp.status}`);
+    }).catch(err => {
+      updateSyncBadge('error', err.message);
+    });
   }, 500);
+}
+
+function forceSync() {
+  updateSyncBadge('pending');
+  fetch('/api/vessels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(vessels),
+  }).then(resp => {
+    if (resp.ok) {
+      updateSyncBadge('ok');
+      alert('Sync successful — ' + vessels.length + ' vessels pushed to server.');
+    } else {
+      updateSyncBadge('error', `Server returned ${resp.status}`);
+      alert('Sync failed — server returned ' + resp.status + '. Check your Vercel deployment and KV setup.');
+    }
+  }).catch(err => {
+    updateSyncBadge('error', err.message);
+    alert('Sync failed — ' + err.message);
+  });
 }
 function touchVessel(idx) { vessels[idx].last_updated = new Date().toISOString(); }
 function saveColumns() {
@@ -3551,21 +3595,24 @@ async function init() {
   vessels = localVessels;
 
   try {
+    updateSyncBadge('pending');
     // Using embedded data
     if (resp.ok) {
       const serverVessels = await resp.json();
-      // Only overwrite local with server data if server has MORE entries OR local is empty.
-      // Protects against losing edits if the server is empty (e.g. fresh deploy, auth fail).
       if (Array.isArray(serverVessels) && (serverVessels.length > localVessels.length || localVessels.length === 0)) {
         vessels = serverVessels;
         localStorage.setItem('pt_vessels', JSON.stringify(vessels));
+        updateSyncBadge('ok');
       } else if (localVessels.length > (serverVessels?.length || 0)) {
-        // Local is ahead — push to server to sync up
-        save();
+        save(); // pushes local to server, updateSyncBadge happens inside save()
+      } else {
+        updateSyncBadge('ok');
       }
+    } else {
+      updateSyncBadge('error', 'Server returned ' + resp.status);
     }
   } catch (e) {
-    // Offline or standalone — keep localStorage
+    updateSyncBadge('error', e.message || 'Offline');
   }
   // Restore persisted filter toggle states
   const p6Btn = document.getElementById('p6OfferToggle');
