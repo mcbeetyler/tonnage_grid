@@ -34,17 +34,59 @@ function cargoId(c) {
   return `${norm(c.charterer)}|${norm(c.cargo)}|${norm(c.load)}|${norm(c.disch)}|${norm(c.laycan)}|${norm(c.updated)}`;
 }
 
+function updateCargoSyncBadge(status, detail) {
+  const badge = document.getElementById('cargoSyncBadge');
+  if (!badge) return;
+  if (status === 'ok') {
+    badge.textContent = 'Synced';
+    badge.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:10px;background:#EAF3DE;color:#3B6D11;font-weight:500;cursor:pointer';
+  } else if (status === 'error') {
+    badge.textContent = 'Sync failed';
+    badge.title = detail || 'Click to retry';
+    badge.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:10px;background:#FAEAEA;color:#A32D2D;font-weight:500;cursor:pointer';
+  } else {
+    badge.textContent = 'Syncing...';
+    badge.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:10px;background:#FAEEDA;color:#BA7517;font-weight:500;cursor:pointer';
+  }
+}
+
+function forceCargoSync() {
+  updateCargoSyncBadge('pending');
+  fetch('/api/cargo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ history: cargoHistory, current: cargoCurrent }),
+  }).then(resp => {
+    if (resp.ok) {
+      updateCargoSyncBadge('ok');
+      alert('Cargo sync successful — ' + cargoHistory.length + ' history entries pushed.');
+    } else {
+      updateCargoSyncBadge('error', `Server returned ${resp.status}`);
+      alert('Cargo sync failed — server returned ' + resp.status + '.');
+    }
+  }).catch(err => {
+    updateCargoSyncBadge('error', err.message);
+    alert('Cargo sync failed — ' + err.message);
+  });
+}
+
 let _cargoSaveTimer = null;
 function saveCargo() {
   localStorage.setItem('pt_cargo_history', JSON.stringify(cargoHistory));
   localStorage.setItem('pt_cargo_current', JSON.stringify(cargoCurrent));
   clearTimeout(_cargoSaveTimer);
   _cargoSaveTimer = setTimeout(() => {
+    updateCargoSyncBadge('pending');
     fetch('/api/cargo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ history: cargoHistory, current: cargoCurrent }),
-    }).catch(() => {}); // silent fallback to localStorage
+    }).then(resp => {
+      if (resp.ok) updateCargoSyncBadge('ok');
+      else updateCargoSyncBadge('error', `Server returned ${resp.status}`);
+    }).catch(err => {
+      updateCargoSyncBadge('error', err.message);
+    });
   }, 500);
 }
 

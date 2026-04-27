@@ -503,6 +503,7 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
       <button class="mode-btn cargo-view-btn active" data-view="current" onclick="setCargoView('current')">Current</button>
       <button class="mode-btn cargo-view-btn" data-view="trends" onclick="setCargoView('trends')">Trends</button>
     </div>
+    <span id="cargoSyncBadge" onclick="forceCargoSync()" style="font-size:10px;padding:3px 8px;border-radius:10px;background:var(--bg3);color:var(--text-dim);font-weight:500;cursor:pointer" title="Click to force cargo sync to server">—</span>
     <div class="cargo-paste-area" style="flex:1;padding:0">
       <div class="cargo-paste-toggle" onclick="toggleCargoPaste()">
         <span class="arrow" id="cargoPasteArrow">&#9654;</span>
@@ -594,6 +595,9 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 <div id="tab-voyages" class="tab-panel">
   <!-- Paste bar -->
   <div style="padding:14px 28px 0">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:6px">
+      <span id="voyagesSyncBadge" onclick="forceVoyageSync()" style="font-size:10px;padding:3px 8px;border-radius:10px;background:var(--bg3);color:var(--text-dim);font-weight:500;cursor:pointer" title="Click to force voyage sync to server">—</span>
+    </div>
     <div class="cargo-paste-area" style="padding:0">
       <div class="cargo-paste-toggle" onclick="toggleVoyagePaste()">
         <span class="arrow" id="voyagePasteArrow">&#9654;</span>

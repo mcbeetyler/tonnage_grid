@@ -43,17 +43,60 @@ function getRouteHeader(section) {
   return voyageRouteHeaders[section] || DEFAULT_HEADERS[section];
 }
 
+function updateVoyageSyncBadge(status, detail) {
+  const badge = document.getElementById('voyagesSyncBadge');
+  if (!badge) return;
+  if (status === 'ok') {
+    badge.textContent = 'Synced';
+    badge.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:10px;background:#EAF3DE;color:#3B6D11;font-weight:500;cursor:pointer';
+  } else if (status === 'error') {
+    badge.textContent = 'Sync failed';
+    badge.title = detail || 'Click to retry';
+    badge.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:10px;background:#FAEAEA;color:#A32D2D;font-weight:500;cursor:pointer';
+  } else {
+    badge.textContent = 'Syncing...';
+    badge.style.cssText = 'font-size:10px;padding:3px 8px;border-radius:10px;background:#FAEEDA;color:#BA7517;font-weight:500;cursor:pointer';
+  }
+}
+
+function forceVoyageSync() {
+  updateVoyageSyncBadge('pending');
+  fetch('/api/voyages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(voyageData),
+  }).then(resp => {
+    if (resp.ok) {
+      const total = (voyageData.p7 || []).length + (voyageData.p8 || []).length;
+      updateVoyageSyncBadge('ok');
+      alert('Voyage sync successful — ' + total + ' voyages pushed.');
+    } else {
+      updateVoyageSyncBadge('error', `Server returned ${resp.status}`);
+      alert('Voyage sync failed — server returned ' + resp.status + '.');
+    }
+  }).catch(err => {
+    updateVoyageSyncBadge('error', err.message);
+    alert('Voyage sync failed — ' + err.message);
+  });
+}
+
 let _voyageSaveTimer = null;
 function saveVoyages() {
   localStorage.setItem('pt_voyages', JSON.stringify(voyageData));
   localStorage.setItem('pt_voyage_headers', JSON.stringify(voyageRouteHeaders));
   clearTimeout(_voyageSaveTimer);
   _voyageSaveTimer = setTimeout(() => {
+    updateVoyageSyncBadge('pending');
     fetch('/api/voyages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(voyageData),
-    }).catch(() => {});
+    }).then(resp => {
+      if (resp.ok) updateVoyageSyncBadge('ok');
+      else updateVoyageSyncBadge('error', `Server returned ${resp.status}`);
+    }).catch(err => {
+      updateVoyageSyncBadge('error', err.message);
+    });
   }, 500);
 }
 
