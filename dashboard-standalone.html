@@ -5125,7 +5125,7 @@ function renderReport() {
   const container = document.getElementById('reportContent');
 
   // Filter to only OPEN/ON SUBS vessels
-  const eligible = vessels.filter(v => v.status === 'OPEN' || v.status === 'ON SUBS');
+  const eligible = vessels.filter(v => v.status === 'OPEN');
 
   let html = '';
   for (const win of windows) {
@@ -5236,7 +5236,7 @@ function copyWindowReport(winLabel, mode) {
 
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
   const showType = document.getElementById('reportType').value;
-  const eligible = vessels.filter(v => v.status === 'OPEN' || v.status === 'ON SUBS');
+  const eligible = vessels.filter(v => v.status === 'OPEN');
   const inWindow = eligible.filter(v => {
     if (!v.eta_ecsa) return false;
     const eta = new Date(v.eta_ecsa);
@@ -5275,7 +5275,7 @@ function copyFullReport() {
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
   const showType = document.getElementById('reportType').value;
   const windows = getEtaWindows(mode);
-  const eligible = vessels.filter(v => v.status === 'OPEN' || v.status === 'ON SUBS');
+  const eligible = vessels.filter(v => v.status === 'OPEN');
 
   let text = `*Tonnage Report — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}*\n\n`;
 
