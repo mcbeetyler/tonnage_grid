@@ -1127,12 +1127,20 @@ function renderTable() {
   let lastLaycan = null;
   const rows = [];
 
-  // Laycan color map — rotating distinct colors per period
+  // Laycan color map — rotating distinct colors per period (3 tiers per month)
   const laycanColors = {
-    'FH Jan':'0','LH Jan':'0','FH Feb':'1','LH Feb':'1','FH Mar':'2','LH Mar':'2',
-    'FH Apr':'3','LH Apr':'3','FH May':'4','LH May':'4','FH Jun':'5','LH Jun':'5',
-    'FH Jul':'0','LH Jul':'0','FH Aug':'1','LH Aug':'1','FH Sep':'2','LH Sep':'2',
-    'FH Oct':'3','LH Oct':'3','FH Nov':'4','LH Nov':'4','FH Dec':'5','LH Dec':'5',
+    '1-10 Jan':'0','11-20 Jan':'0','21+ Jan':'0',
+    '1-10 Feb':'1','11-20 Feb':'1','21+ Feb':'1',
+    '1-10 Mar':'2','11-20 Mar':'2','21+ Mar':'2',
+    '1-10 Apr':'3','11-20 Apr':'3','21+ Apr':'3',
+    '1-10 May':'4','11-20 May':'4','21+ May':'4',
+    '1-10 Jun':'5','11-20 Jun':'5','21+ Jun':'5',
+    '1-10 Jul':'0','11-20 Jul':'0','21+ Jul':'0',
+    '1-10 Aug':'1','11-20 Aug':'1','21+ Aug':'1',
+    '1-10 Sep':'2','11-20 Sep':'2','21+ Sep':'2',
+    '1-10 Oct':'3','11-20 Oct':'3','21+ Oct':'3',
+    '1-10 Nov':'4','11-20 Nov':'4','21+ Nov':'4',
+    '1-10 Dec':'5','11-20 Dec':'5','21+ Dec':'5',
   };
 
   // Cell renderer map — each column key maps to a function returning HTML
