@@ -133,7 +133,6 @@
   .status-FIXED{background:var(--blue-light);color:var(--blue)}
   .status-FAILED{background:var(--red-light);color:var(--red)}
   .status-WITHDRAWN{background:var(--bg3);color:var(--text-dim)}
-  .status-ON_SUBS{background:var(--amber-light);color:var(--amber)}
 
   .scrubber-yes{color:var(--green);font-weight:600}
   .scrubber-unk{color:var(--border2)}
@@ -303,13 +302,11 @@
   <div class="header-stats">
     <div class="stat"><div class="stat-label">Total vessels</div><div class="stat-value" id="statTotal">0</div></div>
     <div class="stat"><div class="stat-label">Open</div><div class="stat-value" id="statOpen">0</div></div>
-    <div class="stat"><div class="stat-label">On Subs</div><div class="stat-value" id="statSubs">0</div></div>
     <div class="stat"><div class="stat-label">Fixed</div><div class="stat-value" id="statFixed">0</div></div>
   </div>
   <div class="filter-row" id="statusFilters">
     <button class="filter-pill active" data-filter="ALL" onclick="toggleFilter('ALL')">All <span class="filter-count" id="cntAll"></span></button>
     <button class="filter-pill" data-filter="OPEN" onclick="toggleFilter('OPEN')">Open <span class="filter-count" id="cntOpen"></span></button>
-    <button class="filter-pill" data-filter="ON SUBS" onclick="toggleFilter('ON SUBS')">On Subs <span class="filter-count" id="cntSubs"></span></button>
     <button class="filter-pill" data-filter="FIXED" onclick="toggleFilter('FIXED')">Fixed <span class="filter-count" id="cntFixed"></span></button>
     <button class="filter-pill" data-filter="FAILED" onclick="toggleFilter('FAILED')">Failed <span class="filter-count" id="cntFailed"></span></button>
     <button class="filter-pill" data-filter="WITHDRAWN" onclick="toggleFilter('WITHDRAWN')">Withdrawn <span class="filter-count" id="cntWithdrawn"></span></button>

@@ -347,7 +347,7 @@ FIELD DEFINITIONS:
   - bb_usd: Ballast bonus lump sum ($). "19k + 900k" means 19,000/day TC + $900,000 BB.
   - p6_bid: P6 equivalent of bid
   - p6_offer: P6 equivalent of offer. Parse from (p6: X) or (p6 bss X = Y) where Y is the p6 equiv.
-- status: "OPEN", "ON SUBS", "FIXED", "FAILED", "WITHDRAWN". "OFF-MKT" or "EX-OUR CP" = WITHDRAWN. "On subs (nfd)" = ON SUBS.
+- status: "OPEN", "FIXED", "FAILED", "WITHDRAWN". "OFF-MKT" or "EX-OUR CP" = WITHDRAWN. "On subs" or "FXD" or "FIXED" = FIXED.
 - notes: The raw offer/rate line verbatim (e.g. "Ideas 21k try less (p6: 17,750 vs 19,200)") plus any extra context (CP notes, cargo details, route preferences). Always include the original rate/offer text here.
 
 IMPORTANT:
@@ -763,6 +763,102 @@ function mergeCSVVessels(newVessels) {
   return { added, updated };
 }
 
+// ─── Fixture Message Parser ──────────────────────────────────────────────────
+// Detects fixture reports (FXD/FIXED) and updates matching vessels on the board
+
+function looksLikeFixtures(raw) {
+  // At least one line has FXD or FIXED
+  return /\b(?:FXD|FIXED)\b/i.test(raw);
+}
+
+function parseFixtureMessages(raw) {
+  // Split on double newline (multiple fixtures) or single newline
+  const blocks = raw.split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
+  // If only single-line messages, split by single newline
+  let messages = blocks;
+  if (blocks.length === 1 && blocks[0].split('\n').length > 1) {
+    // Each line might be a separate fixture
+    messages = blocks[0].split('\n').map(l => l.trim()).filter(Boolean);
+  }
+
+  const results = [];
+  const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const today = new Date().toISOString().split('T')[0];
+
+  for (const msg of messages) {
+    if (!/\b(?:FXD|FIXED)\b/i.test(msg)) continue;
+
+    // Extract vessel name — look for "MV NAME" or just the first recognizable name
+    let vesselName = null;
+    const mvMatch = msg.match(/M[VT]\s+([A-Z][A-Z0-9\s]+?)(?:\s*\(|\s+\d|\s+-|\s+PSD|\s+SAILED)/i);
+    if (mvMatch) {
+      vesselName = mvMatch[1].trim();
+    } else {
+      // Try: "A/C CHARTERER PMX/KMX ROUTE..." — this is a cargo fixture, vessel unknown
+      // Try: first few capitalized words before any numbers/parens
+      const firstWords = msg.match(/^([A-Z][A-Z\s]+?)(?:\s*\(|\s+\d|\s+-)/i);
+      if (firstWords) vesselName = firstWords[1].trim();
+    }
+
+    // Build fixture notes from the full message
+    const fixNotes = [];
+    if (/\bNFD\b/i.test(msg)) fixNotes.push('NFD');
+    if (/\bCNR\b/i.test(msg)) fixNotes.push('CNR');
+    if (/\bRNR\b/i.test(msg)) fixNotes.push('RNR');
+
+    // Extract charterer if mentioned: "A/C CHARTERER" or "FXD CHARTERER"
+    const acMatch = msg.match(/A\/C\s+([A-Z][A-Z0-9\s]+?)(?:\s+PMX|\s+KMX|\s+\d|\s*$)/i);
+    if (acMatch) fixNotes.push('Charterer: ' + acMatch[1].trim());
+
+    // Extract route/cargo details after FXD/FIXED
+    const fxdMatch = msg.match(/\b(?:FXD|FIXED)\b\s*(.*)/i);
+    if (fxdMatch) {
+      let detail = fxdMatch[1].replace(/^[-–—\s]+/, '').trim();
+      // Remove NFD/CNR/RNR since we track separately
+      detail = detail.replace(/\b(?:NFD|CNR|RNR)\b\s*[,/]?\s*/gi, '').trim();
+      // Remove trailing punctuation
+      detail = detail.replace(/^[,\s-]+|[,\s-]+$/g, '').trim();
+      if (detail) fixNotes.push(detail);
+    }
+
+    // Also capture anything before FIXED as context
+    const beforeFxd = msg.match(/(.*?)\s*(?:CLEAN\s+)?(?:FXD|FIXED)/i);
+    let posInfo = '';
+    if (beforeFxd) {
+      // Extract ETA/position info
+      const etaInfo = beforeFxd[1].match(/ETA\s+\w+\s+\S+/i);
+      if (etaInfo) posInfo = etaInfo[0];
+    }
+
+    const noteText = fixNotes.filter(Boolean).join(' · ') || 'Fixed';
+
+    // Try to match to existing vessel on the board
+    let matched = false;
+    if (vesselName) {
+      const normName = norm(vesselName);
+      const idx = vessels.findIndex(v => norm(v.vessel_name) === normName);
+      if (idx !== -1) {
+        vessels[idx].status = 'FIXED';
+        vessels[idx].date_fixed = vessels[idx].date_fixed || today;
+        // Append fixture details to notes
+        const existingNotes = vessels[idx].notes || '';
+        vessels[idx].notes = existingNotes ? existingNotes + ' · FXD: ' + noteText : 'FXD: ' + noteText;
+        vessels[idx].last_updated = new Date().toISOString();
+        matched = true;
+        results.push({ vessel: vesselName, matched: true, detail: 'Updated to FIXED — ' + noteText });
+      } else {
+        results.push({ vessel: vesselName, matched: false, detail: 'Not on board — ' + noteText });
+      }
+    } else {
+      // Cargo fixture (no vessel name) — just log it
+      const snippet = msg.substring(0, 60) + (msg.length > 60 ? '...' : '');
+      results.push({ vessel: '(cargo fixture)', matched: false, detail: snippet });
+    }
+  }
+
+  return results;
+}
+
 // ─── CSV File Upload ─────────────────────────────────────────────────────────
 
 function handleCSVFileUpload(event) {
@@ -792,6 +888,23 @@ async function handleParse() {
   const preview = document.getElementById('previewBox');
   const btnAdd = document.getElementById('btnAdd');
   const btnParse = document.getElementById('btnParse');
+
+  // Check if this looks like fixture reports (contains FXD or FIXED)
+  if (looksLikeFixtures(raw)) {
+    const results = parseFixtureMessages(raw);
+    if (results.length > 0) {
+      save();
+      renderTable();
+      updateStats();
+      const summary = results.map(r => `${r.matched ? '✓' : '?'} ${r.vessel} — ${r.detail}`).join('\n');
+      preview.textContent = `Fixtures processed: ${results.length}\n\n${summary}`;
+      preview.className = 'preview-box has-content';
+      document.getElementById('rawInput').value = '';
+      pendingParsed = null;
+      btnAdd.disabled = true;
+      return;
+    }
+  }
 
   // If the paste looks like CSV/TSV with a header row, parse + merge directly (no API)
   if (looksLikeCSV(raw)) {
@@ -1051,14 +1164,14 @@ function getSortValue(v, key) {
 // ─── Status & Actions ────────────────────────────────────────────────────────
 
 function cycleStatus(idx) {
-  const states = ['OPEN', 'ON SUBS', 'FIXED', 'FAILED', 'WITHDRAWN'];
+  const states = ['OPEN', 'FIXED', 'FAILED', 'WITHDRAWN'];
   const cur = vessels[idx].status || 'OPEN';
   const next = states[(states.indexOf(cur) + 1) % states.length];
   vessels[idx].status = next;
   touchVessel(idx);
 
-  // Prompt for fixed price, charterer, and auto-set date when moving to ON SUBS
-  if (next === 'ON SUBS' && !vessels[idx].fixed_price) {
+  // Prompt for fixed price and charterer when moving to FIXED
+  if (next === 'FIXED' && !vessels[idx].fixed_price) {
     if (!vessels[idx].date_fixed) vessels[idx].date_fixed = new Date().toISOString().split('T')[0];
     const price = prompt(`${vessels[idx].vessel_name} on subs — enter fixed P6 price:`);
     if (price) {
@@ -1082,17 +1195,15 @@ function removeVessel(idx) {
 
 function updateStats() {
   const open = vessels.filter(v => v.status === 'OPEN').length;
-  const subs = vessels.filter(v => v.status === 'ON SUBS').length;
   const fixed = vessels.filter(v => v.status === 'FIXED').length;
   const failed = vessels.filter(v => v.status === 'FAILED').length;
   const withdrawn = vessels.filter(v => v.status === 'WITHDRAWN').length;
   document.getElementById('statOpen').textContent = open;
-  document.getElementById('statSubs').textContent = subs;
   document.getElementById('statFixed').textContent = fixed;
   document.getElementById('statTotal').textContent = vessels.length;
   // Filter pill counts
   const ce = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = `(${val})`; };
-  ce('cntAll', vessels.length); ce('cntOpen', open); ce('cntSubs', subs);
+  ce('cntAll', vessels.length); ce('cntOpen', open);
   ce('cntFixed', fixed); ce('cntFailed', failed); ce('cntWithdrawn', withdrawn);
 }
 

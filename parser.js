@@ -505,7 +505,7 @@ function parseMarketColourLine(line) {
 
 function detectStatus(lines) {
   const text = lines.join(' ').toUpperCase();
-  if (/\bON\s+SUBS\b/i.test(text)) return 'ON SUBS';
+  if (/\bON\s+SUBS\b/i.test(text)) return 'FIXED';
   if (/\bOFF[\s-]?MKT\b|\bOFF[\s-]?MARKET\b/i.test(text)) return 'WITHDRAWN';
   if (/\bFIXED\b/i.test(text)) return 'FIXED';
   if (/\bFAILED\b/i.test(text)) return 'FAILED';
