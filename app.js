@@ -460,6 +460,207 @@ async function parseWithAPI(rawText) {
   }));
 }
 
+// ─── Ask the Board (AI Chat) ─────────────────────────────────────────────────
+
+const CHAT_SYSTEM_PROMPT = `You are Tyler's tonnage board assistant. He is a charterers' broker for Koch on Arrow Shipbroking's Geneva Atlantic desk, focused on Panamax tonnage for ECSA fronthaul (Santos→China soybeans, primarily).
+
+You have read access to his current tonnage board state, attached as text below. Answer his questions directly and concisely with concrete data. Always cite vessel names and key specs (DWT/built) when listing ships. Use markdown tables when comparing multiple vessels.
+
+Conventions you should know:
+- "P6" = Baltic P6 (now P8) route benchmark; the universal comparator across vessels
+- "Bid" = what charterer/market offers to the vessel; "Offer" = owner's ask
+- "Spread" = offer − bid (positive means owner above market)
+- ECSA = East Coast South America (Santos / Paranagua)
+- TC = time charter; BB = ballast bonus (lump sum to ballast to load port)
+- Laycan tags are decade buckets per month: "1-10 May", "11-20 May", "21+ May"
+- Status: OPEN, FIXED, FAILED, WITHDRAWN
+- Dollar values: format with $ and commas, e.g. $18,500
+- Be terse; Tyler reads fast.`;
+
+let chatHistory = []; // [{role, displayText, content}]
+
+function buildBoardSnapshot() {
+  const today = new Date().toISOString().slice(0, 10);
+  const open = vessels.filter(v => v.status === 'OPEN');
+  const fixed = vessels.filter(v => v.status === 'FIXED');
+  const onSubs = vessels.filter(v => v.status === 'ON SUBS');
+  const failed = vessels.filter(v => v.status === 'FAILED');
+  const withdrawn = vessels.filter(v => v.status === 'WITHDRAWN');
+
+  let snap = `BOARD SNAPSHOT (as of ${today})\n`;
+  snap += `Total: ${vessels.length} | Open: ${open.length} | On subs: ${onSubs.length} | Fixed: ${fixed.length} | Failed: ${failed.length} | Withdrawn: ${withdrawn.length}\n\n`;
+
+  function rowFor(v) {
+    const p6 = getP6Values(v);
+    const dwt = v.dwt ? (v.dwt / 1000).toFixed(0) + 'K' : '?';
+    const built = v.build_year || '?';
+    const eta = v.eta_ecsa ? fmtDateReport(v.eta_ecsa) + (v.eta_type === 'ONW' ? ' ONW' : '') : '';
+    const tag = getLaycanPeriod(v.eta_ecsa) || '';
+    const owner = v.owner || '';
+    const dely = v.delivery_basis || v.current_position || '';
+    const bid = p6.bid ? p6.bid.toLocaleString() : '';
+    const offer = p6.offer ? p6.offer.toLocaleString() : '';
+    const spread = (p6.offer != null && p6.bid != null) ? (p6.offer - p6.bid).toLocaleString() : '';
+    const hire = v.hire_offer ? '$' + v.hire_offer.toLocaleString() : '';
+    const bb = v.bb_offer ? '$' + v.bb_offer.toLocaleString() : '';
+    const charterer = v.charterer || '';
+    const fixedPx = v.fixed_price ? v.fixed_price.toLocaleString() : '';
+    const dateFixed = v.date_fixed || '';
+    const notes = (v.notes || '').replace(/\s+/g, ' ').slice(0, 100);
+    return `${v.vessel_name || '?'} | ${dwt}/${built} | ${owner} | ${dely} | ETA ${eta} (${tag}) | bid ${bid} | offer ${offer} | spread ${spread} | hire ${hire} | bb ${bb} | charterer ${charterer} | fixed ${fixedPx} ${dateFixed} | ${notes}`;
+  }
+
+  snap += `OPEN VESSELS (${open.length}):\n`;
+  open.forEach((v, i) => { snap += `${i + 1}. ${rowFor(v)}\n`; });
+
+  if (fixed.length) {
+    snap += `\nFIXED (${fixed.length}):\n`;
+    fixed.forEach((v, i) => { snap += `${i + 1}. ${rowFor(v)}\n`; });
+  }
+  if (onSubs.length) {
+    snap += `\nON SUBS (${onSubs.length}):\n`;
+    onSubs.forEach((v, i) => { snap += `${i + 1}. ${rowFor(v)}\n`; });
+  }
+
+  return snap;
+}
+
+function openChat() {
+  document.getElementById('chatOverlay').classList.add('open');
+  renderChat();
+  setTimeout(() => document.getElementById('chatInput').focus(), 50);
+}
+
+function closeChat() {
+  document.getElementById('chatOverlay').classList.remove('open');
+}
+
+function clearChat() {
+  chatHistory = [];
+  renderChat();
+}
+
+function handleChatKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChat();
+  }
+}
+
+function escapeChatHTML(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function renderMarkdownLite(text) {
+  return escapeChatHTML(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+function renderChat() {
+  const box = document.getElementById('chatMessages');
+  if (chatHistory.length === 0) {
+    box.innerHTML = `<div class="chat-empty">
+      Ask anything about the current board state.
+      <div class="chat-suggestions">
+        <div class="chat-suggestion" onclick="seedChat(this.textContent)">Cheapest 3 offers in the 11–20 May window</div>
+        <div class="chat-suggestion" onclick="seedChat(this.textContent)">Which owners have the widest spreads right now?</div>
+        <div class="chat-suggestion" onclick="seedChat(this.textContent)">Summarize fixtures from the last 7 days</div>
+        <div class="chat-suggestion" onclick="seedChat(this.textContent)">List vessels with no P6 offer yet</div>
+      </div>
+    </div>`;
+    return;
+  }
+  box.innerHTML = chatHistory.map(m => `
+    <div class="chat-msg ${m.role}${m.error ? ' error' : ''}">
+      <div class="chat-msg-role">${m.role === 'user' ? 'You' : m.error ? 'Error' : 'Claude'}</div>
+      <div class="chat-msg-body">${renderMarkdownLite(m.displayText)}</div>
+    </div>
+  `).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+function seedChat(text) {
+  document.getElementById('chatInput').value = text;
+  document.getElementById('chatInput').focus();
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('chatSend');
+  const question = input.value.trim();
+  if (!question) return;
+
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    chatHistory.push({ role: 'assistant', error: true, displayText: 'No Anthropic API key set. Open the Inbox tab and save a key first.' });
+    renderChat();
+    return;
+  }
+
+  // Push user turn (display text only)
+  chatHistory.push({ role: 'user', displayText: question });
+  input.value = '';
+  sendBtn.disabled = true;
+  renderChat();
+
+  // Push placeholder assistant turn
+  chatHistory.push({ role: 'assistant', displayText: 'Thinking…', pending: true });
+  renderChat();
+
+  // Build API messages: attach board snapshot only to the latest user turn
+  const snapshot = buildBoardSnapshot();
+  const apiMessages = [];
+  const userTurns = chatHistory.filter(m => m.role === 'user');
+  for (let i = 0; i < chatHistory.length; i++) {
+    const m = chatHistory[i];
+    if (m.pending) continue;
+    if (m.role === 'user') {
+      const isLast = m === userTurns[userTurns.length - 1];
+      apiMessages.push({
+        role: 'user',
+        content: isLast ? `${snapshot}\n\n---\n\nQuestion: ${m.displayText}` : m.displayText,
+      });
+    } else if (m.role === 'assistant' && !m.error) {
+      apiMessages.push({ role: 'assistant', content: m.displayText });
+    }
+  }
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 2048,
+        system: CHAT_SYSTEM_PROMPT,
+        messages: apiMessages,
+      }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(`API ${resp.status}: ${err.error?.message || resp.statusText}`);
+    }
+    const data = await resp.json();
+    const text = data.content.find(b => b.type === 'text')?.text || '(no response)';
+    // Replace pending placeholder with real answer
+    const last = chatHistory[chatHistory.length - 1];
+    last.displayText = text;
+    last.pending = false;
+  } catch (e) {
+    const last = chatHistory[chatHistory.length - 1];
+    last.displayText = e.message || 'Request failed';
+    last.error = true;
+    last.pending = false;
+  } finally {
+    sendBtn.disabled = false;
+    renderChat();
+  }
+}
+
 // ─── CSV/TSV Paste Parser ───────────────────────────────────────────────────
 // Paste from spreadsheet (tab-separated) or CSV. First row must be headers.
 // Known headers (case-insensitive, flexible whitespace/punctuation):
