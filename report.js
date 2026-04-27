@@ -150,24 +150,27 @@ function renderReportCard(v, rank, type) {
   const val = type === 'offer' ? p6.offer : p6.bid;
   const delivery = v.delivery_basis || v.current_position || '';
   const etaStr = v.eta_ecsa ? fmtDateReport(v.eta_ecsa) : '';
-  const etaType = v.eta_type === 'ONW' ? ' (ONW)' : '';
-  const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) + 'K' : '?'}/${v.build_year || '?'}`;
+  const etaType = v.eta_type === 'ONW' ? ' ONW' : '';
+  const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
   const hire = v.hire_offer ? '$' + v.hire_offer.toLocaleString() : '';
-  const bki = v.bki_eqvt ? '$' + v.bki_eqvt.toLocaleString() : '';
+  const bb = v.bb_offer ? '$' + v.bb_offer.toLocaleString() : '';
 
   const safeName = (v.vessel_name || '').replace(/'/g, "\\'");
+
+  // Build compact detail chips
+  const chips = [];
+  if (delivery) chips.push(delivery);
+  if (etaStr) chips.push('ETA ' + etaStr + etaType);
+  if (hire) chips.push('Hire ' + hire);
+  if (bb) chips.push('BB ' + bb);
+
   return `<div class="report-card">
-    <span class="report-rank">#${rank}</span>
-    <div style="flex:1">
-      <div class="report-vessel-name">${v.vessel_name || '—'} ${specs}</div>
-      <div class="report-detail">
-        <strong>${v.owner || '—'}</strong> — ${delivery}${delivery && etaStr ? ' — ' : ''}ETA: ${etaStr}${etaType}
-        ${hire ? '<br>Hire: ' + hire : ''}${bki ? ' · BKI: ' + bki : ''}
-        ${v.notes ? '<br>' + v.notes : ''}
-      </div>
-    </div>
+    <span class="report-rank">${rank}</span>
+    <span class="report-vessel-name">${v.vessel_name || '—'} <span class="report-specs">${specs}</span></span>
+    <span class="report-owner">${v.owner || '—'}</span>
+    <span class="report-chips">${chips.join(' · ')}</span>
     <span class="report-p6 ${type}">${val != null ? '$' + val.toLocaleString() : '—'}</span>
-    <button class="btn-remove" onclick="excludeFromReport('${safeName}')" title="Remove from report" style="margin-left:8px">x</button>
+    <button class="btn-remove" onclick="excludeFromReport('${safeName}')" title="Remove" style="padding:2px 6px">x</button>
   </div>`;
 }
 
@@ -181,7 +184,7 @@ function restoreAllReport() {
   renderReport();
 }
 
-// ─── WhatsApp-format clipboard copy ──────────────────────────────────────────
+// ─── WhatsApp-format clipboard copy (Option B — compact) ────────────────────
 
 function vesselToWhatsApp(v, type) {
   const p6 = getP6Values(v);
@@ -192,16 +195,16 @@ function vesselToWhatsApp(v, type) {
   const etaType = v.eta_type === 'ONW' ? ' (ONW)' : '';
   const typeLabel = type === 'bid' ? ' [BID]' : '';
 
-  let text = `*${v.vessel_name || '?'} ${specs}*${typeLabel} — ${v.owner || '?'}`;
-  if (delivery) text += ` — ${delivery}`;
-  if (etaStr) text += ` — ETA: ${etaStr}${etaType}`;
-  text += '\n';
-  if (v.hire_offer) text += `HIRE: $${v.hire_offer.toLocaleString()}\n`;
-  if (v.bb_offer) text += `BB: $${v.bb_offer.toLocaleString()}\n`;
-  if (v.bki_eqvt) text += `BKI EQVLT: $${v.bki_eqvt.toLocaleString()}\n`;
-  if (val != null) text += `P6 EQVLT: $${val.toLocaleString()}\n`;
-  if (v.notes) text += `${v.notes}\n`;
-  return text;
+  let line1 = `*${v.vessel_name || '?'} ${specs}*${typeLabel}`;
+  if (delivery) line1 += ` — ${delivery}`;
+  if (etaStr) line1 += ` — ETA: ${etaStr}${etaType}`;
+
+  const parts = [];
+  if (val != null) parts.push(`P6: $${val.toLocaleString()}`);
+  if (v.hire_offer) parts.push(`Hire: $${v.hire_offer.toLocaleString()}`);
+  if (v.bb_offer) parts.push(`BB: $${v.bb_offer.toLocaleString()}`);
+
+  return line1 + '\n' + parts.join(' | ');
 }
 
 function copyWindowReport(winLabel, mode) {
@@ -218,7 +221,7 @@ function copyWindowReport(winLabel, mode) {
     return eta >= win.from && eta <= win.to;
   });
 
-  let text = `*${winLabel}*\n\n`;
+  let text = `*${winLabel}*\n`;
 
   if (showType === 'both' || showType === 'offers') {
     const withOffer = inWindow
@@ -226,7 +229,6 @@ function copyWindowReport(winLabel, mode) {
       .sort((a, b) => getP6Values(a).offer - getP6Values(b).offer)
       .slice(0, topN);
     if (withOffer.length > 0) {
-      text += `*Best Offers:*\n`;
       withOffer.forEach(v => { text += vesselToWhatsApp(v, 'offer') + '\n'; });
     }
   }
@@ -237,7 +239,7 @@ function copyWindowReport(winLabel, mode) {
       .sort((a, b) => getP6Values(a).bid - getP6Values(b).bid)
       .slice(0, topN);
     if (withBid.length > 0) {
-      text += `*Best Bids:*\n`;
+      text += `_Bids:_\n`;
       withBid.forEach(v => { text += vesselToWhatsApp(v, 'bid') + '\n'; });
     }
   }
@@ -252,7 +254,7 @@ function copyFullReport() {
   const windows = getEtaWindows(mode);
   const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name));
 
-  let text = `*Tonnage Report — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}*\n\n`;
+  let text = `*Tonnage Report — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}*\n`;
 
   for (const win of windows) {
     const inWindow = eligible.filter(v => {
@@ -262,7 +264,7 @@ function copyFullReport() {
     });
     if (inWindow.length === 0) continue;
 
-    text += `━━━ *${win.label}* ━━━\n\n`;
+    text += `\n*${win.label}*\n`;
 
     if (showType === 'both' || showType === 'offers') {
       const withOffer = inWindow
@@ -270,7 +272,6 @@ function copyFullReport() {
         .sort((a, b) => getP6Values(a).offer - getP6Values(b).offer)
         .slice(0, topN);
       if (withOffer.length > 0) {
-        text += `*OFFERS:*\n`;
         withOffer.forEach(v => { text += vesselToWhatsApp(v, 'offer') + '\n'; });
       }
     }
@@ -281,7 +282,7 @@ function copyFullReport() {
         .sort((a, b) => getP6Values(a).bid - getP6Values(b).bid)
         .slice(0, topN);
       if (withBid.length > 0) {
-        text += `*BIDS:*\n`;
+        text += `_Bids:_\n`;
         withBid.forEach(v => { text += vesselToWhatsApp(v, 'bid') + '\n'; });
       }
     }

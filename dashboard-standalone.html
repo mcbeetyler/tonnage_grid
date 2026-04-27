@@ -250,25 +250,27 @@
   .voyage-row-fixed .voyage-offer{color:var(--text-dim)}
 
   /* Report tab */
-  .report-wrap{padding:24px 28px;max-width:1200px}
-  .report-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px}
-  .report-window{margin-bottom:28px}
-  .report-window-header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
-  .report-window-title{font-size:14px;font-weight:700;color:var(--text-bright)}
-  .report-window-meta{font-size:12px;color:var(--text-dim)}
-  .report-section{margin-bottom:16px}
-  .report-section-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding:6px 0;color:var(--green)}
+  .report-wrap{padding:24px 28px;max-width:1100px}
+  .report-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:24px}
+  .report-window{margin-bottom:24px}
+  .report-window-header{display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:10px 14px;background:var(--bg3);border-radius:var(--radius);border-left:4px solid var(--accent)}
+  .report-window-title{font-size:13px;font-weight:700;color:var(--text-bright)}
+  .report-window-meta{font-size:11px;color:var(--text-dim)}
+  .report-section{margin-bottom:4px}
+  .report-section-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;padding:6px 14px 4px;color:var(--green)}
   .report-section-label.offers{color:var(--red)}
-  .report-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;margin-bottom:6px;display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+  .report-card{padding:6px 14px;display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--border);font-size:12px}
+  .report-card:last-child{border-bottom:none}
   .report-card:hover{background:var(--bg-hover)}
-  .report-rank{font-size:18px;font-weight:700;color:var(--text-dim);min-width:28px}
-  .report-vessel-name{font-weight:600;font-size:14px;color:var(--text-bright);min-width:180px}
-  .report-detail{font-size:12px;color:var(--text-dim);line-height:1.5}
-  .report-detail strong{color:var(--text);font-weight:600}
-  .report-p6{font-family:var(--mono);font-size:16px;font-weight:700;margin-left:auto;min-width:80px;text-align:right}
+  .report-rank{font-size:12px;font-weight:700;color:var(--text-dim);min-width:20px}
+  .report-vessel-name{font-weight:600;font-size:13px;color:var(--text-bright);white-space:nowrap}
+  .report-specs{font-weight:400;color:var(--text-dim);font-size:11px}
+  .report-owner{color:var(--text);font-weight:500;font-size:12px;min-width:80px;white-space:nowrap}
+  .report-chips{font-size:11px;color:var(--text-dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .report-p6{font-family:var(--mono);font-size:13px;font-weight:700;min-width:70px;text-align:right;white-space:nowrap}
   .report-p6.bid{color:var(--green)}
   .report-p6.offer{color:var(--red)}
-  .report-copy-btn{background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:var(--radius-sm);font-size:11px;font-weight:600;cursor:pointer}
+  .report-copy-btn{background:var(--accent);color:#fff;border:none;padding:5px 12px;border-radius:var(--radius-sm);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap}
   .report-copy-btn:hover{background:var(--accent-hover)}
   .report-empty{color:var(--text-dim);font-size:12px;font-style:italic;padding:8px 0}
   .report-copy-toast{position:fixed;bottom:24px;right:24px;background:var(--green);color:#fff;padding:10px 20px;border-radius:var(--radius);font-size:13px;font-weight:500;z-index:100;opacity:0;transition:opacity .3s;pointer-events:none}
@@ -5198,24 +5200,27 @@ function renderReportCard(v, rank, type) {
   const val = type === 'offer' ? p6.offer : p6.bid;
   const delivery = v.delivery_basis || v.current_position || '';
   const etaStr = v.eta_ecsa ? fmtDateReport(v.eta_ecsa) : '';
-  const etaType = v.eta_type === 'ONW' ? ' (ONW)' : '';
-  const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) + 'K' : '?'}/${v.build_year || '?'}`;
+  const etaType = v.eta_type === 'ONW' ? ' ONW' : '';
+  const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
   const hire = v.hire_offer ? '$' + v.hire_offer.toLocaleString() : '';
-  const bki = v.bki_eqvt ? '$' + v.bki_eqvt.toLocaleString() : '';
+  const bb = v.bb_offer ? '$' + v.bb_offer.toLocaleString() : '';
 
   const safeName = (v.vessel_name || '').replace(/'/g, "\\'");
+
+  // Build compact detail chips
+  const chips = [];
+  if (delivery) chips.push(delivery);
+  if (etaStr) chips.push('ETA ' + etaStr + etaType);
+  if (hire) chips.push('Hire ' + hire);
+  if (bb) chips.push('BB ' + bb);
+
   return `<div class="report-card">
-    <span class="report-rank">#${rank}</span>
-    <div style="flex:1">
-      <div class="report-vessel-name">${v.vessel_name || '—'} ${specs}</div>
-      <div class="report-detail">
-        <strong>${v.owner || '—'}</strong> — ${delivery}${delivery && etaStr ? ' — ' : ''}ETA: ${etaStr}${etaType}
-        ${hire ? '<br>Hire: ' + hire : ''}${bki ? ' · BKI: ' + bki : ''}
-        ${v.notes ? '<br>' + v.notes : ''}
-      </div>
-    </div>
+    <span class="report-rank">${rank}</span>
+    <span class="report-vessel-name">${v.vessel_name || '—'} <span class="report-specs">${specs}</span></span>
+    <span class="report-owner">${v.owner || '—'}</span>
+    <span class="report-chips">${chips.join(' · ')}</span>
     <span class="report-p6 ${type}">${val != null ? '$' + val.toLocaleString() : '—'}</span>
-    <button class="btn-remove" onclick="excludeFromReport('${safeName}')" title="Remove from report" style="margin-left:8px">x</button>
+    <button class="btn-remove" onclick="excludeFromReport('${safeName}')" title="Remove" style="padding:2px 6px">x</button>
   </div>`;
 }
 
@@ -5229,7 +5234,7 @@ function restoreAllReport() {
   renderReport();
 }
 
-// ─── WhatsApp-format clipboard copy ──────────────────────────────────────────
+// ─── WhatsApp-format clipboard copy (Option B — compact) ────────────────────
 
 function vesselToWhatsApp(v, type) {
   const p6 = getP6Values(v);
@@ -5240,16 +5245,16 @@ function vesselToWhatsApp(v, type) {
   const etaType = v.eta_type === 'ONW' ? ' (ONW)' : '';
   const typeLabel = type === 'bid' ? ' [BID]' : '';
 
-  let text = `*${v.vessel_name || '?'} ${specs}*${typeLabel} — ${v.owner || '?'}`;
-  if (delivery) text += ` — ${delivery}`;
-  if (etaStr) text += ` — ETA: ${etaStr}${etaType}`;
-  text += '\n';
-  if (v.hire_offer) text += `HIRE: $${v.hire_offer.toLocaleString()}\n`;
-  if (v.bb_offer) text += `BB: $${v.bb_offer.toLocaleString()}\n`;
-  if (v.bki_eqvt) text += `BKI EQVLT: $${v.bki_eqvt.toLocaleString()}\n`;
-  if (val != null) text += `P6 EQVLT: $${val.toLocaleString()}\n`;
-  if (v.notes) text += `${v.notes}\n`;
-  return text;
+  let line1 = `*${v.vessel_name || '?'} ${specs}*${typeLabel}`;
+  if (delivery) line1 += ` — ${delivery}`;
+  if (etaStr) line1 += ` — ETA: ${etaStr}${etaType}`;
+
+  const parts = [];
+  if (val != null) parts.push(`P6: $${val.toLocaleString()}`);
+  if (v.hire_offer) parts.push(`Hire: $${v.hire_offer.toLocaleString()}`);
+  if (v.bb_offer) parts.push(`BB: $${v.bb_offer.toLocaleString()}`);
+
+  return line1 + '\n' + parts.join(' | ');
 }
 
 function copyWindowReport(winLabel, mode) {
@@ -5266,7 +5271,7 @@ function copyWindowReport(winLabel, mode) {
     return eta >= win.from && eta <= win.to;
   });
 
-  let text = `*${winLabel}*\n\n`;
+  let text = `*${winLabel}*\n`;
 
   if (showType === 'both' || showType === 'offers') {
     const withOffer = inWindow
@@ -5274,7 +5279,6 @@ function copyWindowReport(winLabel, mode) {
       .sort((a, b) => getP6Values(a).offer - getP6Values(b).offer)
       .slice(0, topN);
     if (withOffer.length > 0) {
-      text += `*Best Offers:*\n`;
       withOffer.forEach(v => { text += vesselToWhatsApp(v, 'offer') + '\n'; });
     }
   }
@@ -5285,7 +5289,7 @@ function copyWindowReport(winLabel, mode) {
       .sort((a, b) => getP6Values(a).bid - getP6Values(b).bid)
       .slice(0, topN);
     if (withBid.length > 0) {
-      text += `*Best Bids:*\n`;
+      text += `_Bids:_\n`;
       withBid.forEach(v => { text += vesselToWhatsApp(v, 'bid') + '\n'; });
     }
   }
@@ -5300,7 +5304,7 @@ function copyFullReport() {
   const windows = getEtaWindows(mode);
   const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name));
 
-  let text = `*Tonnage Report — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}*\n\n`;
+  let text = `*Tonnage Report — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}*\n`;
 
   for (const win of windows) {
     const inWindow = eligible.filter(v => {
@@ -5310,7 +5314,7 @@ function copyFullReport() {
     });
     if (inWindow.length === 0) continue;
 
-    text += `━━━ *${win.label}* ━━━\n\n`;
+    text += `\n*${win.label}*\n`;
 
     if (showType === 'both' || showType === 'offers') {
       const withOffer = inWindow
@@ -5318,7 +5322,6 @@ function copyFullReport() {
         .sort((a, b) => getP6Values(a).offer - getP6Values(b).offer)
         .slice(0, topN);
       if (withOffer.length > 0) {
-        text += `*OFFERS:*\n`;
         withOffer.forEach(v => { text += vesselToWhatsApp(v, 'offer') + '\n'; });
       }
     }
@@ -5329,7 +5332,7 @@ function copyFullReport() {
         .sort((a, b) => getP6Values(a).bid - getP6Values(b).bid)
         .slice(0, topN);
       if (withBid.length > 0) {
-        text += `*BIDS:*\n`;
+        text += `_Bids:_\n`;
         withBid.forEach(v => { text += vesselToWhatsApp(v, 'bid') + '\n'; });
       }
     }
