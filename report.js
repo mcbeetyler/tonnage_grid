@@ -3,6 +3,9 @@
 // Windows are relative to today: Spot (0-10d), Near (11-20d), 21-30d, 31-40d, 41-50d, 50d+
 // Also supports filtering by specific month.
 
+// Vessels excluded from the current report (reset when switching tabs or changing filters)
+let reportExcluded = new Set();
+
 // Hook into tab switching
 const _origSwitchTabReport = window.switchTab;
 window.switchTab = function(tab) {
@@ -77,7 +80,7 @@ function renderReport() {
   const container = document.getElementById('reportContent');
 
   // Filter to only OPEN/ON SUBS vessels
-  const eligible = vessels.filter(v => v.status === 'OPEN');
+  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name));
 
   let html = '';
   for (const win of windows) {
@@ -131,6 +134,14 @@ function renderReport() {
     html = '<div class="report-empty" style="padding:40px;font-size:14px;text-align:center">No vessels with ETA data in the selected time frame.</div>';
   }
 
+  // Show excluded count + restore button if any vessels are hidden
+  if (reportExcluded.size > 0) {
+    html = `<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:12px;color:var(--text-dim)">${reportExcluded.size} vessel${reportExcluded.size === 1 ? '' : 's'} hidden from report</span>
+      <button class="filter-pill" onclick="restoreAllReport()" style="font-size:11px;padding:4px 12px">Restore all</button>
+    </div>` + html;
+  }
+
   container.innerHTML = html;
 }
 
@@ -144,9 +155,10 @@ function renderReportCard(v, rank, type) {
   const hire = v.hire_offer ? '$' + v.hire_offer.toLocaleString() : '';
   const bki = v.bki_eqvt ? '$' + v.bki_eqvt.toLocaleString() : '';
 
+  const safeName = (v.vessel_name || '').replace(/'/g, "\\'");
   return `<div class="report-card">
     <span class="report-rank">#${rank}</span>
-    <div>
+    <div style="flex:1">
       <div class="report-vessel-name">${v.vessel_name || '—'} ${specs}</div>
       <div class="report-detail">
         <strong>${v.owner || '—'}</strong> — ${delivery}${delivery && etaStr ? ' — ' : ''}ETA: ${etaStr}${etaType}
@@ -155,7 +167,18 @@ function renderReportCard(v, rank, type) {
       </div>
     </div>
     <span class="report-p6 ${type}">${val != null ? '$' + val.toLocaleString() : '—'}</span>
+    <button class="btn-remove" onclick="excludeFromReport('${safeName}')" title="Remove from report" style="margin-left:8px">x</button>
   </div>`;
+}
+
+function excludeFromReport(vesselName) {
+  reportExcluded.add(vesselName);
+  renderReport();
+}
+
+function restoreAllReport() {
+  reportExcluded.clear();
+  renderReport();
 }
 
 // ─── WhatsApp-format clipboard copy ──────────────────────────────────────────
@@ -188,7 +211,7 @@ function copyWindowReport(winLabel, mode) {
 
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
   const showType = document.getElementById('reportType').value;
-  const eligible = vessels.filter(v => v.status === 'OPEN');
+  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name));
   const inWindow = eligible.filter(v => {
     if (!v.eta_ecsa) return false;
     const eta = new Date(v.eta_ecsa);
@@ -227,7 +250,7 @@ function copyFullReport() {
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
   const showType = document.getElementById('reportType').value;
   const windows = getEtaWindows(mode);
-  const eligible = vessels.filter(v => v.status === 'OPEN');
+  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name));
 
   let text = `*Tonnage Report — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}*\n\n`;
 
