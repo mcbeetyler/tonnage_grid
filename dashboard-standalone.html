@@ -3129,12 +3129,16 @@ function parseCSVVessels(raw) {
   return { vessels, headers: headerCells, mapping };
 }
 
-// Add CSV-parsed vessels into the main vessels array (add-only).
-// Dedup: match on normalized vessel_name (case-insensitive, ignoring punctuation).
-// Existing vessels are LEFT UNTOUCHED so manual edits aren't clobbered on re-upload.
+// Reconcile CSV upload against the board.
+// - New vessel names → added
+// - Existing vessels → LEFT UNTOUCHED (manual edits preserved)
+// - Existing OPEN vessels NOT in the CSV → marked WITHDRAWN (still on board for history,
+//   but filtered out of the active view). FIXED / FAILED / ON SUBS / already-WITHDRAWN
+//   ships are not touched, since the user's internal CSV only tracks the live market.
 function mergeCSVVessels(newVessels) {
   const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  let added = 0, skipped = 0;
+  const csvNames = new Set(newVessels.map(v => norm(v.vessel_name)).filter(Boolean));
+  let added = 0, skipped = 0, withdrawn = 0;
 
   for (const nv of newVessels) {
     const exists = vessels.some(v => norm(v.vessel_name) === norm(nv.vessel_name));
@@ -3146,7 +3150,16 @@ function mergeCSVVessels(newVessels) {
     }
   }
 
-  return { added, skipped };
+  const nowIso = new Date().toISOString();
+  for (const v of vessels) {
+    if (v.status !== 'OPEN') continue;
+    if (csvNames.has(norm(v.vessel_name))) continue;
+    v.status = 'WITHDRAWN';
+    v.last_updated = nowIso;
+    withdrawn++;
+  }
+
+  return { added, skipped, withdrawn };
 }
 
 // ─── Fixture Message Parser ──────────────────────────────────────────────────
@@ -3301,7 +3314,7 @@ async function handleParse() {
         preview.className = 'preview-box has-error';
         return;
       }
-      const { added, skipped: skippedExisting } = mergeCSVVessels(parsed);
+      const { added, skipped: skippedExisting, withdrawn } = mergeCSVVessels(parsed);
       save();
       renderTable();
       updateStats();
@@ -3316,7 +3329,12 @@ async function handleParse() {
         unmapped.forEach(([h]) => { mapSummary += `  • ${h}\n`; });
       }
 
-      preview.textContent = `CSV parsed: ${parsed.length} row(s) → ${added} new vessel${added === 1 ? '' : 's'} added, ${skippedExisting} already on board (left untouched).\n\n` + mapSummary;
+      const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+      preview.textContent =
+        `CSV parsed: ${parsed.length} row(s) → ${plural(added, 'new vessel added', 'new vessels added')}, ` +
+        `${skippedExisting} already on board (left untouched), ` +
+        `${plural(withdrawn, 'open ship marked WITHDRAWN', 'open ships marked WITHDRAWN')} (no longer in CSV).\n\n` +
+        mapSummary;
       preview.className = 'preview-box has-content';
       document.getElementById('rawInput').value = '';
       pendingParsed = null;
