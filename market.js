@@ -242,10 +242,10 @@ function renderMarketChart() {
   });
 }
 
-// ─── Box & whisker: distribution per laycan tag ──────────────────────────────
+// ─── Distribution: IQR boxes per laycan tag ──────────────────────────────────
+// Implemented manually with native Chart.js floating bars (no plugin dependency).
 
 function laycanTagLabelFromKey(k) {
-  // k is "YYYY-MM-DD" representing the bucket start day
   const [y, m, d] = k.split('-').map(Number);
   const months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const tier = d === 1 ? '1-10' : d === 11 ? '11-20' : '21+';
@@ -263,6 +263,66 @@ function groupByBucket(points) {
   return groups;
 }
 
+function quartiles(arr) {
+  if (!arr || arr.length === 0) return null;
+  const sorted = arr.slice().sort((a, b) => a - b);
+  const q = (p) => {
+    const idx = (sorted.length - 1) * p;
+    const lo = Math.floor(idx);
+    const hi = Math.ceil(idx);
+    if (lo === hi) return sorted[lo];
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+  };
+  return {
+    min: sorted[0],
+    q1: q(0.25),
+    median: q(0.5),
+    q3: q(0.75),
+    max: sorted[sorted.length - 1],
+    n: arr.length,
+  };
+}
+
+// Chart.js plugin: draws min/max whiskers and median line inside each floating bar.
+const boxWhiskerPlugin = {
+  id: 'boxWhisker',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    chart.data.datasets.forEach((ds, dsIndex) => {
+      if (!ds._whiskerStats) return;
+      const meta = chart.getDatasetMeta(dsIndex);
+      meta.data.forEach((bar, i) => {
+        const stats = ds._whiskerStats[i];
+        if (!stats) return;
+        const x = bar.x;
+        const halfW = bar.width / 2;
+        const yMin = chart.scales.y.getPixelForValue(stats.min);
+        const yMax = chart.scales.y.getPixelForValue(stats.max);
+        const yMed = chart.scales.y.getPixelForValue(stats.median);
+        ctx.save();
+        ctx.strokeStyle = ds.borderColor;
+        ctx.lineWidth = 1.5;
+        // Vertical whisker line min→max
+        ctx.beginPath();
+        ctx.moveTo(x, yMin);
+        ctx.lineTo(x, yMax);
+        ctx.stroke();
+        // Min/Max caps
+        ctx.beginPath();
+        ctx.moveTo(x - halfW * 0.5, yMin); ctx.lineTo(x + halfW * 0.5, yMin);
+        ctx.moveTo(x - halfW * 0.5, yMax); ctx.lineTo(x + halfW * 0.5, yMax);
+        ctx.stroke();
+        // Median line (thicker, full box width)
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(x - halfW, yMed); ctx.lineTo(x + halfW, yMed);
+        ctx.stroke();
+        ctx.restore();
+      });
+    });
+  },
+};
+
 function renderMarketBoxChart() {
   const canvas = document.getElementById('marketBoxChart');
   if (!canvas) return;
@@ -273,7 +333,6 @@ function renderMarketBoxChart() {
   const bidGroups = groupByBucket(bids);
   const fixtureGroups = groupByBucket(fixtures);
 
-  // Union of all bucket keys, sorted chronologically
   const allKeys = [...new Set([
     ...Object.keys(offerGroups),
     ...Object.keys(bidGroups),
@@ -281,60 +340,52 @@ function renderMarketBoxChart() {
   ])].sort();
 
   const labels = allKeys.map(laycanTagLabelFromKey);
-  const offerData = allKeys.map(k => offerGroups[k] || []);
-  const bidData = allKeys.map(k => bidGroups[k] || []);
-  const fixtureData = allKeys.map(k => fixtureGroups[k] || []);
+  const offerStats = allKeys.map(k => quartiles(offerGroups[k]));
+  const bidStats = allKeys.map(k => quartiles(bidGroups[k]));
+  const fixtureStats = allKeys.map(k => quartiles(fixtureGroups[k]));
+
+  // Floating bars: data = [Q1, Q3] per category. `null` for empty buckets.
+  const offerIQR = offerStats.map(s => s ? [s.q1, s.q3] : null);
+  const bidIQR = bidStats.map(s => s ? [s.q1, s.q3] : null);
+  const fixtureIQR = fixtureStats.map(s => s ? [s.q1, s.q3] : null);
 
   const RED = 'rgba(220, 53, 69, 1)';
-  const RED_FILL = 'rgba(220, 53, 69, 0.25)';
+  const RED_FILL = 'rgba(220, 53, 69, 0.3)';
   const GREEN = 'rgba(40, 167, 69, 1)';
-  const GREEN_FILL = 'rgba(40, 167, 69, 0.25)';
+  const GREEN_FILL = 'rgba(40, 167, 69, 0.3)';
   const BLUE = 'rgba(24, 95, 165, 1)';
-  const BLUE_FILL = 'rgba(24, 95, 165, 0.25)';
+  const BLUE_FILL = 'rgba(24, 95, 165, 0.3)';
 
   if (marketBoxChart) marketBoxChart.destroy();
 
-  // Plugin registers 'boxplot' as a Chart.js type
+  const fmt$ = v => v == null ? '—' : '$' + Math.round(v).toLocaleString();
+
   marketBoxChart = new Chart(canvas, {
-    type: 'boxplot',
+    type: 'bar',
     data: {
       labels,
       datasets: [
         {
-          label: 'Offers',
-          data: offerData,
-          backgroundColor: RED_FILL,
-          borderColor: RED,
-          borderWidth: 1.5,
-          outlierBackgroundColor: RED,
-          outlierRadius: 3,
-          itemRadius: 2,
-          itemBackgroundColor: RED,
+          label: 'Offers', data: offerIQR,
+          backgroundColor: RED_FILL, borderColor: RED, borderWidth: 1.5,
+          _whiskerStats: offerStats,
+          _allStats: offerStats,
         },
         {
-          label: 'Bids',
-          data: bidData,
-          backgroundColor: GREEN_FILL,
-          borderColor: GREEN,
-          borderWidth: 1.5,
-          outlierBackgroundColor: GREEN,
-          outlierRadius: 3,
-          itemRadius: 2,
-          itemBackgroundColor: GREEN,
+          label: 'Bids', data: bidIQR,
+          backgroundColor: GREEN_FILL, borderColor: GREEN, borderWidth: 1.5,
+          _whiskerStats: bidStats,
+          _allStats: bidStats,
         },
         {
-          label: 'Fixtures',
-          data: fixtureData,
-          backgroundColor: BLUE_FILL,
-          borderColor: BLUE,
-          borderWidth: 1.5,
-          outlierBackgroundColor: BLUE,
-          outlierRadius: 3,
-          itemRadius: 2,
-          itemBackgroundColor: BLUE,
+          label: 'Fixtures', data: fixtureIQR,
+          backgroundColor: BLUE_FILL, borderColor: BLUE, borderWidth: 1.5,
+          _whiskerStats: fixtureStats,
+          _allStats: fixtureStats,
         },
       ],
     },
+    plugins: [boxWhiskerPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -343,15 +394,13 @@ function renderMarketBoxChart() {
         tooltip: {
           callbacks: {
             label: (ctx) => {
-              const stats = ctx.parsed;
-              if (!stats) return ctx.dataset.label;
-              const fmt = v => v == null ? '—' : '$' + Math.round(v).toLocaleString();
-              const n = (ctx.raw && ctx.raw.length) || 0;
+              const stats = ctx.dataset._allStats && ctx.dataset._allStats[ctx.dataIndex];
+              if (!stats) return `${ctx.dataset.label}: no data`;
               return [
-                `${ctx.dataset.label} (${n} sample${n === 1 ? '' : 's'})`,
-                `Median: ${fmt(stats.median)}`,
-                `Q1 / Q3: ${fmt(stats.q1)} / ${fmt(stats.q3)}`,
-                `Min / Max: ${fmt(stats.min)} / ${fmt(stats.max)}`,
+                `${ctx.dataset.label} (${stats.n} sample${stats.n === 1 ? '' : 's'})`,
+                `Median: ${fmt$(stats.median)}`,
+                `Q1 / Q3: ${fmt$(stats.q1)} / ${fmt$(stats.q3)}`,
+                `Min / Max: ${fmt$(stats.min)} / ${fmt$(stats.max)}`,
               ];
             },
           },
@@ -364,10 +413,7 @@ function renderMarketBoxChart() {
           ticks: { font: { size: 11 } },
         },
         y: {
-          ticks: {
-            callback: (val) => '$' + val.toLocaleString(),
-            font: { size: 11 },
-          },
+          ticks: { callback: (val) => '$' + val.toLocaleString(), font: { size: 11 } },
           title: { display: true, text: 'P6 Equivalent ($/day)', font: { size: 11 } },
           grid: { color: 'rgba(0,0,0,0.05)' },
         },
