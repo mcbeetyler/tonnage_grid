@@ -111,6 +111,7 @@ function renderReport() {
     // for the aligned ETA, sorted by date_fixed desc — most recent first).
     const fixedInWindow = vessels.filter(v => {
       if (v.status !== 'FIXED') return false;
+      if (reportExcluded.has(v.vessel_name)) return false;
       if (!v.eta_ecsa) return false;
       const eta = new Date(v.eta_ecsa);
       return eta >= win.from && eta <= win.to;
@@ -284,11 +285,13 @@ function renderFixtureCard(v, rank) {
   const chips = [];
   if (charterer) chips.push('to ' + charterer);
   chips.push('fixed ' + dateFixed);
+  const safeName = (v.vessel_name || '').replace(/'/g, "\\'");
   return `<div class="report-card">
     <span class="report-rank">${rank}</span>
     <span class="report-vessel-name">${v.vessel_name || '—'} <span class="report-specs">${specs}</span></span>
     <span class="report-chips">${chips.join(' · ')}</span>
     <span class="report-p6 fixed">${fixedPx}</span>
+    <button class="btn-remove" onclick="excludeFromReport('${safeName}')" title="Remove" style="padding:2px 6px">x</button>
   </div>`;
 }
 
