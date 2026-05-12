@@ -340,6 +340,7 @@
   <button class="tab-btn" onclick="switchTab('cargo')">Cargo Book</button>
   <button class="tab-btn" onclick="switchTab('voyages')">Voyages</button>
   <button class="tab-btn" onclick="switchTab('report')">Report</button>
+  <button class="tab-btn" onclick="switchTab('market')">Market</button>
 </div>
 
 <div id="tab-tonnage" class="tab-panel active">
@@ -763,6 +764,20 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
   <div class="report-copy-toast" id="copyToast">Copied to clipboard</div>
 </div><!-- end tab-report -->
 
+<div id="tab-market" class="tab-panel">
+  <div style="padding:18px 28px 0;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <span class="toolbar-label" style="font-size:14px;font-weight:700;color:var(--text-bright)">Market Curve</span>
+    <span id="marketSummary" style="font-size:11px;color:var(--text-dim)"></span>
+    <div style="flex:1"></div>
+    <span class="toolbar-label">Window</span>
+    <select class="form-select" id="marketMonth" onchange="renderMarketChart()" style="width:150px"></select>
+    <button class="report-copy-btn" onclick="renderMarketChart()" title="Re-read board state and redraw">Refresh</button>
+  </div>
+  <div style="padding:8px 28px 24px;height:calc(100vh - 220px);min-height:480px;position:relative">
+    <canvas id="marketChart"></canvas>
+  </div>
+</div><!-- end tab-market -->
+
 <div class="chat-overlay" id="chatOverlay" onclick="if(event.target===this) closeChat()">
   <div class="chat-box">
     <div class="chat-header">
@@ -783,5 +798,6 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 <script src="cargo.js"></script>
 <script src="voyages.js"></script>
 <script src="report.js"></script>
+<script src="market.js"></script>
 </body>
 </html>
