@@ -7,6 +7,7 @@
 // frequently.
 
 let marketChart = null;
+let marketBoxChart = null;
 
 const _origSwitchTabMarket = window.switchTab;
 window.switchTab = function(tab) {
@@ -14,6 +15,7 @@ window.switchTab = function(tab) {
   if (tab === 'market') {
     populateMarketMonths();
     renderMarketChart();
+    renderMarketBoxChart();
   }
 };
 
@@ -74,15 +76,16 @@ function medianByBucket(points) {
   return result;
 }
 
-function renderMarketChart() {
-  const canvas = document.getElementById('marketChart');
-  if (!canvas) return;
-  const mode = getMarketFilter();
+function renderMarketCharts() {
+  renderMarketChart();
+  renderMarketBoxChart();
+}
 
+function collectMarketPoints() {
+  const mode = getMarketFilter();
   const offers = [];
   const bids = [];
   const fixtures = [];
-
   for (const v of vessels) {
     if (!inMarketWindow(v.eta_ecsa, mode)) continue;
     const x = new Date(v.eta_ecsa).getTime();
@@ -94,6 +97,13 @@ function renderMarketChart() {
       fixtures.push({ x, y: v.fixed_price, v });
     }
   }
+  return { offers, bids, fixtures };
+}
+
+function renderMarketChart() {
+  const canvas = document.getElementById('marketChart');
+  if (!canvas) return;
+  const { offers, bids, fixtures } = collectMarketPoints();
 
   const summary = document.getElementById('marketSummary');
   if (summary) {
@@ -218,6 +228,140 @@ function renderMarketChart() {
           },
           title: { display: true, text: 'ETA', font: { size: 11 } },
           grid: { color: 'rgba(0,0,0,0.05)' },
+        },
+        y: {
+          ticks: {
+            callback: (val) => '$' + val.toLocaleString(),
+            font: { size: 11 },
+          },
+          title: { display: true, text: 'P6 Equivalent ($/day)', font: { size: 11 } },
+          grid: { color: 'rgba(0,0,0,0.05)' },
+        },
+      },
+    },
+  });
+}
+
+// ─── Box & whisker: distribution per laycan tag ──────────────────────────────
+
+function laycanTagLabelFromKey(k) {
+  // k is "YYYY-MM-DD" representing the bucket start day
+  const [y, m, d] = k.split('-').map(Number);
+  const months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const tier = d === 1 ? '1-10' : d === 11 ? '11-20' : '21+';
+  return `${tier} ${months[m]}`;
+}
+
+function groupByBucket(points) {
+  const groups = {};
+  for (const p of points) {
+    const iso = new Date(p.x).toISOString().slice(0, 10);
+    const k = laycanBucketKey(iso);
+    if (!groups[k]) groups[k] = [];
+    groups[k].push(p.y);
+  }
+  return groups;
+}
+
+function renderMarketBoxChart() {
+  const canvas = document.getElementById('marketBoxChart');
+  if (!canvas) return;
+
+  const { offers, bids, fixtures } = collectMarketPoints();
+
+  const offerGroups = groupByBucket(offers);
+  const bidGroups = groupByBucket(bids);
+  const fixtureGroups = groupByBucket(fixtures);
+
+  // Union of all bucket keys, sorted chronologically
+  const allKeys = [...new Set([
+    ...Object.keys(offerGroups),
+    ...Object.keys(bidGroups),
+    ...Object.keys(fixtureGroups),
+  ])].sort();
+
+  const labels = allKeys.map(laycanTagLabelFromKey);
+  const offerData = allKeys.map(k => offerGroups[k] || []);
+  const bidData = allKeys.map(k => bidGroups[k] || []);
+  const fixtureData = allKeys.map(k => fixtureGroups[k] || []);
+
+  const RED = 'rgba(220, 53, 69, 1)';
+  const RED_FILL = 'rgba(220, 53, 69, 0.25)';
+  const GREEN = 'rgba(40, 167, 69, 1)';
+  const GREEN_FILL = 'rgba(40, 167, 69, 0.25)';
+  const BLUE = 'rgba(24, 95, 165, 1)';
+  const BLUE_FILL = 'rgba(24, 95, 165, 0.25)';
+
+  if (marketBoxChart) marketBoxChart.destroy();
+
+  // Plugin registers 'boxplot' as a Chart.js type
+  marketBoxChart = new Chart(canvas, {
+    type: 'boxplot',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Offers',
+          data: offerData,
+          backgroundColor: RED_FILL,
+          borderColor: RED,
+          borderWidth: 1.5,
+          outlierBackgroundColor: RED,
+          outlierRadius: 3,
+          itemRadius: 2,
+          itemBackgroundColor: RED,
+        },
+        {
+          label: 'Bids',
+          data: bidData,
+          backgroundColor: GREEN_FILL,
+          borderColor: GREEN,
+          borderWidth: 1.5,
+          outlierBackgroundColor: GREEN,
+          outlierRadius: 3,
+          itemRadius: 2,
+          itemBackgroundColor: GREEN,
+        },
+        {
+          label: 'Fixtures',
+          data: fixtureData,
+          backgroundColor: BLUE_FILL,
+          borderColor: BLUE,
+          borderWidth: 1.5,
+          outlierBackgroundColor: BLUE,
+          outlierRadius: 3,
+          itemRadius: 2,
+          itemBackgroundColor: BLUE,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', align: 'end', labels: { boxWidth: 14, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const stats = ctx.parsed;
+              if (!stats) return ctx.dataset.label;
+              const fmt = v => v == null ? '—' : '$' + Math.round(v).toLocaleString();
+              const n = (ctx.raw && ctx.raw.length) || 0;
+              return [
+                `${ctx.dataset.label} (${n} sample${n === 1 ? '' : 's'})`,
+                `Median: ${fmt(stats.median)}`,
+                `Q1 / Q3: ${fmt(stats.q1)} / ${fmt(stats.q3)}`,
+                `Min / Max: ${fmt(stats.min)} / ${fmt(stats.max)}`,
+              ];
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Laycan Tag', font: { size: 11 } },
+          grid: { color: 'rgba(0,0,0,0.05)' },
+          ticks: { font: { size: 11 } },
         },
         y: {
           ticks: {

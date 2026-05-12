@@ -292,6 +292,12 @@
   .report-p6.bid{color:var(--green)}
   .report-p6.offer{color:var(--red)}
   .report-fixture-date{font-size:11px;color:var(--text-dim);font-family:var(--mono);min-width:50px;text-align:right;white-space:nowrap}
+
+  /* Market tab */
+  .market-charts{padding:14px 28px 24px;display:grid;grid-template-columns:repeat(auto-fit, minmax(540px, 1fr));gap:16px}
+  .market-chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;height:calc(100vh - 220px);min-height:520px}
+  .market-chart-title{font-size:12px;font-weight:600;color:var(--text-bright);margin-bottom:10px;text-transform:uppercase;letter-spacing:.6px}
+  .market-chart-body{flex:1;position:relative;min-height:0}
   .report-copy-btn{background:var(--accent);color:#fff;border:none;padding:5px 12px;border-radius:var(--radius-sm);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap}
   .report-copy-btn:hover{background:var(--accent-hover)}
   .report-empty{color:var(--text-dim);font-size:12px;font-style:italic;padding:8px 0}
@@ -766,15 +772,22 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 
 <div id="tab-market" class="tab-panel">
   <div style="padding:18px 28px 0;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-    <span class="toolbar-label" style="font-size:14px;font-weight:700;color:var(--text-bright)">Market Curve</span>
+    <span class="toolbar-label" style="font-size:14px;font-weight:700;color:var(--text-bright)">Market</span>
     <span id="marketSummary" style="font-size:11px;color:var(--text-dim)"></span>
     <div style="flex:1"></div>
     <span class="toolbar-label">Window</span>
-    <select class="form-select" id="marketMonth" onchange="renderMarketChart()" style="width:150px"></select>
-    <button class="report-copy-btn" onclick="renderMarketChart()" title="Re-read board state and redraw">Refresh</button>
+    <select class="form-select" id="marketMonth" onchange="renderMarketCharts()" style="width:150px"></select>
+    <button class="report-copy-btn" onclick="renderMarketCharts()" title="Re-read board state and redraw">Refresh</button>
   </div>
-  <div style="padding:8px 28px 24px;height:calc(100vh - 220px);min-height:480px;position:relative">
-    <canvas id="marketChart"></canvas>
+  <div class="market-charts">
+    <div class="market-chart-card">
+      <div class="market-chart-title">Forward Curve (scatter)</div>
+      <div class="market-chart-body"><canvas id="marketChart"></canvas></div>
+    </div>
+    <div class="market-chart-card">
+      <div class="market-chart-title">Distribution by Laycan Tag (box &amp; whisker)</div>
+      <div class="market-chart-body"><canvas id="marketBoxChart"></canvas></div>
+    </div>
   </div>
 </div><!-- end tab-market -->
 
@@ -793,6 +806,7 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-boxplot@4.4.4/build/index.umd.min.js"></script>
 <script src="parser.js"></script>
 <script src="app.js"></script>
 <script src="cargo.js"></script>
