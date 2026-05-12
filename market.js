@@ -9,11 +9,39 @@
 let marketChart = null;
 let marketBoxChart = null;
 
+// Series visibility toggles — synced across both charts and persisted.
+const DEFAULT_MARKET_VIS = { offers: true, bids: true, fixtures: true, medianOffer: true, medianBid: true };
+let marketVisibility = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem('pt_market_vis') || 'null');
+    return saved ? { ...DEFAULT_MARKET_VIS, ...saved } : { ...DEFAULT_MARKET_VIS };
+  } catch { return { ...DEFAULT_MARKET_VIS }; }
+})();
+
+function saveMarketVisibility() {
+  localStorage.setItem('pt_market_vis', JSON.stringify(marketVisibility));
+}
+
+function toggleMarketSeries(key) {
+  marketVisibility[key] = !marketVisibility[key];
+  saveMarketVisibility();
+  updateMarketToggleUI();
+  renderMarketCharts();
+}
+
+function updateMarketToggleUI() {
+  ['offers', 'bids', 'fixtures', 'medianOffer', 'medianBid'].forEach(k => {
+    const btn = document.getElementById('marketToggle-' + k);
+    if (btn) btn.classList.toggle('active', !!marketVisibility[k]);
+  });
+}
+
 const _origSwitchTabMarket = window.switchTab;
 window.switchTab = function(tab) {
   _origSwitchTabMarket(tab);
   if (tab === 'market') {
     populateMarketMonths();
+    updateMarketToggleUI();
     renderMarketChart();
     renderMarketBoxChart();
   }
@@ -100,10 +128,31 @@ function collectMarketPoints() {
   return { offers, bids, fixtures };
 }
 
+// Compute a tight y-axis range from currently-visible series, with padding,
+// rounded to nice $500 increments. Shared by both charts so they line up.
+function computeMarketYRange(data) {
+  const visible = [];
+  if (marketVisibility.offers) visible.push(...data.offers);
+  if (marketVisibility.bids) visible.push(...data.bids);
+  if (marketVisibility.fixtures) visible.push(...data.fixtures);
+  const ys = visible.map(p => p.y);
+  if (ys.length === 0) return { min: undefined, max: undefined };
+  const dataMin = Math.min(...ys);
+  const dataMax = Math.max(...ys);
+  const range = dataMax - dataMin;
+  const pad = Math.max(range * 0.1, 500);
+  return {
+    min: Math.floor((dataMin - pad) / 500) * 500,
+    max: Math.ceil((dataMax + pad) / 500) * 500,
+  };
+}
+
 function renderMarketChart() {
   const canvas = document.getElementById('marketChart');
   if (!canvas) return;
-  const { offers, bids, fixtures } = collectMarketPoints();
+  const points = collectMarketPoints();
+  const { offers, bids, fixtures } = points;
+  const yRange = computeMarketYRange(points);
 
   const summary = document.getElementById('marketSummary');
   if (summary) {
@@ -128,6 +177,7 @@ function renderMarketChart() {
         {
           label: 'Open offers',
           data: offers,
+          hidden: !marketVisibility.offers,
           backgroundColor: RED_FILL,
           borderColor: RED,
           borderWidth: 1,
@@ -138,6 +188,7 @@ function renderMarketChart() {
         {
           label: 'Open bids',
           data: bids,
+          hidden: !marketVisibility.bids,
           backgroundColor: GREEN_FILL,
           borderColor: GREEN,
           borderWidth: 1,
@@ -148,6 +199,7 @@ function renderMarketChart() {
         {
           label: 'Fixtures',
           data: fixtures,
+          hidden: !marketVisibility.fixtures,
           backgroundColor: BLUE,
           borderColor: BLUE,
           borderWidth: 2,
@@ -159,6 +211,7 @@ function renderMarketChart() {
         {
           label: 'Median offer',
           data: offerMedian,
+          hidden: !marketVisibility.medianOffer,
           borderColor: RED,
           borderDash: [6, 4],
           borderWidth: 2,
@@ -172,6 +225,7 @@ function renderMarketChart() {
         {
           label: 'Median bid',
           data: bidMedian,
+          hidden: !marketVisibility.medianBid,
           borderColor: GREEN,
           borderDash: [6, 4],
           borderWidth: 2,
@@ -189,7 +243,7 @@ function renderMarketChart() {
       maintainAspectRatio: false,
       interaction: { mode: 'nearest', intersect: true },
       plugins: {
-        legend: { position: 'top', align: 'end', labels: { boxWidth: 14, font: { size: 11 } } },
+        legend: { position: 'top', align: 'end', labels: { boxWidth: 14, font: { size: 11 } }, onClick: () => {} },
         tooltip: {
           callbacks: {
             title: (items) => {
@@ -230,6 +284,9 @@ function renderMarketChart() {
           grid: { color: 'rgba(0,0,0,0.05)' },
         },
         y: {
+          beginAtZero: false,
+          min: yRange.min,
+          max: yRange.max,
           ticks: {
             callback: (val) => '$' + val.toLocaleString(),
             font: { size: 11 },
@@ -327,7 +384,9 @@ function renderMarketBoxChart() {
   const canvas = document.getElementById('marketBoxChart');
   if (!canvas) return;
 
-  const { offers, bids, fixtures } = collectMarketPoints();
+  const points = collectMarketPoints();
+  const { offers, bids, fixtures } = points;
+  const yRange = computeMarketYRange(points);
 
   const offerGroups = groupByBucket(offers);
   const bidGroups = groupByBucket(bids);
@@ -367,18 +426,21 @@ function renderMarketBoxChart() {
       datasets: [
         {
           label: 'Offers', data: offerIQR,
+          hidden: !marketVisibility.offers,
           backgroundColor: RED_FILL, borderColor: RED, borderWidth: 1.5,
           _whiskerStats: offerStats,
           _allStats: offerStats,
         },
         {
           label: 'Bids', data: bidIQR,
+          hidden: !marketVisibility.bids,
           backgroundColor: GREEN_FILL, borderColor: GREEN, borderWidth: 1.5,
           _whiskerStats: bidStats,
           _allStats: bidStats,
         },
         {
           label: 'Fixtures', data: fixtureIQR,
+          hidden: !marketVisibility.fixtures,
           backgroundColor: BLUE_FILL, borderColor: BLUE, borderWidth: 1.5,
           _whiskerStats: fixtureStats,
           _allStats: fixtureStats,
@@ -390,7 +452,7 @@ function renderMarketBoxChart() {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { position: 'top', align: 'end', labels: { boxWidth: 14, font: { size: 11 } } },
+        legend: { position: 'top', align: 'end', labels: { boxWidth: 14, font: { size: 11 } }, onClick: () => {} },
         tooltip: {
           callbacks: {
             label: (ctx) => {
@@ -413,6 +475,9 @@ function renderMarketBoxChart() {
           ticks: { font: { size: 11 } },
         },
         y: {
+          beginAtZero: false,
+          min: yRange.min,
+          max: yRange.max,
           ticks: { callback: (val) => '$' + val.toLocaleString(), font: { size: 11 } },
           title: { display: true, text: 'P6 Equivalent ($/day)', font: { size: 11 } },
           grid: { color: 'rgba(0,0,0,0.05)' },

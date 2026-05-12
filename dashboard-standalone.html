@@ -295,9 +295,15 @@
 
   /* Market tab */
   .market-charts{padding:14px 28px 24px;display:grid;grid-template-columns:repeat(auto-fit, minmax(540px, 1fr));gap:16px}
-  .market-chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;height:calc(100vh - 220px);min-height:520px}
+  .market-chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;height:calc(100vh - 260px);min-height:480px}
   .market-chart-title{font-size:12px;font-weight:600;color:var(--text-bright);margin-bottom:10px;text-transform:uppercase;letter-spacing:.6px}
   .market-chart-body{flex:1;position:relative;min-height:0}
+  .market-toggles{display:flex;gap:6px;flex-wrap:wrap;padding:8px 28px 0;align-items:center}
+  .market-toggle{padding:5px 12px;border-radius:14px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--bg2);color:var(--text-dim);user-select:none;transition:all .12s}
+  .market-toggle:hover{background:var(--bg-hover)}
+  .market-toggle.active.offers,.market-toggle.active.median-offer{background:rgba(220,53,69,0.15);color:rgb(178,40,55);border-color:rgba(220,53,69,0.45)}
+  .market-toggle.active.bids,.market-toggle.active.median-bid{background:rgba(40,167,69,0.15);color:rgb(30,135,55);border-color:rgba(40,167,69,0.45)}
+  .market-toggle.active.fixtures{background:rgba(24,95,165,0.15);color:rgb(24,95,165);border-color:rgba(24,95,165,0.45)}
   .report-copy-btn{background:var(--accent);color:#fff;border:none;padding:5px 12px;border-radius:var(--radius-sm);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap}
   .report-copy-btn:hover{background:var(--accent-hover)}
   .report-empty{color:var(--text-dim);font-size:12px;font-style:italic;padding:8px 0}
@@ -779,6 +785,14 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
     <span class="toolbar-label">Window</span>
     <select class="form-select" id="marketMonth" onchange="renderMarketCharts()" style="width:150px"></select>
     <button class="report-copy-btn" onclick="renderMarketCharts()" title="Re-read board state and redraw">Refresh</button>
+  </div>
+  <div class="market-toggles">
+    <span class="toolbar-label" style="margin-right:4px">Show</span>
+    <button id="marketToggle-offers" class="market-toggle offers" onclick="toggleMarketSeries('offers')">● Offers</button>
+    <button id="marketToggle-bids" class="market-toggle bids" onclick="toggleMarketSeries('bids')">● Bids</button>
+    <button id="marketToggle-fixtures" class="market-toggle fixtures" onclick="toggleMarketSeries('fixtures')">× Fixtures</button>
+    <button id="marketToggle-medianOffer" class="market-toggle median-offer" onclick="toggleMarketSeries('medianOffer')">⋯ Median offer</button>
+    <button id="marketToggle-medianBid" class="market-toggle median-bid" onclick="toggleMarketSeries('medianBid')">⋯ Median bid</button>
   </div>
   <div class="market-charts">
     <div class="market-chart-card">
@@ -6100,11 +6114,38 @@ function copyToClipboard(text) {
 let marketChart = null;
 let marketBoxChart = null;
 
+const DEFAULT_MARKET_VIS = { offers: true, bids: true, fixtures: true, medianOffer: true, medianBid: true };
+let marketVisibility = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem('pt_market_vis') || 'null');
+    return saved ? { ...DEFAULT_MARKET_VIS, ...saved } : { ...DEFAULT_MARKET_VIS };
+  } catch { return { ...DEFAULT_MARKET_VIS }; }
+})();
+
+function saveMarketVisibility() {
+  localStorage.setItem('pt_market_vis', JSON.stringify(marketVisibility));
+}
+
+function toggleMarketSeries(key) {
+  marketVisibility[key] = !marketVisibility[key];
+  saveMarketVisibility();
+  updateMarketToggleUI();
+  renderMarketCharts();
+}
+
+function updateMarketToggleUI() {
+  ['offers', 'bids', 'fixtures', 'medianOffer', 'medianBid'].forEach(k => {
+    const btn = document.getElementById('marketToggle-' + k);
+    if (btn) btn.classList.toggle('active', !!marketVisibility[k]);
+  });
+}
+
 const _origSwitchTabMarket = window.switchTab;
 window.switchTab = function(tab) {
   _origSwitchTabMarket(tab);
   if (tab === 'market') {
     populateMarketMonths();
+    updateMarketToggleUI();
     renderMarketChart();
     renderMarketBoxChart();
   }
@@ -6132,6 +6173,23 @@ function collectMarketPoints() {
     }
   }
   return { offers, bids, fixtures };
+}
+
+function computeMarketYRange(data) {
+  const visible = [];
+  if (marketVisibility.offers) visible.push(...data.offers);
+  if (marketVisibility.bids) visible.push(...data.bids);
+  if (marketVisibility.fixtures) visible.push(...data.fixtures);
+  const ys = visible.map(p => p.y);
+  if (ys.length === 0) return { min: undefined, max: undefined };
+  const dataMin = Math.min(...ys);
+  const dataMax = Math.max(...ys);
+  const range = dataMax - dataMin;
+  const pad = Math.max(range * 0.1, 500);
+  return {
+    min: Math.floor((dataMin - pad) / 500) * 500,
+    max: Math.ceil((dataMax + pad) / 500) * 500,
+  };
 }
 
 function populateMarketMonths() {
@@ -6193,7 +6251,9 @@ function medianByBucket(points) {
 function renderMarketChart() {
   const canvas = document.getElementById('marketChart');
   if (!canvas) return;
-  const { offers, bids, fixtures } = collectMarketPoints();
+  const points = collectMarketPoints();
+  const { offers, bids, fixtures } = points;
+  const yRange = computeMarketYRange(points);
 
   const summary = document.getElementById('marketSummary');
   if (summary) {
@@ -6216,27 +6276,27 @@ function renderMarketChart() {
     data: {
       datasets: [
         {
-          label: 'Open offers', data: offers,
+          label: 'Open offers', data: offers, hidden: !marketVisibility.offers,
           backgroundColor: RED_FILL, borderColor: RED, borderWidth: 1,
           pointRadius: 5, pointHoverRadius: 7, showLine: false,
         },
         {
-          label: 'Open bids', data: bids,
+          label: 'Open bids', data: bids, hidden: !marketVisibility.bids,
           backgroundColor: GREEN_FILL, borderColor: GREEN, borderWidth: 1,
           pointRadius: 5, pointHoverRadius: 7, showLine: false,
         },
         {
-          label: 'Fixtures', data: fixtures,
+          label: 'Fixtures', data: fixtures, hidden: !marketVisibility.fixtures,
           backgroundColor: BLUE, borderColor: BLUE, borderWidth: 2,
           pointStyle: 'crossRot', pointRadius: 9, pointHoverRadius: 11, showLine: false,
         },
         {
-          label: 'Median offer', data: offerMedian,
+          label: 'Median offer', data: offerMedian, hidden: !marketVisibility.medianOffer,
           borderColor: RED, borderDash: [6, 4], borderWidth: 2,
           pointRadius: 0, pointHoverRadius: 0, showLine: true, fill: false, tension: 0.2, order: 10,
         },
         {
-          label: 'Median bid', data: bidMedian,
+          label: 'Median bid', data: bidMedian, hidden: !marketVisibility.medianBid,
           borderColor: GREEN, borderDash: [6, 4], borderWidth: 2,
           pointRadius: 0, pointHoverRadius: 0, showLine: true, fill: false, tension: 0.2, order: 10,
         },
@@ -6247,7 +6307,7 @@ function renderMarketChart() {
       maintainAspectRatio: false,
       interaction: { mode: 'nearest', intersect: true },
       plugins: {
-        legend: { position: 'top', align: 'end', labels: { boxWidth: 14, font: { size: 11 } } },
+        legend: { position: 'top', align: 'end', labels: { boxWidth: 14, font: { size: 11 } }, onClick: () => {} },
         tooltip: {
           callbacks: {
             title: (items) => {
@@ -6286,6 +6346,9 @@ function renderMarketChart() {
           grid: { color: 'rgba(0,0,0,0.05)' },
         },
         y: {
+          beginAtZero: false,
+          min: yRange.min,
+          max: yRange.max,
           ticks: {
             callback: (val) => '$' + val.toLocaleString(),
             font: { size: 11 },
@@ -6373,7 +6436,9 @@ function renderMarketBoxChart() {
   const canvas = document.getElementById('marketBoxChart');
   if (!canvas) return;
 
-  const { offers, bids, fixtures } = collectMarketPoints();
+  const points = collectMarketPoints();
+  const { offers, bids, fixtures } = points;
+  const yRange = computeMarketYRange(points);
 
   const offerGroups = groupByBucket(offers);
   const bidGroups = groupByBucket(bids);
@@ -6409,11 +6474,14 @@ function renderMarketBoxChart() {
     data: {
       labels,
       datasets: [
-        { label: 'Offers', data: offerIQR, backgroundColor: RED_FILL, borderColor: RED, borderWidth: 1.5,
+        { label: 'Offers', data: offerIQR, hidden: !marketVisibility.offers,
+          backgroundColor: RED_FILL, borderColor: RED, borderWidth: 1.5,
           _whiskerStats: offerStats, _allStats: offerStats },
-        { label: 'Bids', data: bidIQR, backgroundColor: GREEN_FILL, borderColor: GREEN, borderWidth: 1.5,
+        { label: 'Bids', data: bidIQR, hidden: !marketVisibility.bids,
+          backgroundColor: GREEN_FILL, borderColor: GREEN, borderWidth: 1.5,
           _whiskerStats: bidStats, _allStats: bidStats },
-        { label: 'Fixtures', data: fixtureIQR, backgroundColor: BLUE_FILL, borderColor: BLUE, borderWidth: 1.5,
+        { label: 'Fixtures', data: fixtureIQR, hidden: !marketVisibility.fixtures,
+          backgroundColor: BLUE_FILL, borderColor: BLUE, borderWidth: 1.5,
           _whiskerStats: fixtureStats, _allStats: fixtureStats },
       ],
     },
@@ -6422,7 +6490,7 @@ function renderMarketBoxChart() {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { position: 'top', align: 'end', labels: { boxWidth: 14, font: { size: 11 } } },
+        legend: { position: 'top', align: 'end', labels: { boxWidth: 14, font: { size: 11 } }, onClick: () => {} },
         tooltip: {
           callbacks: {
             label: (ctx) => {
@@ -6445,6 +6513,9 @@ function renderMarketBoxChart() {
           ticks: { font: { size: 11 } },
         },
         y: {
+          beginAtZero: false,
+          min: yRange.min,
+          max: yRange.max,
           ticks: { callback: (val) => '$' + val.toLocaleString(), font: { size: 11 } },
           title: { display: true, text: 'P6 Equivalent ($/day)', font: { size: 11 } },
           grid: { color: 'rgba(0,0,0,0.05)' },

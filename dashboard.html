@@ -295,9 +295,15 @@
 
   /* Market tab */
   .market-charts{padding:14px 28px 24px;display:grid;grid-template-columns:repeat(auto-fit, minmax(540px, 1fr));gap:16px}
-  .market-chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;height:calc(100vh - 220px);min-height:520px}
+  .market-chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;height:calc(100vh - 260px);min-height:480px}
   .market-chart-title{font-size:12px;font-weight:600;color:var(--text-bright);margin-bottom:10px;text-transform:uppercase;letter-spacing:.6px}
   .market-chart-body{flex:1;position:relative;min-height:0}
+  .market-toggles{display:flex;gap:6px;flex-wrap:wrap;padding:8px 28px 0;align-items:center}
+  .market-toggle{padding:5px 12px;border-radius:14px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--bg2);color:var(--text-dim);user-select:none;transition:all .12s}
+  .market-toggle:hover{background:var(--bg-hover)}
+  .market-toggle.active.offers,.market-toggle.active.median-offer{background:rgba(220,53,69,0.15);color:rgb(178,40,55);border-color:rgba(220,53,69,0.45)}
+  .market-toggle.active.bids,.market-toggle.active.median-bid{background:rgba(40,167,69,0.15);color:rgb(30,135,55);border-color:rgba(40,167,69,0.45)}
+  .market-toggle.active.fixtures{background:rgba(24,95,165,0.15);color:rgb(24,95,165);border-color:rgba(24,95,165,0.45)}
   .report-copy-btn{background:var(--accent);color:#fff;border:none;padding:5px 12px;border-radius:var(--radius-sm);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap}
   .report-copy-btn:hover{background:var(--accent-hover)}
   .report-empty{color:var(--text-dim);font-size:12px;font-style:italic;padding:8px 0}
@@ -778,6 +784,14 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
     <span class="toolbar-label">Window</span>
     <select class="form-select" id="marketMonth" onchange="renderMarketCharts()" style="width:150px"></select>
     <button class="report-copy-btn" onclick="renderMarketCharts()" title="Re-read board state and redraw">Refresh</button>
+  </div>
+  <div class="market-toggles">
+    <span class="toolbar-label" style="margin-right:4px">Show</span>
+    <button id="marketToggle-offers" class="market-toggle offers" onclick="toggleMarketSeries('offers')">● Offers</button>
+    <button id="marketToggle-bids" class="market-toggle bids" onclick="toggleMarketSeries('bids')">● Bids</button>
+    <button id="marketToggle-fixtures" class="market-toggle fixtures" onclick="toggleMarketSeries('fixtures')">× Fixtures</button>
+    <button id="marketToggle-medianOffer" class="market-toggle median-offer" onclick="toggleMarketSeries('medianOffer')">⋯ Median offer</button>
+    <button id="marketToggle-medianBid" class="market-toggle median-bid" onclick="toggleMarketSeries('medianBid')">⋯ Median bid</button>
   </div>
   <div class="market-charts">
     <div class="market-chart-card">
