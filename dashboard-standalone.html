@@ -272,7 +272,7 @@
   .report-window-header{display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:10px 14px;background:var(--bg3);border-radius:var(--radius);border-left:4px solid var(--accent)}
   .report-window-title{font-size:13px;font-weight:700;color:var(--text-bright)}
   .report-window-meta{font-size:11px;color:var(--text-dim)}
-  .report-window-body{display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start}
+  .report-window-body{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
   .report-window-left{min-width:0}
   .report-window-right{min-width:0}
   .report-section{margin-bottom:4px}
@@ -5733,7 +5733,10 @@ function renderReport() {
 
     if (fixedInWindow.length > 0) {
       html += `<div class="report-section">
-        <div class="report-section-label fixtures">Recent Fixtures</div>`;
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-right:14px">
+          <div class="report-section-label fixtures">Recent Fixtures</div>
+          <button class="report-copy-btn" onclick="copyWindowFixtures('${win.label}', '${mode}')">Copy</button>
+        </div>`;
       fixedInWindow.forEach((v, i) => { html += renderFixtureCard(v, i + 1); });
       html += '</div>';
     } else {
@@ -5901,6 +5904,36 @@ function vesselToWhatsApp(v, type) {
   return line1 + '\n' + parts.join(' | ');
 }
 
+function fixtureToWhatsApp(v) {
+  const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
+  const etaStr = v.eta_ecsa ? fmtDateReport(v.eta_ecsa) : '';
+  const etaType = v.eta_type === 'ONW' ? ' (ONW)' : '';
+  const dateFixed = v.date_fixed ? fmtDateReport(v.date_fixed) : '';
+  const charterer = v.charterer || '';
+
+  let line1 = `*${v.vessel_name || '?'} ${specs}* [FIXED]`;
+  if (etaStr) line1 += ` — ETA: ${etaStr}${etaType}`;
+
+  const parts = [];
+  if (v.fixed_price != null) parts.push(`P6: $${v.fixed_price.toLocaleString()}`);
+  if (charterer) parts.push(`to ${charterer}`);
+  if (dateFixed) parts.push(`fixed ${dateFixed}`);
+
+  return line1 + '\n' + parts.join(' | ');
+}
+
+// Shared helper: collect top-N FIXED vessels in a given window, respecting exclusions.
+function fixedVesselsInWindow(win, topN) {
+  return vessels
+    .filter(v => v.status === 'FIXED' && !reportExcluded.has(v.vessel_name) && v.eta_ecsa)
+    .filter(v => {
+      const eta = new Date(v.eta_ecsa);
+      return eta >= win.from && eta <= win.to;
+    })
+    .sort((a, b) => (b.date_fixed || '').localeCompare(a.date_fixed || ''))
+    .slice(0, topN);
+}
+
 function copyWindowReport(winLabel, mode) {
   const windows = getEtaWindows(mode);
   const win = windows.find(w => w.label === winLabel);
@@ -5930,7 +5963,7 @@ function copyWindowReport(winLabel, mode) {
   if (showType === 'both' || showType === 'bids') {
     const withBid = inWindow
       .filter(v => getP6Values(v).bid != null)
-      .sort((a, b) => getP6Values(a).bid - getP6Values(b).bid)
+      .sort((a, b) => getP6Values(b).bid - getP6Values(a).bid)
       .slice(0, topN);
     if (withBid.length > 0) {
       text += `_Bids:_\n`;
@@ -5938,6 +5971,25 @@ function copyWindowReport(winLabel, mode) {
     }
   }
 
+  const fixedInWindow = fixedVesselsInWindow(win, topN);
+  if (fixedInWindow.length > 0) {
+    text += `_Recent fixtures:_\n`;
+    fixedInWindow.forEach(v => { text += fixtureToWhatsApp(v) + '\n'; });
+  }
+
+  copyToClipboard(text.trim());
+}
+
+function copyWindowFixtures(winLabel, mode) {
+  const windows = getEtaWindows(mode);
+  const win = windows.find(w => w.label === winLabel);
+  if (!win) return;
+  const topN = parseInt(document.getElementById('reportTopN').value, 10);
+  const fixedInWindow = fixedVesselsInWindow(win, topN);
+  if (fixedInWindow.length === 0) return;
+
+  let text = `*${winLabel} — Recent fixtures*\n`;
+  fixedInWindow.forEach(v => { text += fixtureToWhatsApp(v) + '\n'; });
   copyToClipboard(text.trim());
 }
 
@@ -5956,7 +6008,8 @@ function copyFullReport() {
       const eta = new Date(v.eta_ecsa);
       return eta >= win.from && eta <= win.to;
     });
-    if (inWindow.length === 0) continue;
+    const fixedInWindow = fixedVesselsInWindow(win, topN);
+    if (inWindow.length === 0 && fixedInWindow.length === 0) continue;
 
     text += `\n*${win.label}*\n`;
 
@@ -5973,12 +6026,17 @@ function copyFullReport() {
     if (showType === 'both' || showType === 'bids') {
       const withBid = inWindow
         .filter(v => getP6Values(v).bid != null)
-        .sort((a, b) => getP6Values(a).bid - getP6Values(b).bid)
+        .sort((a, b) => getP6Values(b).bid - getP6Values(a).bid)
         .slice(0, topN);
       if (withBid.length > 0) {
         text += `_Bids:_\n`;
         withBid.forEach(v => { text += vesselToWhatsApp(v, 'bid') + '\n'; });
       }
+    }
+
+    if (fixedInWindow.length > 0) {
+      text += `_Recent fixtures:_\n`;
+      fixedInWindow.forEach(v => { text += fixtureToWhatsApp(v) + '\n'; });
     }
 
     text += '\n';
