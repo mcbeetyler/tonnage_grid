@@ -100,34 +100,45 @@ function renderReport() {
 
   let html = '';
   for (const win of windows) {
-    // Find vessels whose ETA falls in this window
+    // Find OPEN vessels whose ETA falls in this window
     const inWindow = eligible.filter(v => {
       if (!v.eta_ecsa) return false;
       const eta = new Date(v.eta_ecsa);
       return eta >= win.from && eta <= win.to;
     });
 
-    if (inWindow.length === 0) continue;
+    // Find FIXED vessels whose ETA falls in this window (recent fixtures
+    // for the aligned ETA, sorted by date_fixed desc — most recent first).
+    const fixedInWindow = vessels.filter(v => {
+      if (v.status !== 'FIXED') return false;
+      if (!v.eta_ecsa) return false;
+      const eta = new Date(v.eta_ecsa);
+      return eta >= win.from && eta <= win.to;
+    }).sort((a, b) => (b.date_fixed || '').localeCompare(a.date_fixed || ''))
+      .slice(0, topN);
 
-    // Split into those with p6_offer and those with p6_bid
+    // Best offers: lowest P6 first
     const withOffer = inWindow
       .filter(v => { const p = getP6Values(v); return p.offer != null; })
       .sort((a, b) => getP6Values(a).offer - getP6Values(b).offer)
       .slice(0, topN);
 
+    // Best bids: HIGHEST P6 first (descending — what the market is paying up to)
     const withBid = inWindow
       .filter(v => { const p = getP6Values(v); return p.bid != null; })
-      .sort((a, b) => getP6Values(a).bid - getP6Values(b).bid)
+      .sort((a, b) => getP6Values(b).bid - getP6Values(a).bid)
       .slice(0, topN);
 
-    if (withOffer.length === 0 && withBid.length === 0) continue;
+    if (withOffer.length === 0 && withBid.length === 0 && fixedInWindow.length === 0) continue;
 
     html += `<div class="report-window">
       <div class="report-window-header">
         <span class="report-window-title">${win.label}</span>
-        <span class="report-window-meta">${inWindow.length} vessel${inWindow.length === 1 ? '' : 's'} in window</span>
+        <span class="report-window-meta">${inWindow.length} open${fixedInWindow.length ? ' · ' + fixedInWindow.length + ' fixed' : ''}</span>
         <button class="report-copy-btn" onclick="copyWindowReport('${win.label}', '${mode}')">Copy</button>
-      </div>`;
+      </div>
+      <div class="report-window-body">
+        <div class="report-window-left">`;
 
     if ((showType === 'both' || showType === 'offers') && withOffer.length > 0) {
       html += `<div class="report-section">
@@ -138,12 +149,29 @@ function renderReport() {
 
     if ((showType === 'both' || showType === 'bids') && withBid.length > 0) {
       html += `<div class="report-section">
-        <div class="report-section-label">Best Bids (lowest P6)</div>`;
+        <div class="report-section-label">Best Bids (highest P6)</div>`;
       withBid.forEach((v, i) => { html += renderReportCard(v, i + 1, 'bid'); });
       html += '</div>';
     }
 
-    html += '</div>';
+    html += `</div>
+      <div class="report-window-right">`;
+
+    if (fixedInWindow.length > 0) {
+      html += `<div class="report-section">
+        <div class="report-section-label fixtures">Recent Fixtures</div>`;
+      fixedInWindow.forEach((v, i) => { html += renderFixtureCard(v, i + 1); });
+      html += '</div>';
+    } else {
+      html += `<div class="report-section">
+        <div class="report-section-label fixtures">Recent Fixtures</div>
+        <div class="report-empty" style="padding:8px 14px">No fixtures yet</div>
+      </div>`;
+    }
+
+    html += `</div>
+      </div>
+    </div>`;
   }
 
   if (!html) {
@@ -245,6 +273,22 @@ function renderReportCard(v, rank, type) {
     <span class="report-chips">${chips.join(' · ')}</span>
     <span class="report-p6 ${type}">${val != null ? '$' + val.toLocaleString() : '—'}</span>
     <button class="btn-remove" onclick="excludeFromReport('${safeName}')" title="Remove" style="padding:2px 6px">x</button>
+  </div>`;
+}
+
+function renderFixtureCard(v, rank) {
+  const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
+  const fixedPx = v.fixed_price ? '$' + v.fixed_price.toLocaleString() : '—';
+  const dateFixed = v.date_fixed ? fmtDateReport(v.date_fixed) : '—';
+  const charterer = v.charterer || '';
+  const chips = [];
+  if (charterer) chips.push('to ' + charterer);
+  chips.push('fixed ' + dateFixed);
+  return `<div class="report-card">
+    <span class="report-rank">${rank}</span>
+    <span class="report-vessel-name">${v.vessel_name || '—'} <span class="report-specs">${specs}</span></span>
+    <span class="report-chips">${chips.join(' · ')}</span>
+    <span class="report-p6 fixed">${fixedPx}</span>
   </div>`;
 }
 
