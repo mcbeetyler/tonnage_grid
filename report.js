@@ -283,16 +283,14 @@ function renderReportCard(v, rank, type) {
 function renderFixtureCard(v, rank) {
   const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
   const fixedPx = v.fixed_price ? '$' + v.fixed_price.toLocaleString() : '—';
-  const dateFixed = v.date_fixed ? fmtDateReport(v.date_fixed) : '—';
-  const charterer = v.charterer || '';
-  const chips = [];
-  if (charterer) chips.push('to ' + charterer);
-  chips.push('fixed ' + dateFixed);
+  const dateFixed = v.date_fixed ? fmtDateReport(v.date_fixed) : '';
+  const charterer = v.charterer || '—';
   const safeName = (v.vessel_name || '').replace(/'/g, "\\'");
   return `<div class="report-card">
     <span class="report-rank">${rank}</span>
     <span class="report-vessel-name">${v.vessel_name || '—'} <span class="report-specs">${specs}</span></span>
-    <span class="report-chips">${chips.join(' · ')}</span>
+    <span class="report-chips" title="${charterer.replace(/"/g,'&quot;')}">${charterer}</span>
+    <span class="report-fixture-date">${dateFixed}</span>
     <span class="report-p6 fixed">${fixedPx}</span>
     <button class="btn-remove" onclick="excludeFromReport('${safeName}')" title="Remove" style="padding:2px 6px">x</button>
   </div>`;
