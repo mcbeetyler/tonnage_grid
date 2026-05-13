@@ -211,8 +211,8 @@ function renderP6IndexSidebar(eligible) {
   });
 
   const byUpdated = (a, b) => (b.last_updated || '').localeCompare(a.last_updated || '');
-  const offers = inWindow.filter(v => getP6Values(v).offer != null).sort(byUpdated).slice(0, 8);
-  const bids = inWindow.filter(v => getP6Values(v).bid != null).sort(byUpdated).slice(0, 8);
+  const offers = inWindow.filter(v => getP6Values(v).offer != null).sort(byUpdated);
+  const bids = inWindow.filter(v => getP6Values(v).bid != null).sort(byUpdated);
 
   let html = `<div class="p6-index-panel">
     <div class="p6-index-header">
