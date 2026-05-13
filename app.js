@@ -6,8 +6,8 @@ let p6OfferOnly = localStorage.getItem('pt_p6_offer_only') === '1';
 let currentSort = { key: 'eta_ecsa', dir: 'asc' };
 
 // Column visibility AND order — stored in localStorage
-const ALL_COLUMNS = ['laycan','vessel','owner','dwt','built','draft','yard','origin','scr','delivery','laycan_date','eta','hire_offer','bb_offer','bki_eqvt','rate_pmt','arrow_eqvt','bunker','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
-const DEFAULT_ORDER = ['laycan','vessel','owner','dwt','built','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
+const ALL_COLUMNS = ['laycan','vessel','owner','dwt','built','draft','yard','origin','scr','delivery','laycan_date','eta','hire_offer','bb_offer','bki_eqvt','rate_pmt','arrow_eqvt','bunker','p6_bid','bidding_charterer','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
+const DEFAULT_ORDER = ['laycan','vessel','owner','dwt','built','delivery','eta','p6_bid','bidding_charterer','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
 let columnOrder = JSON.parse(localStorage.getItem('pt_col_order') || 'null') || [...DEFAULT_ORDER];
 let hiddenColumns = new Set(JSON.parse(localStorage.getItem('pt_col_hidden') || '[]'));
 
@@ -21,7 +21,7 @@ if (_specsIdx !== -1) {
 }
 
 // Hide new columns by default (existing users won't suddenly see them)
-const NEW_HIDDEN_BY_DEFAULT = ['draft','yard','origin','laycan_date','hire_offer','bb_offer','bki_eqvt','rate_pmt','arrow_eqvt','bunker'];
+const NEW_HIDDEN_BY_DEFAULT = ['draft','yard','origin','laycan_date','hire_offer','bb_offer','bki_eqvt','rate_pmt','arrow_eqvt','bunker','bidding_charterer'];
 NEW_HIDDEN_BY_DEFAULT.forEach(c => {
   if (!columnOrder.includes(c)) {
     columnOrder.push(c);
@@ -166,15 +166,37 @@ function startEdit(el, vesselIdx, field, isMono) {
   });
 }
 
+function currentPriceFor(v, field) {
+  if (field === 'p6_bid') return getP6Values(v).bid;
+  if (field === 'p6_offer') return getP6Values(v).offer;
+  if (field === 'fixed_price') return v.fixed_price;
+  return null;
+}
+
+function logPriceChange(v, field, value, counterparty) {
+  if (value == null) return;
+  v.price_history = v.price_history || [];
+  v.price_history.push({
+    t: new Date().toISOString(),
+    field,
+    value,
+    counterparty: counterparty || null,
+  });
+  // Cap to most recent 50 entries to keep payloads reasonable
+  if (v.price_history.length > 50) v.price_history = v.price_history.slice(-50);
+}
+
 function applyEdit(idx, field, val) {
   const v = vessels[idx];
   if (!v) return;
-  // Timestamp on bid/offer/fixed price changes
-  if (['p6_bid','p6_offer','fixed_price'].includes(field)) touchVessel(idx);
+  const isPriceChange = ['p6_bid','p6_offer','fixed_price'].includes(field);
+  const beforePrice = isPriceChange ? currentPriceFor(v, field) : null;
+  if (isPriceChange) touchVessel(idx);
 
   switch (field) {
     case 'vessel_name': v.vessel_name = val || null; break;
     case 'owner': v.owner = val || null; break;
+    case 'bidding_charterer': v.bidding_charterer = val || null; break;
     case 'source': v.source = val || null; break;
     case 'dwt': {
       const n = parseFloat(val.replace(/[kK]/g, '').replace(/,/g, ''));
@@ -265,6 +287,15 @@ function applyEdit(idx, field, val) {
     }
     case 'bunker': v.bunker = val || null; break;
   }
+
+  if (isPriceChange) {
+    const after = currentPriceFor(v, field);
+    if (after != null && after !== beforePrice) {
+      const cp = field === 'p6_bid' ? v.bidding_charterer : v.charterer;
+      logPriceChange(v, field, after, cp);
+    }
+  }
+
   save();
 }
 
@@ -1314,7 +1345,7 @@ function clearDateFilter() {
 
 // ─── Column Visibility & Reordering ──────────────────────────────────────────
 
-const COL_LABELS = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',dwt:'DWT',built:'Built',draft:'Draft',yard:'Yard',origin:'Origin',scr:'SCR',delivery:'Delivery',laycan_date:'Layday',eta:'ETA',hire_offer:'Hire Offer',bb_offer:'BB Offer',bki_eqvt:'BKI Eqvt',rate_pmt:'Rate $/PMT',arrow_eqvt:'Arrow Eqvt',bunker:'Bunker',p6_bid:'P6 Bid',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',date_fixed:'Date Fixed',last_updated:'Updated',notes:'Notes',status:'Status',actions:'Actions'};
+const COL_LABELS = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',dwt:'DWT',built:'Built',draft:'Draft',yard:'Yard',origin:'Origin',scr:'SCR',delivery:'Delivery',laycan_date:'Layday',eta:'ETA',hire_offer:'Hire Offer',bb_offer:'BB Offer',bki_eqvt:'BKI Eqvt',rate_pmt:'Rate $/PMT',arrow_eqvt:'Arrow Eqvt',bunker:'Bunker',p6_bid:'P6 Bid',bidding_charterer:'Bidder',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',date_fixed:'Date Fixed',last_updated:'Updated',notes:'Notes',status:'Status',actions:'Actions'};
 
 function toggleColumnMenu() {
   const menu = document.getElementById('columnMenu');
@@ -1362,6 +1393,7 @@ function getSortValue(v, key) {
     case 'build_year': return v.build_year || 0;
     case 'vessel_name': return (v.vessel_name || '').toUpperCase();
     case 'owner': return (v.owner || '').toUpperCase();
+    case 'bidding_charterer': return (v.bidding_charterer || '').toUpperCase();
     case 'source': return (v.source || '').toUpperCase();
     case 'delivery_basis': return (v.delivery_basis || '').toUpperCase();
     case 'status': return v.status || '';
@@ -1476,7 +1508,7 @@ function renderTable() {
   document.getElementById('vesselTable').style.display = filtered.length === 0 ? 'none' : '';
 
   // Build headers dynamically from columnOrder
-  const sortKeys = {laycan:'laycan',vessel:'vessel_name',owner:'owner',dwt:'dwt',built:'build_year',scr:null,delivery:'delivery_basis',eta:'eta_ecsa',p6_bid:'p6_bid',p6_offer:'p6_offer',spread:'spread',fixed:'fixed_price',charterer:'charterer',date_fixed:'date_fixed',last_updated:'last_updated',notes:null,status:'status',actions:null};
+  const sortKeys = {laycan:'laycan',vessel:'vessel_name',owner:'owner',dwt:'dwt',built:'build_year',scr:null,delivery:'delivery_basis',eta:'eta_ecsa',p6_bid:'p6_bid',bidding_charterer:'bidding_charterer',p6_offer:'p6_offer',spread:'spread',fixed:'fixed_price',charterer:'charterer',date_fixed:'date_fixed',last_updated:'last_updated',notes:null,status:'status',actions:null};
   const thClasses = {p6_bid:'col-p6',p6_offer:'col-p6',fixed:'col-fixed'};
   const visCols = columnOrder.filter(c => !hiddenColumns.has(c));
   const headRow = document.querySelector('#vesselHead tr');
@@ -1531,6 +1563,7 @@ function renderTable() {
         return `<td class="td-eta editable" onclick="startEdit(this,${gi},'eta_ecsa',true)">${etaText}</td>`;
       }
       case 'p6_bid': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_bid',true)"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>`;
+      case 'bidding_charterer': return `<td class="td-owner editable" onclick="startEdit(this,${gi},'bidding_charterer',false)" title="Leading bidder (or NFD / CNR)">${v.bidding_charterer || '—'}</td>`;
       case 'p6_offer': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_offer',true)"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>`;
       case 'spread': {
         if (spread == null) return `<td>—</td>`;

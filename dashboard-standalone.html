@@ -304,6 +304,45 @@
   .market-toggle.active.offers,.market-toggle.active.median-offer{background:rgba(220,53,69,0.15);color:rgb(178,40,55);border-color:rgba(220,53,69,0.45)}
   .market-toggle.active.bids,.market-toggle.active.median-bid{background:rgba(40,167,69,0.15);color:rgb(30,135,55);border-color:rgba(40,167,69,0.45)}
   .market-toggle.active.fixtures{background:rgba(24,95,165,0.15);color:rgb(24,95,165);border-color:rgba(24,95,165,0.45)}
+
+  /* Participants tab */
+  .party-wrap{padding:18px 28px 24px}
+  .party-header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+  .party-header-title{font-size:14px;font-weight:700;color:var(--text-bright)}
+  .party-market-ref{font-size:11px;color:var(--text-dim)}
+  .party-section{margin-bottom:24px}
+  .party-section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-dim);margin-bottom:8px}
+  .party-table{width:100%;border-collapse:collapse;font-size:12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .party-table th{text-align:left;padding:10px 12px;background:var(--bg3);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);border-bottom:1px solid var(--border)}
+  .party-table td{padding:8px 12px;border-bottom:1px solid var(--border)}
+  .party-table th.num,.party-table td.num{text-align:right}
+  .party-table td.mono{font-family:var(--mono)}
+  .party-row{cursor:pointer;transition:background .12s}
+  .party-row:hover{background:var(--bg-hover)}
+  .party-row.expanded{background:var(--bg-hover)}
+  .party-name{font-weight:600;color:var(--text-bright)}
+  .party-ts{font-size:11px;color:var(--text-dim);font-family:var(--mono)}
+  .party-caret{color:var(--text-dim);text-align:center;width:24px}
+  .party-vs{font-size:10px;padding:2px 6px;border-radius:8px;font-weight:500}
+  .party-vs.high{background:rgba(220,53,69,0.12);color:rgb(178,40,55)}
+  .party-vs.low{background:rgba(40,167,69,0.12);color:rgb(30,135,55)}
+  .party-vs.flat{background:var(--bg3);color:var(--text-dim)}
+  .party-trend{font-size:14px;font-weight:700}
+  .party-trend.up{color:rgb(178,40,55)}
+  .party-trend.down{color:rgb(30,135,55)}
+  .party-trend.flat{color:var(--text-dim)}
+  .party-trend.none{color:var(--text-dim);opacity:.4}
+  .party-empty{font-size:12px;color:var(--text-dim);font-style:italic;padding:14px}
+  .party-detail-row td{background:var(--bg);padding:0;border-bottom:1px solid var(--border)}
+  .party-drill{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:14px 18px}
+  .party-drill-section{}
+  .party-drill-title{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin-bottom:6px}
+  .party-drill-row{display:flex;gap:10px;align-items:baseline;padding:4px 0;font-size:11px;border-bottom:1px dashed var(--border)}
+  .party-drill-row:last-child{border-bottom:none}
+  .party-drill-vessel{font-weight:600;color:var(--text-bright);flex:1}
+  .party-drill-specs{font-weight:400;color:var(--text-dim);font-size:10px}
+  .party-drill-eta{color:var(--text-dim);font-family:var(--mono);font-size:10px;min-width:60px}
+  .party-drill-stat{font-family:var(--mono);font-size:11px;color:var(--text-bright);min-width:140px;text-align:right}
   .report-copy-btn{background:var(--accent);color:#fff;border:none;padding:5px 12px;border-radius:var(--radius-sm);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap}
   .report-copy-btn:hover{background:var(--accent-hover)}
   .report-empty{color:var(--text-dim);font-size:12px;font-style:italic;padding:8px 0}
@@ -354,6 +393,7 @@
   <button class="tab-btn" onclick="switchTab('voyages')">Voyages</button>
   <button class="tab-btn" onclick="switchTab('report')">Report</button>
   <button class="tab-btn" onclick="switchTab('market')">Market</button>
+  <button class="tab-btn" onclick="switchTab('participants')">Participants</button>
 </div>
 
 <div id="tab-tonnage" class="tab-panel active">
@@ -805,6 +845,25 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
     </div>
   </div>
 </div><!-- end tab-market -->
+
+<div id="tab-participants" class="tab-panel">
+  <div class="party-wrap">
+    <div class="party-header">
+      <span class="party-header-title">Participants</span>
+      <span id="participantsMarket" class="party-market-ref"></span>
+      <div style="flex:1"></div>
+      <button class="report-copy-btn" onclick="renderParticipants()">Refresh</button>
+    </div>
+    <div class="party-section">
+      <div class="party-section-title">Owners</div>
+      <div id="participantsOwners"></div>
+    </div>
+    <div class="party-section">
+      <div class="party-section-title">Charterers / Operators</div>
+      <div id="participantsCharterers"></div>
+    </div>
+  </div>
+</div><!-- end tab-participants -->
 
 <div class="chat-overlay" id="chatOverlay" onclick="if(event.target===this) closeChat()">
   <div class="chat-box">
@@ -2252,8 +2311,8 @@ let p6OfferOnly = localStorage.getItem('pt_p6_offer_only') === '1';
 let currentSort = { key: 'eta_ecsa', dir: 'asc' };
 
 // Column visibility AND order — stored in localStorage
-const ALL_COLUMNS = ['laycan','vessel','owner','dwt','built','draft','yard','origin','scr','delivery','laycan_date','eta','hire_offer','bb_offer','bki_eqvt','rate_pmt','arrow_eqvt','bunker','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
-const DEFAULT_ORDER = ['laycan','vessel','owner','dwt','built','delivery','eta','p6_bid','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
+const ALL_COLUMNS = ['laycan','vessel','owner','dwt','built','draft','yard','origin','scr','delivery','laycan_date','eta','hire_offer','bb_offer','bki_eqvt','rate_pmt','arrow_eqvt','bunker','p6_bid','bidding_charterer','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
+const DEFAULT_ORDER = ['laycan','vessel','owner','dwt','built','delivery','eta','p6_bid','bidding_charterer','p6_offer','spread','fixed','charterer','date_fixed','last_updated','notes','status','actions'];
 let columnOrder = JSON.parse(localStorage.getItem('pt_col_order') || 'null') || [...DEFAULT_ORDER];
 let hiddenColumns = new Set(JSON.parse(localStorage.getItem('pt_col_hidden') || '[]'));
 
@@ -2267,7 +2326,7 @@ if (_specsIdx !== -1) {
 }
 
 // Hide new columns by default (existing users won't suddenly see them)
-const NEW_HIDDEN_BY_DEFAULT = ['draft','yard','origin','laycan_date','hire_offer','bb_offer','bki_eqvt','rate_pmt','arrow_eqvt','bunker'];
+const NEW_HIDDEN_BY_DEFAULT = ['draft','yard','origin','laycan_date','hire_offer','bb_offer','bki_eqvt','rate_pmt','arrow_eqvt','bunker','bidding_charterer'];
 NEW_HIDDEN_BY_DEFAULT.forEach(c => {
   if (!columnOrder.includes(c)) {
     columnOrder.push(c);
@@ -2412,15 +2471,31 @@ function startEdit(el, vesselIdx, field, isMono) {
   });
 }
 
+function currentPriceFor(v, field) {
+  if (field === 'p6_bid') return getP6Values(v).bid;
+  if (field === 'p6_offer') return getP6Values(v).offer;
+  if (field === 'fixed_price') return v.fixed_price;
+  return null;
+}
+
+function logPriceChange(v, field, value, counterparty) {
+  if (value == null) return;
+  v.price_history = v.price_history || [];
+  v.price_history.push({ t: new Date().toISOString(), field, value, counterparty: counterparty || null });
+  if (v.price_history.length > 50) v.price_history = v.price_history.slice(-50);
+}
+
 function applyEdit(idx, field, val) {
   const v = vessels[idx];
   if (!v) return;
-  // Timestamp on bid/offer/fixed price changes
-  if (['p6_bid','p6_offer','fixed_price'].includes(field)) touchVessel(idx);
+  const isPriceChange = ['p6_bid','p6_offer','fixed_price'].includes(field);
+  const beforePrice = isPriceChange ? currentPriceFor(v, field) : null;
+  if (isPriceChange) touchVessel(idx);
 
   switch (field) {
     case 'vessel_name': v.vessel_name = val || null; break;
     case 'owner': v.owner = val || null; break;
+    case 'bidding_charterer': v.bidding_charterer = val || null; break;
     case 'source': v.source = val || null; break;
     case 'dwt': {
       const n = parseFloat(val.replace(/[kK]/g, '').replace(/,/g, ''));
@@ -2511,6 +2586,15 @@ function applyEdit(idx, field, val) {
     }
     case 'bunker': v.bunker = val || null; break;
   }
+
+  if (isPriceChange) {
+    const after = currentPriceFor(v, field);
+    if (after != null && after !== beforePrice) {
+      const cp = field === 'p6_bid' ? v.bidding_charterer : v.charterer;
+      logPriceChange(v, field, after, cp);
+    }
+  }
+
   save();
 }
 
@@ -3550,7 +3634,7 @@ function clearDateFilter() {
 
 // ─── Column Visibility & Reordering ──────────────────────────────────────────
 
-const COL_LABELS = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',dwt:'DWT',built:'Built',draft:'Draft',yard:'Yard',origin:'Origin',scr:'SCR',delivery:'Delivery',laycan_date:'Layday',eta:'ETA',hire_offer:'Hire Offer',bb_offer:'BB Offer',bki_eqvt:'BKI Eqvt',rate_pmt:'Rate $/PMT',arrow_eqvt:'Arrow Eqvt',bunker:'Bunker',p6_bid:'P6 Bid',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',date_fixed:'Date Fixed',last_updated:'Updated',notes:'Notes',status:'Status',actions:'Actions'};
+const COL_LABELS = {laycan:'Laycan',vessel:'Vessel',owner:'Owner',dwt:'DWT',built:'Built',draft:'Draft',yard:'Yard',origin:'Origin',scr:'SCR',delivery:'Delivery',laycan_date:'Layday',eta:'ETA',hire_offer:'Hire Offer',bb_offer:'BB Offer',bki_eqvt:'BKI Eqvt',rate_pmt:'Rate $/PMT',arrow_eqvt:'Arrow Eqvt',bunker:'Bunker',p6_bid:'P6 Bid',bidding_charterer:'Bidder',p6_offer:'P6 Offer',spread:'Spread',fixed:'Fixed',charterer:'Charterer',date_fixed:'Date Fixed',last_updated:'Updated',notes:'Notes',status:'Status',actions:'Actions'};
 
 function toggleColumnMenu() {
   const menu = document.getElementById('columnMenu');
@@ -3598,6 +3682,7 @@ function getSortValue(v, key) {
     case 'build_year': return v.build_year || 0;
     case 'vessel_name': return (v.vessel_name || '').toUpperCase();
     case 'owner': return (v.owner || '').toUpperCase();
+    case 'bidding_charterer': return (v.bidding_charterer || '').toUpperCase();
     case 'source': return (v.source || '').toUpperCase();
     case 'delivery_basis': return (v.delivery_basis || '').toUpperCase();
     case 'status': return v.status || '';
@@ -3712,7 +3797,7 @@ function renderTable() {
   document.getElementById('vesselTable').style.display = filtered.length === 0 ? 'none' : '';
 
   // Build headers dynamically from columnOrder
-  const sortKeys = {laycan:'laycan',vessel:'vessel_name',owner:'owner',dwt:'dwt',built:'build_year',scr:null,delivery:'delivery_basis',eta:'eta_ecsa',p6_bid:'p6_bid',p6_offer:'p6_offer',spread:'spread',fixed:'fixed_price',charterer:'charterer',date_fixed:'date_fixed',last_updated:'last_updated',notes:null,status:'status',actions:null};
+  const sortKeys = {laycan:'laycan',vessel:'vessel_name',owner:'owner',dwt:'dwt',built:'build_year',scr:null,delivery:'delivery_basis',eta:'eta_ecsa',p6_bid:'p6_bid',bidding_charterer:'bidding_charterer',p6_offer:'p6_offer',spread:'spread',fixed:'fixed_price',charterer:'charterer',date_fixed:'date_fixed',last_updated:'last_updated',notes:null,status:'status',actions:null};
   const thClasses = {p6_bid:'col-p6',p6_offer:'col-p6',fixed:'col-fixed'};
   const visCols = columnOrder.filter(c => !hiddenColumns.has(c));
   const headRow = document.querySelector('#vesselHead tr');
@@ -3767,6 +3852,7 @@ function renderTable() {
         return `<td class="td-eta editable" onclick="startEdit(this,${gi},'eta_ecsa',true)">${etaText}</td>`;
       }
       case 'p6_bid': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_bid',true)"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>`;
+      case 'bidding_charterer': return `<td class="td-owner editable" onclick="startEdit(this,${gi},'bidding_charterer',false)" title="Leading bidder (or NFD / CNR)">${v.bidding_charterer || '—'}</td>`;
       case 'p6_offer': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_offer',true)"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>`;
       case 'spread': {
         if (spread == null) return `<td>—</td>`;
@@ -6523,6 +6609,273 @@ function renderMarketBoxChart() {
       },
     },
   });
+}
+
+// ─── Participants ────────────────────────────────────────────────────────────
+
+const ANON_NAMES = new Set(['', 'NFD', 'CNR', 'TBN', 'UNKNOWN', '?', '-', '—']);
+
+const _origSwitchTabParticipants = window.switchTab;
+window.switchTab = function(tab) {
+  _origSwitchTabParticipants(tab);
+  if (tab === 'participants') {
+    renderParticipants();
+  }
+};
+
+let participantsExpanded = new Set();
+
+function normalizeParty(s) {
+  if (!s) return null;
+  const trimmed = String(s).trim();
+  const upper = trimmed.toUpperCase();
+  if (ANON_NAMES.has(upper)) return null;
+  return trimmed;
+}
+
+function isWithinDays(iso, days) {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return false;
+  return Date.now() - d.getTime() <= days * 86400000;
+}
+
+function median(arr) {
+  if (!arr || arr.length === 0) return null;
+  const sorted = arr.slice().sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function marketMedians(days = 60) {
+  const offers = [], bids = [], fixes = [];
+  vessels.forEach(v => {
+    const p6 = getP6Values(v);
+    if (v.status === 'OPEN') {
+      if (p6.offer != null) offers.push(p6.offer);
+      if (p6.bid != null) bids.push(p6.bid);
+    }
+    if (v.status === 'FIXED' && v.fixed_price != null && isWithinDays(v.date_fixed, days)) {
+      fixes.push(v.fixed_price);
+    }
+  });
+  return { offer: median(offers), bid: median(bids), fixed: median(fixes) };
+}
+
+function partyTrend(partyName, field) {
+  if (!partyName) return null;
+  const norm = String(partyName).toUpperCase();
+  let up = 0, down = 0, flat = 0;
+  vessels.forEach(v => {
+    const hist = v.price_history || [];
+    const ownEntries = hist.filter(h => h.field === field && (h.counterparty || '').toUpperCase() === norm);
+    if (ownEntries.length < 2) return;
+    const last = ownEntries[ownEntries.length - 1].value;
+    const prev = ownEntries[ownEntries.length - 2].value;
+    if (last > prev) up++;
+    else if (last < prev) down++;
+    else flat++;
+  });
+  if (up === 0 && down === 0 && flat === 0) return null;
+  if (up > down) return 'up';
+  if (down > up) return 'down';
+  return 'flat';
+}
+
+function aggregateOwners() {
+  const map = new Map();
+  for (const v of vessels) {
+    const name = normalizeParty(v.owner);
+    if (!name) continue;
+    const key = name.toUpperCase();
+    if (!map.has(key)) map.set(key, { name, vessels: [] });
+    map.get(key).vessels.push(v);
+  }
+  return [...map.values()].map(g => {
+    const open = g.vessels.filter(v => v.status === 'OPEN');
+    const fixed30 = g.vessels.filter(v => v.status === 'FIXED' && isWithinDays(v.date_fixed, 30));
+    const openOffers = open.map(v => getP6Values(v).offer).filter(x => x != null);
+    const fixedLevels = fixed30.map(v => v.fixed_price).filter(x => x != null);
+    const lastActivity = g.vessels.map(v => v.last_updated || '').sort().pop() || null;
+    return {
+      name: g.name, openCount: open.length, fixedCount30: fixed30.length,
+      offerMedian: median(openOffers), fixedMedian: median(fixedLevels),
+      lastActivity, vessels: g.vessels, trend: partyTrend(g.name, 'p6_offer'),
+    };
+  }).sort((a, b) => (b.openCount + b.fixedCount30) - (a.openCount + a.fixedCount30));
+}
+
+function aggregateCharterers() {
+  const map = new Map();
+  for (const v of vessels) {
+    if (v.status !== 'OPEN') continue;
+    const name = normalizeParty(v.bidding_charterer);
+    if (!name) continue;
+    const key = name.toUpperCase();
+    if (!map.has(key)) map.set(key, { name, bidding: [], fixed30: [], fixedAll: [] });
+    map.get(key).bidding.push(v);
+  }
+  for (const v of vessels) {
+    if (v.status !== 'FIXED') continue;
+    const name = normalizeParty(v.charterer);
+    if (!name) continue;
+    const key = name.toUpperCase();
+    if (!map.has(key)) map.set(key, { name, bidding: [], fixed30: [], fixedAll: [] });
+    if (isWithinDays(v.date_fixed, 30)) map.get(key).fixed30.push(v);
+    map.get(key).fixedAll.push(v);
+  }
+  return [...map.values()].map(g => {
+    const openBidLevels = g.bidding.map(v => getP6Values(v).bid).filter(x => x != null);
+    const fixedLevels = g.fixed30.map(v => v.fixed_price).filter(x => x != null);
+    const lastBidActivity = g.bidding.map(v => v.last_updated || '').sort().pop() || null;
+    const lastFixActivity = g.fixedAll.map(v => v.last_updated || '').sort().pop() || null;
+    const lastActivity = [lastBidActivity, lastFixActivity].filter(Boolean).sort().pop() || null;
+    return {
+      name: g.name, bidCount: g.bidding.length, fixedCount30: g.fixed30.length,
+      bidMedian: median(openBidLevels), fixedMedian: median(fixedLevels),
+      lastActivity, bidding: g.bidding, fixed: g.fixedAll,
+      trend: partyTrend(g.name, 'p6_bid'),
+    };
+  }).sort((a, b) => (b.bidCount + b.fixedCount30) - (a.bidCount + a.fixedCount30));
+}
+
+function fmtParty$(n) { return n == null ? '—' : '$' + Math.round(n).toLocaleString(); }
+function fmtPartyTs(iso) { return !iso ? '—' : fmtTimestamp(iso); }
+
+function vsMarketChip(value, marketVal) {
+  if (value == null || marketVal == null) return '';
+  const diff = value - marketVal;
+  if (Math.abs(diff) < 100) return '<span class="party-vs flat">≈ mkt</span>';
+  const cls = diff > 0 ? 'high' : 'low';
+  const sign = diff > 0 ? '+' : '';
+  return `<span class="party-vs ${cls}">${sign}$${Math.round(diff).toLocaleString()} vs mkt</span>`;
+}
+
+function trendArrow(t) {
+  if (!t) return '<span class="party-trend none" title="No history yet">·</span>';
+  if (t === 'up') return '<span class="party-trend up" title="Trending higher">▲</span>';
+  if (t === 'down') return '<span class="party-trend down" title="Trending lower">▼</span>';
+  return '<span class="party-trend flat" title="Flat">→</span>';
+}
+
+function renderParticipants() {
+  const ownersBox = document.getElementById('participantsOwners');
+  const chartersBox = document.getElementById('participantsCharterers');
+  if (!ownersBox || !chartersBox) return;
+  const mkt = marketMedians(60);
+  const marketRef = document.getElementById('participantsMarket');
+  if (marketRef) {
+    marketRef.innerHTML = `Market median: <strong>offer ${fmtParty$(mkt.offer)}</strong> · <strong>bid ${fmtParty$(mkt.bid)}</strong> · <strong>fixed (30d) ${fmtParty$(mkt.fixed)}</strong>`;
+  }
+  ownersBox.innerHTML = renderOwnerTable(aggregateOwners(), mkt);
+  chartersBox.innerHTML = renderChartererTable(aggregateCharterers(), mkt);
+}
+
+function renderOwnerTable(rows, mkt) {
+  if (rows.length === 0) return '<div class="party-empty">No owners with identifiable names on the board.</div>';
+  let html = `<table class="party-table"><thead><tr>
+      <th>Owner</th><th class="num">Open</th><th class="num">Median offer</th>
+      <th>vs market</th><th class="num">Fixed (30d)</th><th class="num">Median fixed</th>
+      <th>Trend</th><th>Last activity</th><th></th>
+    </tr></thead><tbody>`;
+  rows.forEach(r => {
+    const key = 'owner:' + r.name.toUpperCase();
+    const expanded = participantsExpanded.has(key);
+    const safe = r.name.replace(/'/g, "\\'");
+    html += `<tr class="party-row ${expanded ? 'expanded' : ''}" onclick="toggleParticipant('owner','${safe}')">
+      <td class="party-name">${r.name}</td>
+      <td class="num">${r.openCount || '—'}</td>
+      <td class="num mono">${fmtParty$(r.offerMedian)}</td>
+      <td>${vsMarketChip(r.offerMedian, mkt.offer)}</td>
+      <td class="num">${r.fixedCount30 || '—'}</td>
+      <td class="num mono">${fmtParty$(r.fixedMedian)}</td>
+      <td>${trendArrow(r.trend)}</td>
+      <td class="party-ts">${fmtPartyTs(r.lastActivity)}</td>
+      <td class="party-caret">${expanded ? '▾' : '▸'}</td>
+    </tr>`;
+    if (expanded) html += `<tr class="party-detail-row"><td colspan="9">${renderOwnerDrill(r)}</td></tr>`;
+  });
+  return html + '</tbody></table>';
+}
+
+function renderChartererTable(rows, mkt) {
+  if (rows.length === 0) return '<div class="party-empty">No charterers with identifiable names yet — fill in Bidder column on open ships and Charterer on fixtures.</div>';
+  let html = `<table class="party-table"><thead><tr>
+      <th>Charterer / Operator</th><th class="num">Open bids</th><th class="num">Median bid</th>
+      <th>vs market</th><th class="num">Fixed (30d)</th><th class="num">Median fixed</th>
+      <th>Trend</th><th>Last activity</th><th></th>
+    </tr></thead><tbody>`;
+  rows.forEach(r => {
+    const key = 'charterer:' + r.name.toUpperCase();
+    const expanded = participantsExpanded.has(key);
+    const safe = r.name.replace(/'/g, "\\'");
+    html += `<tr class="party-row ${expanded ? 'expanded' : ''}" onclick="toggleParticipant('charterer','${safe}')">
+      <td class="party-name">${r.name}</td>
+      <td class="num">${r.bidCount || '—'}</td>
+      <td class="num mono">${fmtParty$(r.bidMedian)}</td>
+      <td>${vsMarketChip(r.bidMedian, mkt.bid)}</td>
+      <td class="num">${r.fixedCount30 || '—'}</td>
+      <td class="num mono">${fmtParty$(r.fixedMedian)}</td>
+      <td>${trendArrow(r.trend)}</td>
+      <td class="party-ts">${fmtPartyTs(r.lastActivity)}</td>
+      <td class="party-caret">${expanded ? '▾' : '▸'}</td>
+    </tr>`;
+    if (expanded) html += `<tr class="party-detail-row"><td colspan="9">${renderChartererDrill(r)}</td></tr>`;
+  });
+  return html + '</tbody></table>';
+}
+
+function renderOwnerDrill(r) {
+  const open = r.vessels.filter(v => v.status === 'OPEN');
+  const fixed = r.vessels.filter(v => v.status === 'FIXED' && isWithinDays(v.date_fixed, 60));
+  return `<div class="party-drill">
+      ${renderDrillList('Open ' + open.length, open, 'open')}
+      ${renderDrillList('Fixed (last 60d) ' + fixed.length, fixed, 'fixed')}
+    </div>`;
+}
+
+function renderChartererDrill(r) {
+  const recentFixed = r.fixed.filter(v => isWithinDays(v.date_fixed, 60));
+  return `<div class="party-drill">
+      ${renderDrillList('Bidding on ' + r.bidding.length, r.bidding, 'bidding')}
+      ${renderDrillList('Fixed (last 60d) ' + recentFixed.length, recentFixed, 'fixed')}
+    </div>`;
+}
+
+function renderDrillList(title, list, mode) {
+  if (list.length === 0) {
+    return `<div class="party-drill-section"><div class="party-drill-title">${title}</div><div class="party-empty" style="padding:6px 0">—</div></div>`;
+  }
+  const sorted = list.slice().sort((a, b) => {
+    if (mode === 'fixed') return (b.date_fixed || '').localeCompare(a.date_fixed || '');
+    return (a.eta_ecsa || '9999').localeCompare(b.eta_ecsa || '9999');
+  });
+  let html = `<div class="party-drill-section"><div class="party-drill-title">${title}</div>`;
+  sorted.forEach(v => {
+    const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
+    const eta = v.eta_ecsa ? fmtDateReport(v.eta_ecsa) : '';
+    const p6 = getP6Values(v);
+    let stat = '';
+    if (mode === 'open' || mode === 'bidding') {
+      const lvl = mode === 'bidding' ? p6.bid : p6.offer;
+      stat = lvl != null ? `${mode === 'bidding' ? 'bid' : 'offer'} ${fmtParty$(lvl)}` : '—';
+    } else if (mode === 'fixed') {
+      const dateFixed = v.date_fixed ? fmtDateReport(v.date_fixed) : '';
+      stat = `${fmtParty$(v.fixed_price)} · fixed ${dateFixed}`;
+    }
+    html += `<div class="party-drill-row">
+      <span class="party-drill-vessel">${v.vessel_name || '?'} <span class="party-drill-specs">${specs}</span></span>
+      ${eta ? `<span class="party-drill-eta">ETA ${eta}</span>` : ''}
+      <span class="party-drill-stat">${stat}</span>
+    </div>`;
+  });
+  return html + '</div>';
+}
+
+function toggleParticipant(type, name) {
+  const key = type + ':' + name.toUpperCase();
+  if (participantsExpanded.has(key)) participantsExpanded.delete(key);
+  else participantsExpanded.add(key);
+  renderParticipants();
 }
 
 </script>
