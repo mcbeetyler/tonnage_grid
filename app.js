@@ -1426,22 +1426,38 @@ function getSortValue(v, key) {
 // ─── Status & Actions ────────────────────────────────────────────────────────
 
 function cycleStatus(idx) {
-  const states = ['OPEN', 'FIXED', 'FAILED', 'WITHDRAWN'];
+  const states = ['OPEN', 'FIXED', 'IN HOUSE', 'FAILED', 'WITHDRAWN'];
   const cur = vessels[idx].status || 'OPEN';
   const next = states[(states.indexOf(cur) + 1) % states.length];
-  vessels[idx].status = next;
+  const v = vessels[idx];
+  v.status = next;
   touchVessel(idx);
 
   // Prompt for fixed price and charterer when moving to FIXED
-  if (next === 'FIXED' && !vessels[idx].fixed_price) {
-    if (!vessels[idx].date_fixed) vessels[idx].date_fixed = new Date().toISOString().split('T')[0];
-    const price = prompt(`${vessels[idx].vessel_name} on subs — enter fixed P6 price:`);
+  if (next === 'FIXED' && !v.fixed_price) {
+    if (!v.date_fixed) v.date_fixed = new Date().toISOString().split('T')[0];
+    const price = prompt(`${v.vessel_name} on subs — enter fixed P6 price:`);
     if (price) {
       const val = parseRate(price, 'tc');
-      if (val) vessels[idx].fixed_price = val;
+      if (val) v.fixed_price = val;
     }
-    const charterer = prompt(`${vessels[idx].vessel_name} — enter charterer:`);
-    if (charterer) vessels[idx].charterer = charterer.trim();
+    const charterer = prompt(`${v.vessel_name} — enter charterer:`);
+    if (charterer) v.charterer = charterer.trim();
+  }
+
+  // Moving to IN HOUSE = disponent owner pulled it to cover their own cargo.
+  // Capture the date and log as a participant activity event (counterparty = owner).
+  if (next === 'IN HOUSE') {
+    if (!v.date_fixed) v.date_fixed = new Date().toISOString().split('T')[0];
+    v.charterer = v.owner ? `${v.owner} (in house)` : 'in house';
+    v.price_history = v.price_history || [];
+    v.price_history.push({
+      t: new Date().toISOString(),
+      field: 'in_house',
+      value: v.fixed_price || null,
+      counterparty: v.owner || null,
+    });
+    if (v.price_history.length > 50) v.price_history = v.price_history.slice(-50);
   }
 
   save(); renderTable(); updateStats();
@@ -1458,6 +1474,7 @@ function removeVessel(idx) {
 function updateStats() {
   const open = vessels.filter(v => v.status === 'OPEN').length;
   const fixed = vessels.filter(v => v.status === 'FIXED').length;
+  const inhouse = vessels.filter(v => v.status === 'IN HOUSE').length;
   const failed = vessels.filter(v => v.status === 'FAILED').length;
   const withdrawn = vessels.filter(v => v.status === 'WITHDRAWN').length;
   document.getElementById('statOpen').textContent = open;
@@ -1466,7 +1483,7 @@ function updateStats() {
   // Filter pill counts
   const ce = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = `(${val})`; };
   ce('cntAll', vessels.length); ce('cntOpen', open);
-  ce('cntFixed', fixed); ce('cntFailed', failed); ce('cntWithdrawn', withdrawn);
+  ce('cntFixed', fixed); ce('cntInHouse', inhouse); ce('cntFailed', failed); ce('cntWithdrawn', withdrawn);
 }
 
 function renderTable() {

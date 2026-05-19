@@ -1,27 +1,23 @@
 // ─── Participants ────────────────────────────────────────────────────────────
-// Owner and charterer activity view. Aggregates open positions, recent
-// fixtures, median levels (vs market), and recent price-history trends.
+// Activity-first view. Top: chronological feed of recent bids/offers/fixtures.
+// Below: two card columns (Owners, Charterers) — compact, click to expand.
 //
-// Same operator can appear in BOTH tables (e.g. Cargill as owner AND
-// charterer) — that's accurate to how the market actually works.
+// Same operator can appear in BOTH lists (e.g. Cargill as owner AND charterer).
 
 const ANON_NAMES = new Set(['', 'NFD', 'CNR', 'TBN', 'UNKNOWN', '?', '-', '—']);
 
 const _origSwitchTabParticipants = window.switchTab;
 window.switchTab = function(tab) {
   _origSwitchTabParticipants(tab);
-  if (tab === 'participants') {
-    renderParticipants();
-  }
+  if (tab === 'participants') renderParticipants();
 };
 
-let participantsExpanded = new Set(); // "owner:NAME" / "charterer:NAME"
+let participantsExpanded = new Set();
 
 function normalizeParty(s) {
   if (!s) return null;
   const trimmed = String(s).trim();
-  const upper = trimmed.toUpperCase();
-  if (ANON_NAMES.has(upper)) return null;
+  if (ANON_NAMES.has(trimmed.toUpperCase())) return null;
   return trimmed;
 }
 
@@ -29,8 +25,7 @@ function isWithinDays(iso, days) {
   if (!iso) return false;
   const d = new Date(iso);
   if (isNaN(d.getTime())) return false;
-  const ms = days * 86400000;
-  return Date.now() - d.getTime() <= ms;
+  return Date.now() - d.getTime() <= days * 86400000;
 }
 
 function median(arr) {
@@ -40,7 +35,6 @@ function median(arr) {
 }
 
 function marketMedians(days = 60) {
-  // Market-wide median open offer/bid + recent fixed level
   const offers = [], bids = [], fixes = [];
   vessels.forEach(v => {
     const p6 = getP6Values(v);
@@ -55,25 +49,17 @@ function marketMedians(days = 60) {
   return { offer: median(offers), bid: median(bids), fixed: median(fixes) };
 }
 
-// Trend: compare each vessel's most-recent price entry to the one before it
-// for this party, and report up/down/flat across their book.
 function partyTrend(partyName, field) {
   if (!partyName) return null;
   const norm = String(partyName).toUpperCase();
   let up = 0, down = 0, flat = 0;
   vessels.forEach(v => {
     const hist = v.price_history || [];
-    const ownEntries = hist.filter(h => {
-      if (h.field !== field) return false;
-      const cp = (h.counterparty || '').toUpperCase();
-      return cp === norm;
-    });
-    if (ownEntries.length < 2) return;
-    const last = ownEntries[ownEntries.length - 1].value;
-    const prev = ownEntries[ownEntries.length - 2].value;
-    if (last > prev) up++;
-    else if (last < prev) down++;
-    else flat++;
+    const own = hist.filter(h => h.field === field && (h.counterparty || '').toUpperCase() === norm);
+    if (own.length < 2) return;
+    const last = own[own.length - 1].value;
+    const prev = own[own.length - 2].value;
+    if (last > prev) up++; else if (last < prev) down++; else flat++;
   });
   if (up === 0 && down === 0 && flat === 0) return null;
   if (up > down) return 'up';
@@ -93,28 +79,21 @@ function aggregateOwners() {
   return [...map.values()].map(g => {
     const open = g.vessels.filter(v => v.status === 'OPEN');
     const fixed30 = g.vessels.filter(v => v.status === 'FIXED' && isWithinDays(v.date_fixed, 30));
-    const openOffers = open.map(v => getP6Values(v).offer).filter(x => x != null);
-    const fixedLevels = fixed30.map(v => v.fixed_price).filter(x => x != null);
-    const lastActivity = g.vessels
-      .map(v => v.last_updated || '')
-      .sort()
-      .pop() || null;
     return {
       name: g.name,
       openCount: open.length,
       fixedCount30: fixed30.length,
-      offerMedian: median(openOffers),
-      fixedMedian: median(fixedLevels),
-      lastActivity,
+      offerMedian: median(open.map(v => getP6Values(v).offer).filter(x => x != null)),
+      fixedMedian: median(fixed30.map(v => v.fixed_price).filter(x => x != null)),
+      lastActivity: g.vessels.map(v => v.last_updated || '').sort().pop() || null,
       vessels: g.vessels,
       trend: partyTrend(g.name, 'p6_offer'),
     };
-  }).sort((a, b) => (b.openCount + b.fixedCount30) - (a.openCount + a.fixedCount30));
+  });
 }
 
 function aggregateCharterers() {
   const map = new Map();
-  // Active bid side: from bidding_charterer on OPEN vessels
   for (const v of vessels) {
     if (v.status !== 'OPEN') continue;
     const name = normalizeParty(v.bidding_charterer);
@@ -123,7 +102,6 @@ function aggregateCharterers() {
     if (!map.has(key)) map.set(key, { name, bidding: [], fixed30: [], fixedAll: [] });
     map.get(key).bidding.push(v);
   }
-  // Fixed side: from charterer on FIXED vessels
   for (const v of vessels) {
     if (v.status !== 'FIXED') continue;
     const name = normalizeParty(v.charterer);
@@ -134,30 +112,82 @@ function aggregateCharterers() {
     map.get(key).fixedAll.push(v);
   }
   return [...map.values()].map(g => {
-    const openBidLevels = g.bidding.map(v => getP6Values(v).bid).filter(x => x != null);
-    const fixedLevels = g.fixed30.map(v => v.fixed_price).filter(x => x != null);
-    const lastBidActivity = g.bidding.map(v => v.last_updated || '').sort().pop() || null;
-    const lastFixActivity = g.fixedAll.map(v => v.last_updated || '').sort().pop() || null;
-    const lastActivity = [lastBidActivity, lastFixActivity].filter(Boolean).sort().pop() || null;
+    const lastBid = g.bidding.map(v => v.last_updated || '').sort().pop() || null;
+    const lastFix = g.fixedAll.map(v => v.last_updated || '').sort().pop() || null;
     return {
       name: g.name,
       bidCount: g.bidding.length,
       fixedCount30: g.fixed30.length,
-      bidMedian: median(openBidLevels),
-      fixedMedian: median(fixedLevels),
-      lastActivity,
+      bidMedian: median(g.bidding.map(v => getP6Values(v).bid).filter(x => x != null)),
+      fixedMedian: median(g.fixed30.map(v => v.fixed_price).filter(x => x != null)),
+      lastActivity: [lastBid, lastFix].filter(Boolean).sort().pop() || null,
       bidding: g.bidding,
       fixed: g.fixedAll,
       trend: partyTrend(g.name, 'p6_bid'),
     };
-  }).sort((a, b) => (b.bidCount + b.fixedCount30) - (a.bidCount + a.fixedCount30));
+  });
 }
 
-function fmtParty$(n) { return n == null ? '—' : '$' + Math.round(n).toLocaleString(); }
-function fmtPartyTs(iso) {
-  if (!iso) return '—';
-  return fmtTimestamp(iso);
+// Sort participants: most recent activity first (gives a "what's hot" view).
+function byRecent(a, b) { return (b.lastActivity || '').localeCompare(a.lastActivity || ''); }
+
+// ─── Recent activity feed ────────────────────────────────────────────────────
+
+function buildActivityFeed(limit = 25) {
+  const events = [];
+  for (const v of vessels) {
+    for (const h of (v.price_history || [])) {
+      let type = 'edit';
+      if (h.field === 'p6_bid') type = 'bid';
+      else if (h.field === 'p6_offer') type = 'offer';
+      else if (h.field === 'fixed_price') type = 'fixed';
+      else if (h.field === 'in_house') type = 'in_house';
+      events.push({
+        t: h.t,
+        type,
+        vessel: v,
+        actor: normalizeParty(h.counterparty),
+        value: h.value,
+        route: typeof getEffectiveRoute === 'function' ? getEffectiveRoute(v) : null,
+      });
+    }
+  }
+  events.sort((a, b) => (b.t || '').localeCompare(a.t || ''));
+  return events.slice(0, limit);
 }
+
+function renderActivityFeed() {
+  const events = buildActivityFeed(25);
+  if (events.length === 0) {
+    return `<div class="party-empty">No recent activity logged yet. Activity appears here as you edit bids, offers, and fixtures.</div>`;
+  }
+  return events.map(e => {
+    const v = e.vessel;
+    const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
+    const ts = fmtPartyTs(e.t);
+    const actor = e.actor
+      ? `<span class="party-activity-actor">${e.actor}</span>`
+      : `<span class="party-activity-anon">—</span>`;
+    let actionCls = 'party-activity-action';
+    let actionText = '';
+    if (e.type === 'bid')           { actionCls += ' bid';      actionText = `bid ${fmtParty$(e.value)}`; }
+    else if (e.type === 'offer')    { actionCls += ' offer';    actionText = `offer ${fmtParty$(e.value)}`; }
+    else if (e.type === 'fixed')    { actionCls += ' fixed';    actionText = `FIXED ${fmtParty$(e.value)}`; }
+    else if (e.type === 'in_house') { actionCls += ' in-house'; actionText = `IN HOUSE${e.value != null ? ' ' + fmtParty$(e.value) : ''}`; }
+    return `<div class="party-activity-row">
+      <span class="party-activity-ts">${ts}</span>
+      ${actor}
+      <span class="${actionCls}">${actionText}</span>
+      <span class="party-activity-vessel">${v.vessel_name || '?'} <span class="party-drill-specs">${specs}</span></span>
+      <span class="party-activity-route">${e.route || ''}</span>
+    </div>`;
+  }).join('');
+}
+
+// ─── Cards ───────────────────────────────────────────────────────────────────
+
+function fmtParty$(n) { return n == null ? '—' : '$' + Math.round(n).toLocaleString(); }
+function fmtPartyTs(iso) { return !iso ? '—' : fmtTimestamp(iso); }
 
 function vsMarketChip(value, marketVal) {
   if (value == null || marketVal == null) return '';
@@ -165,138 +195,84 @@ function vsMarketChip(value, marketVal) {
   if (Math.abs(diff) < 100) return '<span class="party-vs flat">≈ mkt</span>';
   const cls = diff > 0 ? 'high' : 'low';
   const sign = diff > 0 ? '+' : '';
-  return `<span class="party-vs ${cls}">${sign}$${Math.round(diff).toLocaleString()} vs mkt</span>`;
+  return `<span class="party-vs ${cls}">${sign}$${Math.round(diff).toLocaleString()}</span>`;
 }
 
 function trendArrow(t) {
   if (!t) return '<span class="party-trend none" title="No history yet">·</span>';
-  if (t === 'up') return '<span class="party-trend up" title="Trending higher">▲</span>';
+  if (t === 'up')   return '<span class="party-trend up"   title="Trending higher">▲</span>';
   if (t === 'down') return '<span class="party-trend down" title="Trending lower">▼</span>';
   return '<span class="party-trend flat" title="Flat">→</span>';
 }
 
-function renderParticipants() {
-  const ownersBox = document.getElementById('participantsOwners');
-  const chartersBox = document.getElementById('participantsCharterers');
-  if (!ownersBox || !chartersBox) return;
+function renderPartyCard(r, type, mkt) {
+  const expanded = participantsExpanded.has(`${type}:${r.name.toUpperCase()}`);
+  const safe = r.name.replace(/'/g, "\\'");
+  const isOwner = type === 'owner';
+  const openCount = isOwner ? r.openCount : r.bidCount;
+  const openLabel = isOwner ? 'open' : 'bidding';
+  const medianLevel = isOwner ? r.offerMedian : r.bidMedian;
+  const marketLevel = isOwner ? mkt.offer : mkt.bid;
+  const medianLabel = isOwner ? 'offer' : 'bid';
 
-  const mkt = marketMedians(60);
-  const owners = aggregateOwners();
-  const charterers = aggregateCharterers();
-
-  // Header bar with market reference
-  const marketRef = document.getElementById('participantsMarket');
-  if (marketRef) {
-    marketRef.innerHTML = `Market median: <strong>offer ${fmtParty$(mkt.offer)}</strong> · <strong>bid ${fmtParty$(mkt.bid)}</strong> · <strong>fixed (30d) ${fmtParty$(mkt.fixed)}</strong>`;
+  const stats = [];
+  stats.push(`<span class="party-chip"><strong>${openCount || 0}</strong> ${openLabel}</span>`);
+  if (r.fixedCount30) {
+    stats.push(`<span class="party-chip"><strong>${r.fixedCount30}</strong> fix${r.fixedCount30 === 1 ? '' : 'es'}/30d</span>`);
+  }
+  if (medianLevel != null) {
+    stats.push(`<span class="party-chip">${medianLabel} ${fmtParty$(medianLevel)} ${vsMarketChip(medianLevel, marketLevel)}</span>`);
+  }
+  if (r.fixedMedian != null) {
+    stats.push(`<span class="party-chip">fixed @ ${fmtParty$(r.fixedMedian)}</span>`);
   }
 
-  ownersBox.innerHTML = renderOwnerTable(owners, mkt);
-  chartersBox.innerHTML = renderChartererTable(charterers, mkt);
+  let drill = '';
+  if (expanded) drill = `<div class="party-card-drill">${isOwner ? renderOwnerDrill(r) : renderChartererDrill(r)}</div>`;
+
+  return `<div class="party-card ${expanded ? 'expanded' : ''}" onclick="toggleParticipant('${type}','${safe}')">
+    <div class="party-card-head">
+      <span class="party-card-name">${r.name}</span>
+      ${trendArrow(r.trend)}
+      <div style="flex:1"></div>
+      <span class="party-card-ts">${fmtPartyTs(r.lastActivity)}</span>
+      <span class="party-caret">${expanded ? '▾' : '▸'}</span>
+    </div>
+    <div class="party-card-stats">${stats.join('')}</div>
+    ${drill}
+  </div>`;
 }
 
-function renderOwnerTable(rows, mkt) {
+function renderPartyCardList(rows, type, mkt) {
   if (rows.length === 0) {
-    return '<div class="party-empty">No owners with identifiable names on the board.</div>';
+    return `<div class="party-empty">No ${type === 'owner' ? 'owners' : 'charterers'} with identifiable names yet.</div>`;
   }
-  let html = `<table class="party-table">
-    <thead><tr>
-      <th>Owner</th>
-      <th class="num">Open</th>
-      <th class="num">Median offer</th>
-      <th>vs market</th>
-      <th class="num">Fixed (30d)</th>
-      <th class="num">Median fixed</th>
-      <th>Trend</th>
-      <th>Last activity</th>
-      <th></th>
-    </tr></thead><tbody>`;
-  rows.forEach(r => {
-    const key = 'owner:' + r.name.toUpperCase();
-    const expanded = participantsExpanded.has(key);
-    const safe = r.name.replace(/'/g, "\\'");
-    html += `<tr class="party-row ${expanded ? 'expanded' : ''}" onclick="toggleParticipant('owner','${safe}')">
-      <td class="party-name">${r.name}</td>
-      <td class="num">${r.openCount || '—'}</td>
-      <td class="num mono">${fmtParty$(r.offerMedian)}</td>
-      <td>${vsMarketChip(r.offerMedian, mkt.offer)}</td>
-      <td class="num">${r.fixedCount30 || '—'}</td>
-      <td class="num mono">${fmtParty$(r.fixedMedian)}</td>
-      <td>${trendArrow(r.trend)}</td>
-      <td class="party-ts">${fmtPartyTs(r.lastActivity)}</td>
-      <td class="party-caret">${expanded ? '▾' : '▸'}</td>
-    </tr>`;
-    if (expanded) {
-      html += `<tr class="party-detail-row"><td colspan="9">${renderOwnerDrill(r)}</td></tr>`;
-    }
-  });
-  html += '</tbody></table>';
-  return html;
+  return rows.sort(byRecent).map(r => renderPartyCard(r, type, mkt)).join('');
 }
 
-function renderChartererTable(rows, mkt) {
-  if (rows.length === 0) {
-    return '<div class="party-empty">No charterers with identifiable names yet — fill in Bidder column on open ships and Charterer on fixtures.</div>';
-  }
-  let html = `<table class="party-table">
-    <thead><tr>
-      <th>Charterer / Operator</th>
-      <th class="num">Open bids</th>
-      <th class="num">Median bid</th>
-      <th>vs market</th>
-      <th class="num">Fixed (30d)</th>
-      <th class="num">Median fixed</th>
-      <th>Trend</th>
-      <th>Last activity</th>
-      <th></th>
-    </tr></thead><tbody>`;
-  rows.forEach(r => {
-    const key = 'charterer:' + r.name.toUpperCase();
-    const expanded = participantsExpanded.has(key);
-    const safe = r.name.replace(/'/g, "\\'");
-    html += `<tr class="party-row ${expanded ? 'expanded' : ''}" onclick="toggleParticipant('charterer','${safe}')">
-      <td class="party-name">${r.name}</td>
-      <td class="num">${r.bidCount || '—'}</td>
-      <td class="num mono">${fmtParty$(r.bidMedian)}</td>
-      <td>${vsMarketChip(r.bidMedian, mkt.bid)}</td>
-      <td class="num">${r.fixedCount30 || '—'}</td>
-      <td class="num mono">${fmtParty$(r.fixedMedian)}</td>
-      <td>${trendArrow(r.trend)}</td>
-      <td class="party-ts">${fmtPartyTs(r.lastActivity)}</td>
-      <td class="party-caret">${expanded ? '▾' : '▸'}</td>
-    </tr>`;
-    if (expanded) {
-      html += `<tr class="party-detail-row"><td colspan="9">${renderChartererDrill(r)}</td></tr>`;
-    }
-  });
-  html += '</tbody></table>';
-  return html;
-}
+// ─── Drill-downs ────────────────────────────────────────────────────────────
 
 function renderOwnerDrill(r) {
   const open = r.vessels.filter(v => v.status === 'OPEN');
   const fixed = r.vessels.filter(v => v.status === 'FIXED' && isWithinDays(v.date_fixed, 60));
-  return `
-    <div class="party-drill">
-      ${renderDrillList('Open ' + open.length, open, 'open')}
-      ${renderDrillList('Fixed (last 60d) ' + fixed.length, fixed, 'fixed')}
-    </div>
-  `;
+  return `<div class="party-drill">
+    ${renderDrillList('Open ' + open.length, open, 'open')}
+    ${renderDrillList('Fixed (last 60d) ' + fixed.length, fixed, 'fixed')}
+  </div>`;
 }
 
 function renderChartererDrill(r) {
-  return `
-    <div class="party-drill">
-      ${renderDrillList('Bidding on ' + r.bidding.length, r.bidding, 'bidding')}
-      ${renderDrillList('Fixed (last 60d) ' + r.fixed.filter(v => isWithinDays(v.date_fixed, 60)).length, r.fixed.filter(v => isWithinDays(v.date_fixed, 60)), 'fixed')}
-    </div>
-  `;
+  const recentFixed = r.fixed.filter(v => isWithinDays(v.date_fixed, 60));
+  return `<div class="party-drill">
+    ${renderDrillList('Bidding on ' + r.bidding.length, r.bidding, 'bidding')}
+    ${renderDrillList('Fixed (last 60d) ' + recentFixed.length, recentFixed, 'fixed')}
+  </div>`;
 }
 
 function renderDrillList(title, list, mode) {
   if (list.length === 0) {
     return `<div class="party-drill-section"><div class="party-drill-title">${title}</div><div class="party-empty" style="padding:6px 0">—</div></div>`;
   }
-  // Sort: fixtures by date desc; open/bidding by ETA asc
   const sorted = list.slice().sort((a, b) => {
     if (mode === 'fixed') return (b.date_fixed || '').localeCompare(a.date_fixed || '');
     return (a.eta_ecsa || '9999').localeCompare(b.eta_ecsa || '9999');
@@ -320,13 +296,33 @@ function renderDrillList(title, list, mode) {
       <span class="party-drill-stat">${stat}</span>
     </div>`;
   });
-  html += '</div>';
-  return html;
+  return html + '</div>';
 }
 
 function toggleParticipant(type, name) {
+  // event bubbles from cards; prevent default so clicks on drill rows don't collapse
+  if (window.event) window.event.stopPropagation();
   const key = type + ':' + name.toUpperCase();
   if (participantsExpanded.has(key)) participantsExpanded.delete(key);
   else participantsExpanded.add(key);
   renderParticipants();
+}
+
+// ─── Top-level render ───────────────────────────────────────────────────────
+
+function renderParticipants() {
+  const ownersBox = document.getElementById('participantsOwners');
+  const chartersBox = document.getElementById('participantsCharterers');
+  const activityBox = document.getElementById('participantsActivity');
+  if (!ownersBox || !chartersBox) return;
+
+  const mkt = marketMedians(60);
+  const marketRef = document.getElementById('participantsMarket');
+  if (marketRef) {
+    marketRef.innerHTML = `Market median: <strong>offer ${fmtParty$(mkt.offer)}</strong> · <strong>bid ${fmtParty$(mkt.bid)}</strong> · <strong>fixed (30d) ${fmtParty$(mkt.fixed)}</strong>`;
+  }
+
+  if (activityBox) activityBox.innerHTML = renderActivityFeed();
+  ownersBox.innerHTML = renderPartyCardList(aggregateOwners(), 'owner', mkt);
+  chartersBox.innerHTML = renderPartyCardList(aggregateCharterers(), 'charterer', mkt);
 }

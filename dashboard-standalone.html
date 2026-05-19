@@ -131,6 +131,7 @@
   .status-badge:hover{opacity:.75}
   .status-OPEN{background:var(--green-light);color:var(--green)}
   .status-FIXED{background:var(--blue-light);color:var(--blue)}
+  .status-IN_HOUSE{background:#F2E6FF;color:#6B2DBC}
   .status-FAILED{background:var(--red-light);color:var(--red)}
   .status-WITHDRAWN{background:var(--bg3);color:var(--text-dim)}
 
@@ -306,24 +307,41 @@
   .market-toggle.active.fixtures{background:rgba(24,95,165,0.15);color:rgb(24,95,165);border-color:rgba(24,95,165,0.45)}
 
   /* Participants tab */
-  .party-wrap{padding:18px 28px 24px}
+  .party-wrap{padding:18px 28px 24px;max-width:1500px;margin:0 auto}
   .party-header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:18px}
   .party-header-title{font-size:14px;font-weight:700;color:var(--text-bright)}
   .party-market-ref{font-size:11px;color:var(--text-dim)}
   .party-section{margin-bottom:24px}
-  .party-section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-dim);margin-bottom:8px}
-  .party-table{width:100%;border-collapse:collapse;font-size:12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-  .party-table th{text-align:left;padding:10px 12px;background:var(--bg3);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);border-bottom:1px solid var(--border)}
-  .party-table td{padding:8px 12px;border-bottom:1px solid var(--border)}
-  .party-table th.num,.party-table td.num{text-align:right}
-  .party-table td.mono{font-family:var(--mono)}
-  .party-row{cursor:pointer;transition:background .12s}
-  .party-row:hover{background:var(--bg-hover)}
-  .party-row.expanded{background:var(--bg-hover)}
-  .party-name{font-weight:600;color:var(--text-bright)}
-  .party-ts{font-size:11px;color:var(--text-dim);font-family:var(--mono)}
-  .party-caret{color:var(--text-dim);text-align:center;width:24px}
-  .party-vs{font-size:10px;padding:2px 6px;border-radius:8px;font-weight:500}
+  .party-section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-dim);margin-bottom:8px;display:flex;align-items:baseline;gap:8px}
+  .party-section-hint{font-size:11px;color:var(--text-dim);font-weight:400;text-transform:none;letter-spacing:0;font-style:italic}
+  .party-activity{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .party-activity-row{display:grid;grid-template-columns:120px 140px 130px 1fr 80px;gap:10px;padding:7px 14px;font-size:12px;border-bottom:1px solid var(--border);align-items:baseline}
+  .party-activity-row:last-child{border-bottom:none}
+  .party-activity-row:hover{background:var(--bg-hover)}
+  .party-activity-ts{font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+  .party-activity-actor{font-weight:600;color:var(--text-bright)}
+  .party-activity-anon{color:var(--text-dim);font-style:italic}
+  .party-activity-action{font-family:var(--mono);font-size:12px;font-weight:600;text-align:right}
+  .party-activity-action.bid{color:rgb(30,135,55)}
+  .party-activity-action.offer{color:rgb(178,40,55)}
+  .party-activity-action.fixed{color:rgb(24,95,165)}
+  .party-activity-action.in-house{color:#6B2DBC}
+  .party-activity-vessel{color:var(--text-bright);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .party-activity-route{font-size:10px;color:var(--text-dim);text-align:right;font-family:var(--mono)}
+  .party-columns{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  .party-column-list{display:flex;flex-direction:column;gap:8px}
+  .party-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;cursor:pointer;transition:border-color .12s, background .12s}
+  .party-card:hover{background:var(--bg-hover);border-color:var(--accent)}
+  .party-card.expanded{background:var(--bg-hover);border-color:var(--accent)}
+  .party-card-head{display:flex;align-items:baseline;gap:10px}
+  .party-card-name{font-size:13px;font-weight:700;color:var(--text-bright)}
+  .party-card-ts{font-size:10px;color:var(--text-dim);font-family:var(--mono)}
+  .party-card-stats{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .party-chip{font-size:11px;color:var(--text-dim);background:var(--bg3);padding:2px 8px;border-radius:10px}
+  .party-chip strong{color:var(--text-bright);font-weight:700}
+  .party-card-drill{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)}
+  .party-caret{color:var(--text-dim);font-size:11px}
+  .party-vs{font-size:10px;padding:1px 6px;border-radius:8px;font-weight:600;margin-left:4px}
   .party-vs.high{background:rgba(220,53,69,0.12);color:rgb(178,40,55)}
   .party-vs.low{background:rgba(40,167,69,0.12);color:rgb(30,135,55)}
   .party-vs.flat{background:var(--bg3);color:var(--text-dim)}
@@ -332,17 +350,17 @@
   .party-trend.down{color:rgb(30,135,55)}
   .party-trend.flat{color:var(--text-dim)}
   .party-trend.none{color:var(--text-dim);opacity:.4}
-  .party-empty{font-size:12px;color:var(--text-dim);font-style:italic;padding:14px}
-  .party-detail-row td{background:var(--bg);padding:0;border-bottom:1px solid var(--border)}
-  .party-drill{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:14px 18px}
-  .party-drill-section{}
+  .party-empty{font-size:12px;color:var(--text-dim);font-style:italic;padding:14px;background:var(--bg2);border:1px dashed var(--border);border-radius:var(--radius);text-align:center}
+  .party-drill{display:flex;flex-direction:column;gap:12px}
   .party-drill-title{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin-bottom:6px}
-  .party-drill-row{display:flex;gap:10px;align-items:baseline;padding:4px 0;font-size:11px;border-bottom:1px dashed var(--border)}
-  .party-drill-row:last-child{border-bottom:none}
+  .party-drill-row{display:flex;gap:10px;align-items:baseline;padding:3px 0;font-size:11px}
   .party-drill-vessel{font-weight:600;color:var(--text-bright);flex:1}
   .party-drill-specs{font-weight:400;color:var(--text-dim);font-size:10px}
   .party-drill-eta{color:var(--text-dim);font-family:var(--mono);font-size:10px;min-width:60px}
   .party-drill-stat{font-family:var(--mono);font-size:11px;color:var(--text-bright);min-width:140px;text-align:right}
+  @media (max-width: 900px) {
+    .party-columns{grid-template-columns:1fr}
+  }
   .report-copy-btn{background:var(--accent);color:#fff;border:none;padding:5px 12px;border-radius:var(--radius-sm);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap}
   .report-copy-btn:hover{background:var(--accent-hover)}
   .report-empty{color:var(--text-dim);font-size:12px;font-style:italic;padding:8px 0}
@@ -417,6 +435,7 @@
     <button class="filter-pill active" data-filter="ALL" onclick="toggleFilter('ALL')">All <span class="filter-count" id="cntAll"></span></button>
     <button class="filter-pill" data-filter="OPEN" onclick="toggleFilter('OPEN')">Open <span class="filter-count" id="cntOpen"></span></button>
     <button class="filter-pill" data-filter="FIXED" onclick="toggleFilter('FIXED')">Fixed <span class="filter-count" id="cntFixed"></span></button>
+    <button class="filter-pill" data-filter="IN HOUSE" onclick="toggleFilter('IN HOUSE')">In House <span class="filter-count" id="cntInHouse"></span></button>
     <button class="filter-pill" data-filter="FAILED" onclick="toggleFilter('FAILED')">Failed <span class="filter-count" id="cntFailed"></span></button>
     <button class="filter-pill" data-filter="WITHDRAWN" onclick="toggleFilter('WITHDRAWN')">Withdrawn <span class="filter-count" id="cntWithdrawn"></span></button>
   </div>
@@ -857,12 +876,21 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
       <button class="report-copy-btn" onclick="renderParticipants()">Refresh</button>
     </div>
     <div class="party-section">
-      <div class="party-section-title">Owners</div>
-      <div id="participantsOwners"></div>
+      <div class="party-section-title">Recent activity <span class="party-section-hint">last 25 bid / offer / fixture events</span></div>
+      <div id="participantsActivity" class="party-activity"></div>
     </div>
     <div class="party-section">
-      <div class="party-section-title">Charterers / Operators</div>
-      <div id="participantsCharterers"></div>
+      <div class="party-section-title">Participants <span class="party-section-hint">sorted by most recent activity · click a card for detail</span></div>
+      <div class="party-columns">
+        <div>
+          <div class="party-section-title" style="margin:0 0 6px;letter-spacing:.4px;font-size:10px">Owners</div>
+          <div id="participantsOwners" class="party-column-list"></div>
+        </div>
+        <div>
+          <div class="party-section-title" style="margin:0 0 6px;letter-spacing:.4px;font-size:10px">Charterers / Operators</div>
+          <div id="participantsCharterers" class="party-column-list"></div>
+        </div>
+      </div>
     </div>
   </div>
 </div><!-- end tab-participants -->
@@ -3714,22 +3742,27 @@ function getSortValue(v, key) {
 // ─── Status & Actions ────────────────────────────────────────────────────────
 
 function cycleStatus(idx) {
-  const states = ['OPEN', 'FIXED', 'FAILED', 'WITHDRAWN'];
+  const states = ['OPEN', 'FIXED', 'IN HOUSE', 'FAILED', 'WITHDRAWN'];
   const cur = vessels[idx].status || 'OPEN';
   const next = states[(states.indexOf(cur) + 1) % states.length];
-  vessels[idx].status = next;
+  const v = vessels[idx];
+  v.status = next;
   touchVessel(idx);
 
-  // Prompt for fixed price and charterer when moving to FIXED
-  if (next === 'FIXED' && !vessels[idx].fixed_price) {
-    if (!vessels[idx].date_fixed) vessels[idx].date_fixed = new Date().toISOString().split('T')[0];
-    const price = prompt(`${vessels[idx].vessel_name} on subs — enter fixed P6 price:`);
-    if (price) {
-      const val = parseRate(price, 'tc');
-      if (val) vessels[idx].fixed_price = val;
-    }
-    const charterer = prompt(`${vessels[idx].vessel_name} — enter charterer:`);
-    if (charterer) vessels[idx].charterer = charterer.trim();
+  if (next === 'FIXED' && !v.fixed_price) {
+    if (!v.date_fixed) v.date_fixed = new Date().toISOString().split('T')[0];
+    const price = prompt(`${v.vessel_name} on subs — enter fixed P6 price:`);
+    if (price) { const val = parseRate(price, 'tc'); if (val) v.fixed_price = val; }
+    const charterer = prompt(`${v.vessel_name} — enter charterer:`);
+    if (charterer) v.charterer = charterer.trim();
+  }
+
+  if (next === 'IN HOUSE') {
+    if (!v.date_fixed) v.date_fixed = new Date().toISOString().split('T')[0];
+    v.charterer = v.owner ? `${v.owner} (in house)` : 'in house';
+    v.price_history = v.price_history || [];
+    v.price_history.push({ t: new Date().toISOString(), field: 'in_house', value: v.fixed_price || null, counterparty: v.owner || null });
+    if (v.price_history.length > 50) v.price_history = v.price_history.slice(-50);
   }
 
   save(); renderTable(); updateStats();
@@ -3746,15 +3779,15 @@ function removeVessel(idx) {
 function updateStats() {
   const open = vessels.filter(v => v.status === 'OPEN').length;
   const fixed = vessels.filter(v => v.status === 'FIXED').length;
+  const inhouse = vessels.filter(v => v.status === 'IN HOUSE').length;
   const failed = vessels.filter(v => v.status === 'FAILED').length;
   const withdrawn = vessels.filter(v => v.status === 'WITHDRAWN').length;
   document.getElementById('statOpen').textContent = open;
   document.getElementById('statFixed').textContent = fixed;
   document.getElementById('statTotal').textContent = vessels.length;
-  // Filter pill counts
   const ce = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = `(${val})`; };
   ce('cntAll', vessels.length); ce('cntOpen', open);
-  ce('cntFixed', fixed); ce('cntFailed', failed); ce('cntWithdrawn', withdrawn);
+  ce('cntFixed', fixed); ce('cntInHouse', inhouse); ce('cntFailed', failed); ce('cntWithdrawn', withdrawn);
 }
 
 function renderTable() {
@@ -6656,9 +6689,7 @@ const ANON_NAMES = new Set(['', 'NFD', 'CNR', 'TBN', 'UNKNOWN', '?', '-', '—']
 const _origSwitchTabParticipants = window.switchTab;
 window.switchTab = function(tab) {
   _origSwitchTabParticipants(tab);
-  if (tab === 'participants') {
-    renderParticipants();
-  }
+  if (tab === 'participants') renderParticipants();
 };
 
 let participantsExpanded = new Set();
@@ -6666,8 +6697,7 @@ let participantsExpanded = new Set();
 function normalizeParty(s) {
   if (!s) return null;
   const trimmed = String(s).trim();
-  const upper = trimmed.toUpperCase();
-  if (ANON_NAMES.has(upper)) return null;
+  if (ANON_NAMES.has(trimmed.toUpperCase())) return null;
   return trimmed;
 }
 
@@ -6705,13 +6735,11 @@ function partyTrend(partyName, field) {
   let up = 0, down = 0, flat = 0;
   vessels.forEach(v => {
     const hist = v.price_history || [];
-    const ownEntries = hist.filter(h => h.field === field && (h.counterparty || '').toUpperCase() === norm);
-    if (ownEntries.length < 2) return;
-    const last = ownEntries[ownEntries.length - 1].value;
-    const prev = ownEntries[ownEntries.length - 2].value;
-    if (last > prev) up++;
-    else if (last < prev) down++;
-    else flat++;
+    const own = hist.filter(h => h.field === field && (h.counterparty || '').toUpperCase() === norm);
+    if (own.length < 2) return;
+    const last = own[own.length - 1].value;
+    const prev = own[own.length - 2].value;
+    if (last > prev) up++; else if (last < prev) down++; else flat++;
   });
   if (up === 0 && down === 0 && flat === 0) return null;
   if (up > down) return 'up';
@@ -6731,15 +6759,17 @@ function aggregateOwners() {
   return [...map.values()].map(g => {
     const open = g.vessels.filter(v => v.status === 'OPEN');
     const fixed30 = g.vessels.filter(v => v.status === 'FIXED' && isWithinDays(v.date_fixed, 30));
-    const openOffers = open.map(v => getP6Values(v).offer).filter(x => x != null);
-    const fixedLevels = fixed30.map(v => v.fixed_price).filter(x => x != null);
-    const lastActivity = g.vessels.map(v => v.last_updated || '').sort().pop() || null;
     return {
-      name: g.name, openCount: open.length, fixedCount30: fixed30.length,
-      offerMedian: median(openOffers), fixedMedian: median(fixedLevels),
-      lastActivity, vessels: g.vessels, trend: partyTrend(g.name, 'p6_offer'),
+      name: g.name,
+      openCount: open.length,
+      fixedCount30: fixed30.length,
+      offerMedian: median(open.map(v => getP6Values(v).offer).filter(x => x != null)),
+      fixedMedian: median(fixed30.map(v => v.fixed_price).filter(x => x != null)),
+      lastActivity: g.vessels.map(v => v.last_updated || '').sort().pop() || null,
+      vessels: g.vessels,
+      trend: partyTrend(g.name, 'p6_offer'),
     };
-  }).sort((a, b) => (b.openCount + b.fixedCount30) - (a.openCount + a.fixedCount30));
+  });
 }
 
 function aggregateCharterers() {
@@ -6762,18 +6792,61 @@ function aggregateCharterers() {
     map.get(key).fixedAll.push(v);
   }
   return [...map.values()].map(g => {
-    const openBidLevels = g.bidding.map(v => getP6Values(v).bid).filter(x => x != null);
-    const fixedLevels = g.fixed30.map(v => v.fixed_price).filter(x => x != null);
-    const lastBidActivity = g.bidding.map(v => v.last_updated || '').sort().pop() || null;
-    const lastFixActivity = g.fixedAll.map(v => v.last_updated || '').sort().pop() || null;
-    const lastActivity = [lastBidActivity, lastFixActivity].filter(Boolean).sort().pop() || null;
+    const lastBid = g.bidding.map(v => v.last_updated || '').sort().pop() || null;
+    const lastFix = g.fixedAll.map(v => v.last_updated || '').sort().pop() || null;
     return {
-      name: g.name, bidCount: g.bidding.length, fixedCount30: g.fixed30.length,
-      bidMedian: median(openBidLevels), fixedMedian: median(fixedLevels),
-      lastActivity, bidding: g.bidding, fixed: g.fixedAll,
+      name: g.name,
+      bidCount: g.bidding.length,
+      fixedCount30: g.fixed30.length,
+      bidMedian: median(g.bidding.map(v => getP6Values(v).bid).filter(x => x != null)),
+      fixedMedian: median(g.fixed30.map(v => v.fixed_price).filter(x => x != null)),
+      lastActivity: [lastBid, lastFix].filter(Boolean).sort().pop() || null,
+      bidding: g.bidding,
+      fixed: g.fixedAll,
       trend: partyTrend(g.name, 'p6_bid'),
     };
-  }).sort((a, b) => (b.bidCount + b.fixedCount30) - (a.bidCount + a.fixedCount30));
+  });
+}
+
+function byRecent(a, b) { return (b.lastActivity || '').localeCompare(a.lastActivity || ''); }
+
+function buildActivityFeed(limit = 25) {
+  const events = [];
+  for (const v of vessels) {
+    for (const h of (v.price_history || [])) {
+      let type = 'edit';
+      if (h.field === 'p6_bid') type = 'bid';
+      else if (h.field === 'p6_offer') type = 'offer';
+      else if (h.field === 'fixed_price') type = 'fixed';
+      else if (h.field === 'in_house') type = 'in_house';
+      events.push({ t: h.t, type, vessel: v, actor: normalizeParty(h.counterparty), value: h.value, route: getEffectiveRoute(v) });
+    }
+  }
+  events.sort((a, b) => (b.t || '').localeCompare(a.t || ''));
+  return events.slice(0, limit);
+}
+
+function renderActivityFeed() {
+  const events = buildActivityFeed(25);
+  if (events.length === 0) return `<div class="party-empty">No recent activity logged yet. Activity appears here as you edit bids, offers, and fixtures.</div>`;
+  return events.map(e => {
+    const v = e.vessel;
+    const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
+    const ts = fmtPartyTs(e.t);
+    const actor = e.actor ? `<span class="party-activity-actor">${e.actor}</span>` : `<span class="party-activity-anon">—</span>`;
+    let actionCls = 'party-activity-action', actionText = '';
+    if (e.type === 'bid')           { actionCls += ' bid';      actionText = `bid ${fmtParty$(e.value)}`; }
+    else if (e.type === 'offer')    { actionCls += ' offer';    actionText = `offer ${fmtParty$(e.value)}`; }
+    else if (e.type === 'fixed')    { actionCls += ' fixed';    actionText = `FIXED ${fmtParty$(e.value)}`; }
+    else if (e.type === 'in_house') { actionCls += ' in-house'; actionText = `IN HOUSE${e.value != null ? ' ' + fmtParty$(e.value) : ''}`; }
+    return `<div class="party-activity-row">
+      <span class="party-activity-ts">${ts}</span>
+      ${actor}
+      <span class="${actionCls}">${actionText}</span>
+      <span class="party-activity-vessel">${v.vessel_name || '?'} <span class="party-drill-specs">${specs}</span></span>
+      <span class="party-activity-route">${e.route || ''}</span>
+    </div>`;
+  }).join('');
 }
 
 function fmtParty$(n) { return n == null ? '—' : '$' + Math.round(n).toLocaleString(); }
@@ -6785,104 +6858,69 @@ function vsMarketChip(value, marketVal) {
   if (Math.abs(diff) < 100) return '<span class="party-vs flat">≈ mkt</span>';
   const cls = diff > 0 ? 'high' : 'low';
   const sign = diff > 0 ? '+' : '';
-  return `<span class="party-vs ${cls}">${sign}$${Math.round(diff).toLocaleString()} vs mkt</span>`;
+  return `<span class="party-vs ${cls}">${sign}$${Math.round(diff).toLocaleString()}</span>`;
 }
 
 function trendArrow(t) {
   if (!t) return '<span class="party-trend none" title="No history yet">·</span>';
-  if (t === 'up') return '<span class="party-trend up" title="Trending higher">▲</span>';
+  if (t === 'up')   return '<span class="party-trend up" title="Trending higher">▲</span>';
   if (t === 'down') return '<span class="party-trend down" title="Trending lower">▼</span>';
   return '<span class="party-trend flat" title="Flat">→</span>';
 }
 
-function renderParticipants() {
-  const ownersBox = document.getElementById('participantsOwners');
-  const chartersBox = document.getElementById('participantsCharterers');
-  if (!ownersBox || !chartersBox) return;
-  const mkt = marketMedians(60);
-  const marketRef = document.getElementById('participantsMarket');
-  if (marketRef) {
-    marketRef.innerHTML = `Market median: <strong>offer ${fmtParty$(mkt.offer)}</strong> · <strong>bid ${fmtParty$(mkt.bid)}</strong> · <strong>fixed (30d) ${fmtParty$(mkt.fixed)}</strong>`;
-  }
-  ownersBox.innerHTML = renderOwnerTable(aggregateOwners(), mkt);
-  chartersBox.innerHTML = renderChartererTable(aggregateCharterers(), mkt);
+function renderPartyCard(r, type, mkt) {
+  const expanded = participantsExpanded.has(`${type}:${r.name.toUpperCase()}`);
+  const safe = r.name.replace(/'/g, "\\'");
+  const isOwner = type === 'owner';
+  const openCount = isOwner ? r.openCount : r.bidCount;
+  const openLabel = isOwner ? 'open' : 'bidding';
+  const medianLevel = isOwner ? r.offerMedian : r.bidMedian;
+  const marketLevel = isOwner ? mkt.offer : mkt.bid;
+  const medianLabel = isOwner ? 'offer' : 'bid';
+  const stats = [];
+  stats.push(`<span class="party-chip"><strong>${openCount || 0}</strong> ${openLabel}</span>`);
+  if (r.fixedCount30) stats.push(`<span class="party-chip"><strong>${r.fixedCount30}</strong> fix${r.fixedCount30 === 1 ? '' : 'es'}/30d</span>`);
+  if (medianLevel != null) stats.push(`<span class="party-chip">${medianLabel} ${fmtParty$(medianLevel)} ${vsMarketChip(medianLevel, marketLevel)}</span>`);
+  if (r.fixedMedian != null) stats.push(`<span class="party-chip">fixed @ ${fmtParty$(r.fixedMedian)}</span>`);
+  let drill = '';
+  if (expanded) drill = `<div class="party-card-drill">${isOwner ? renderOwnerDrill(r) : renderChartererDrill(r)}</div>`;
+  return `<div class="party-card ${expanded ? 'expanded' : ''}" onclick="toggleParticipant('${type}','${safe}')">
+    <div class="party-card-head">
+      <span class="party-card-name">${r.name}</span>
+      ${trendArrow(r.trend)}
+      <div style="flex:1"></div>
+      <span class="party-card-ts">${fmtPartyTs(r.lastActivity)}</span>
+      <span class="party-caret">${expanded ? '▾' : '▸'}</span>
+    </div>
+    <div class="party-card-stats">${stats.join('')}</div>
+    ${drill}
+  </div>`;
 }
 
-function renderOwnerTable(rows, mkt) {
-  if (rows.length === 0) return '<div class="party-empty">No owners with identifiable names on the board.</div>';
-  let html = `<table class="party-table"><thead><tr>
-      <th>Owner</th><th class="num">Open</th><th class="num">Median offer</th>
-      <th>vs market</th><th class="num">Fixed (30d)</th><th class="num">Median fixed</th>
-      <th>Trend</th><th>Last activity</th><th></th>
-    </tr></thead><tbody>`;
-  rows.forEach(r => {
-    const key = 'owner:' + r.name.toUpperCase();
-    const expanded = participantsExpanded.has(key);
-    const safe = r.name.replace(/'/g, "\\'");
-    html += `<tr class="party-row ${expanded ? 'expanded' : ''}" onclick="toggleParticipant('owner','${safe}')">
-      <td class="party-name">${r.name}</td>
-      <td class="num">${r.openCount || '—'}</td>
-      <td class="num mono">${fmtParty$(r.offerMedian)}</td>
-      <td>${vsMarketChip(r.offerMedian, mkt.offer)}</td>
-      <td class="num">${r.fixedCount30 || '—'}</td>
-      <td class="num mono">${fmtParty$(r.fixedMedian)}</td>
-      <td>${trendArrow(r.trend)}</td>
-      <td class="party-ts">${fmtPartyTs(r.lastActivity)}</td>
-      <td class="party-caret">${expanded ? '▾' : '▸'}</td>
-    </tr>`;
-    if (expanded) html += `<tr class="party-detail-row"><td colspan="9">${renderOwnerDrill(r)}</td></tr>`;
-  });
-  return html + '</tbody></table>';
-}
-
-function renderChartererTable(rows, mkt) {
-  if (rows.length === 0) return '<div class="party-empty">No charterers with identifiable names yet — fill in Bidder column on open ships and Charterer on fixtures.</div>';
-  let html = `<table class="party-table"><thead><tr>
-      <th>Charterer / Operator</th><th class="num">Open bids</th><th class="num">Median bid</th>
-      <th>vs market</th><th class="num">Fixed (30d)</th><th class="num">Median fixed</th>
-      <th>Trend</th><th>Last activity</th><th></th>
-    </tr></thead><tbody>`;
-  rows.forEach(r => {
-    const key = 'charterer:' + r.name.toUpperCase();
-    const expanded = participantsExpanded.has(key);
-    const safe = r.name.replace(/'/g, "\\'");
-    html += `<tr class="party-row ${expanded ? 'expanded' : ''}" onclick="toggleParticipant('charterer','${safe}')">
-      <td class="party-name">${r.name}</td>
-      <td class="num">${r.bidCount || '—'}</td>
-      <td class="num mono">${fmtParty$(r.bidMedian)}</td>
-      <td>${vsMarketChip(r.bidMedian, mkt.bid)}</td>
-      <td class="num">${r.fixedCount30 || '—'}</td>
-      <td class="num mono">${fmtParty$(r.fixedMedian)}</td>
-      <td>${trendArrow(r.trend)}</td>
-      <td class="party-ts">${fmtPartyTs(r.lastActivity)}</td>
-      <td class="party-caret">${expanded ? '▾' : '▸'}</td>
-    </tr>`;
-    if (expanded) html += `<tr class="party-detail-row"><td colspan="9">${renderChartererDrill(r)}</td></tr>`;
-  });
-  return html + '</tbody></table>';
+function renderPartyCardList(rows, type, mkt) {
+  if (rows.length === 0) return `<div class="party-empty">No ${type === 'owner' ? 'owners' : 'charterers'} with identifiable names yet.</div>`;
+  return rows.sort(byRecent).map(r => renderPartyCard(r, type, mkt)).join('');
 }
 
 function renderOwnerDrill(r) {
   const open = r.vessels.filter(v => v.status === 'OPEN');
   const fixed = r.vessels.filter(v => v.status === 'FIXED' && isWithinDays(v.date_fixed, 60));
   return `<div class="party-drill">
-      ${renderDrillList('Open ' + open.length, open, 'open')}
-      ${renderDrillList('Fixed (last 60d) ' + fixed.length, fixed, 'fixed')}
-    </div>`;
+    ${renderDrillList('Open ' + open.length, open, 'open')}
+    ${renderDrillList('Fixed (last 60d) ' + fixed.length, fixed, 'fixed')}
+  </div>`;
 }
 
 function renderChartererDrill(r) {
   const recentFixed = r.fixed.filter(v => isWithinDays(v.date_fixed, 60));
   return `<div class="party-drill">
-      ${renderDrillList('Bidding on ' + r.bidding.length, r.bidding, 'bidding')}
-      ${renderDrillList('Fixed (last 60d) ' + recentFixed.length, recentFixed, 'fixed')}
-    </div>`;
+    ${renderDrillList('Bidding on ' + r.bidding.length, r.bidding, 'bidding')}
+    ${renderDrillList('Fixed (last 60d) ' + recentFixed.length, recentFixed, 'fixed')}
+  </div>`;
 }
 
 function renderDrillList(title, list, mode) {
-  if (list.length === 0) {
-    return `<div class="party-drill-section"><div class="party-drill-title">${title}</div><div class="party-empty" style="padding:6px 0">—</div></div>`;
-  }
+  if (list.length === 0) return `<div class="party-drill-section"><div class="party-drill-title">${title}</div><div class="party-empty" style="padding:6px 0">—</div></div>`;
   const sorted = list.slice().sort((a, b) => {
     if (mode === 'fixed') return (b.date_fixed || '').localeCompare(a.date_fixed || '');
     return (a.eta_ecsa || '9999').localeCompare(b.eta_ecsa || '9999');
@@ -6910,10 +6948,24 @@ function renderDrillList(title, list, mode) {
 }
 
 function toggleParticipant(type, name) {
+  if (window.event) window.event.stopPropagation();
   const key = type + ':' + name.toUpperCase();
   if (participantsExpanded.has(key)) participantsExpanded.delete(key);
   else participantsExpanded.add(key);
   renderParticipants();
+}
+
+function renderParticipants() {
+  const ownersBox = document.getElementById('participantsOwners');
+  const chartersBox = document.getElementById('participantsCharterers');
+  const activityBox = document.getElementById('participantsActivity');
+  if (!ownersBox || !chartersBox) return;
+  const mkt = marketMedians(60);
+  const marketRef = document.getElementById('participantsMarket');
+  if (marketRef) marketRef.innerHTML = `Market median: <strong>offer ${fmtParty$(mkt.offer)}</strong> · <strong>bid ${fmtParty$(mkt.bid)}</strong> · <strong>fixed (30d) ${fmtParty$(mkt.fixed)}</strong>`;
+  if (activityBox) activityBox.innerHTML = renderActivityFeed();
+  ownersBox.innerHTML = renderPartyCardList(aggregateOwners(), 'owner', mkt);
+  chartersBox.innerHTML = renderPartyCardList(aggregateCharterers(), 'charterer', mkt);
 }
 
 </script>

@@ -131,6 +131,7 @@
   .status-badge:hover{opacity:.75}
   .status-OPEN{background:var(--green-light);color:var(--green)}
   .status-FIXED{background:var(--blue-light);color:var(--blue)}
+  .status-IN_HOUSE{background:#F2E6FF;color:#6B2DBC}
   .status-FAILED{background:var(--red-light);color:var(--red)}
   .status-WITHDRAWN{background:var(--bg3);color:var(--text-dim)}
 
@@ -306,24 +307,46 @@
   .market-toggle.active.fixtures{background:rgba(24,95,165,0.15);color:rgb(24,95,165);border-color:rgba(24,95,165,0.45)}
 
   /* Participants tab */
-  .party-wrap{padding:18px 28px 24px}
+  .party-wrap{padding:18px 28px 24px;max-width:1500px;margin:0 auto}
   .party-header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:18px}
   .party-header-title{font-size:14px;font-weight:700;color:var(--text-bright)}
   .party-market-ref{font-size:11px;color:var(--text-dim)}
   .party-section{margin-bottom:24px}
-  .party-section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-dim);margin-bottom:8px}
-  .party-table{width:100%;border-collapse:collapse;font-size:12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-  .party-table th{text-align:left;padding:10px 12px;background:var(--bg3);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);border-bottom:1px solid var(--border)}
-  .party-table td{padding:8px 12px;border-bottom:1px solid var(--border)}
-  .party-table th.num,.party-table td.num{text-align:right}
-  .party-table td.mono{font-family:var(--mono)}
-  .party-row{cursor:pointer;transition:background .12s}
-  .party-row:hover{background:var(--bg-hover)}
-  .party-row.expanded{background:var(--bg-hover)}
-  .party-name{font-weight:600;color:var(--text-bright)}
-  .party-ts{font-size:11px;color:var(--text-dim);font-family:var(--mono)}
-  .party-caret{color:var(--text-dim);text-align:center;width:24px}
-  .party-vs{font-size:10px;padding:2px 6px;border-radius:8px;font-weight:500}
+  .party-section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-dim);margin-bottom:8px;display:flex;align-items:baseline;gap:8px}
+  .party-section-hint{font-size:11px;color:var(--text-dim);font-weight:400;text-transform:none;letter-spacing:0;font-style:italic}
+
+  /* Activity feed */
+  .party-activity{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .party-activity-row{display:grid;grid-template-columns:120px 140px 130px 1fr 80px;gap:10px;padding:7px 14px;font-size:12px;border-bottom:1px solid var(--border);align-items:baseline}
+  .party-activity-row:last-child{border-bottom:none}
+  .party-activity-row:hover{background:var(--bg-hover)}
+  .party-activity-ts{font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+  .party-activity-actor{font-weight:600;color:var(--text-bright)}
+  .party-activity-anon{color:var(--text-dim);font-style:italic}
+  .party-activity-action{font-family:var(--mono);font-size:12px;font-weight:600;text-align:right}
+  .party-activity-action.bid{color:rgb(30,135,55)}
+  .party-activity-action.offer{color:rgb(178,40,55)}
+  .party-activity-action.fixed{color:rgb(24,95,165)}
+  .party-activity-action.in-house{color:#6B2DBC}
+  .party-activity-vessel{color:var(--text-bright);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .party-activity-route{font-size:10px;color:var(--text-dim);text-align:right;font-family:var(--mono)}
+
+  /* Card lists */
+  .party-columns{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  .party-column-list{display:flex;flex-direction:column;gap:8px}
+  .party-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;cursor:pointer;transition:border-color .12s, background .12s}
+  .party-card:hover{background:var(--bg-hover);border-color:var(--accent)}
+  .party-card.expanded{background:var(--bg-hover);border-color:var(--accent)}
+  .party-card-head{display:flex;align-items:baseline;gap:10px}
+  .party-card-name{font-size:13px;font-weight:700;color:var(--text-bright)}
+  .party-card-ts{font-size:10px;color:var(--text-dim);font-family:var(--mono)}
+  .party-card-stats{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .party-chip{font-size:11px;color:var(--text-dim);background:var(--bg3);padding:2px 8px;border-radius:10px}
+  .party-chip strong{color:var(--text-bright);font-weight:700}
+  .party-card-drill{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)}
+
+  .party-caret{color:var(--text-dim);font-size:11px}
+  .party-vs{font-size:10px;padding:1px 6px;border-radius:8px;font-weight:600;margin-left:4px}
   .party-vs.high{background:rgba(220,53,69,0.12);color:rgb(178,40,55)}
   .party-vs.low{background:rgba(40,167,69,0.12);color:rgb(30,135,55)}
   .party-vs.flat{background:var(--bg3);color:var(--text-dim)}
@@ -332,17 +355,20 @@
   .party-trend.down{color:rgb(30,135,55)}
   .party-trend.flat{color:var(--text-dim)}
   .party-trend.none{color:var(--text-dim);opacity:.4}
-  .party-empty{font-size:12px;color:var(--text-dim);font-style:italic;padding:14px}
-  .party-detail-row td{background:var(--bg);padding:0;border-bottom:1px solid var(--border)}
-  .party-drill{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:14px 18px}
-  .party-drill-section{}
+  .party-empty{font-size:12px;color:var(--text-dim);font-style:italic;padding:14px;background:var(--bg2);border:1px dashed var(--border);border-radius:var(--radius);text-align:center}
+
+  /* Drill-down inside expanded cards */
+  .party-drill{display:flex;flex-direction:column;gap:12px}
   .party-drill-title{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin-bottom:6px}
-  .party-drill-row{display:flex;gap:10px;align-items:baseline;padding:4px 0;font-size:11px;border-bottom:1px dashed var(--border)}
-  .party-drill-row:last-child{border-bottom:none}
+  .party-drill-row{display:flex;gap:10px;align-items:baseline;padding:3px 0;font-size:11px}
   .party-drill-vessel{font-weight:600;color:var(--text-bright);flex:1}
   .party-drill-specs{font-weight:400;color:var(--text-dim);font-size:10px}
   .party-drill-eta{color:var(--text-dim);font-family:var(--mono);font-size:10px;min-width:60px}
   .party-drill-stat{font-family:var(--mono);font-size:11px;color:var(--text-bright);min-width:140px;text-align:right}
+
+  @media (max-width: 900px) {
+    .party-columns{grid-template-columns:1fr}
+  }
   .report-copy-btn{background:var(--accent);color:#fff;border:none;padding:5px 12px;border-radius:var(--radius-sm);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap}
   .report-copy-btn:hover{background:var(--accent-hover)}
   .report-empty{color:var(--text-dim);font-size:12px;font-style:italic;padding:8px 0}
@@ -416,6 +442,7 @@
     <button class="filter-pill active" data-filter="ALL" onclick="toggleFilter('ALL')">All <span class="filter-count" id="cntAll"></span></button>
     <button class="filter-pill" data-filter="OPEN" onclick="toggleFilter('OPEN')">Open <span class="filter-count" id="cntOpen"></span></button>
     <button class="filter-pill" data-filter="FIXED" onclick="toggleFilter('FIXED')">Fixed <span class="filter-count" id="cntFixed"></span></button>
+    <button class="filter-pill" data-filter="IN HOUSE" onclick="toggleFilter('IN HOUSE')">In House <span class="filter-count" id="cntInHouse"></span></button>
     <button class="filter-pill" data-filter="FAILED" onclick="toggleFilter('FAILED')">Failed <span class="filter-count" id="cntFailed"></span></button>
     <button class="filter-pill" data-filter="WITHDRAWN" onclick="toggleFilter('WITHDRAWN')">Withdrawn <span class="filter-count" id="cntWithdrawn"></span></button>
   </div>
@@ -856,12 +883,21 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
       <button class="report-copy-btn" onclick="renderParticipants()">Refresh</button>
     </div>
     <div class="party-section">
-      <div class="party-section-title">Owners</div>
-      <div id="participantsOwners"></div>
+      <div class="party-section-title">Recent activity <span class="party-section-hint">last 25 bid / offer / fixture events</span></div>
+      <div id="participantsActivity" class="party-activity"></div>
     </div>
     <div class="party-section">
-      <div class="party-section-title">Charterers / Operators</div>
-      <div id="participantsCharterers"></div>
+      <div class="party-section-title">Participants <span class="party-section-hint">sorted by most recent activity · click a card for detail</span></div>
+      <div class="party-columns">
+        <div>
+          <div class="party-section-title" style="margin:0 0 6px;letter-spacing:.4px;font-size:10px">Owners</div>
+          <div id="participantsOwners" class="party-column-list"></div>
+        </div>
+        <div>
+          <div class="party-section-title" style="margin:0 0 6px;letter-spacing:.4px;font-size:10px">Charterers / Operators</div>
+          <div id="participantsCharterers" class="party-column-list"></div>
+        </div>
+      </div>
     </div>
   </div>
 </div><!-- end tab-participants -->
