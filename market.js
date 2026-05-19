@@ -41,6 +41,7 @@ window.switchTab = function(tab) {
   _origSwitchTabMarket(tab);
   if (tab === 'market') {
     populateMarketMonths();
+    populateMarketRoutes();
     updateMarketToggleUI();
     renderMarketChart();
     renderMarketBoxChart();
@@ -67,6 +68,27 @@ function populateMarketMonths() {
 function getMarketFilter() {
   const sel = document.getElementById('marketMonth');
   return sel ? sel.value : 'all';
+}
+
+function getMarketRouteFilter() {
+  const sel = document.getElementById('marketRoute');
+  return sel ? sel.value : 'ECSA FH';
+}
+
+function populateMarketRoutes() {
+  const sel = document.getElementById('marketRoute');
+  if (!sel) return;
+  // Always include the desk's primary routes, plus anything else found in data
+  const baseline = ['ECSA FH', 'ECSA TA', 'USG FH', 'USG TA', 'NCSA FH', 'COAST', 'OTHER'];
+  const fromData = new Set();
+  for (const v of vessels) fromData.add(getEffectiveRoute(v));
+  const all = Array.from(new Set([...baseline, ...fromData])).filter(Boolean);
+  const previous = sel.value || 'ECSA FH';
+  sel.innerHTML = '<option value="all">All routes</option>' +
+    all.map(r => `<option value="${r}">${r}</option>`).join('');
+  // Keep prior selection if still valid; otherwise default to ECSA FH
+  if ([...sel.options].some(o => o.value === previous)) sel.value = previous;
+  else sel.value = 'ECSA FH';
 }
 
 function inMarketWindow(etaIso, mode) {
@@ -111,11 +133,13 @@ function renderMarketCharts() {
 
 function collectMarketPoints() {
   const mode = getMarketFilter();
+  const routeFilter = getMarketRouteFilter();
   const offers = [];
   const bids = [];
   const fixtures = [];
   for (const v of vessels) {
     if (!inMarketWindow(v.eta_ecsa, mode)) continue;
+    if (routeFilter !== 'all' && getEffectiveRoute(v) !== routeFilter) continue;
     const x = new Date(v.eta_ecsa).getTime();
     const p6 = getP6Values(v);
     if (v.status === 'OPEN') {
