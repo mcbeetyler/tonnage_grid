@@ -361,6 +361,35 @@
   @media (max-width: 900px) {
     .party-columns{grid-template-columns:1fr}
   }
+
+  /* ─── Mobile / narrow viewport adjustments ─────────────────────────────── */
+  @media (max-width: 820px) {
+    .report-wrap{flex-direction:column;padding:14px 14px;gap:16px}
+    .report-sidebar{width:100%;position:static;max-height:none;overflow:visible}
+    .report-window-body{grid-template-columns:1fr;gap:12px}
+    .report-controls{flex-wrap:wrap}
+    .report-card{flex-wrap:wrap;padding:8px 12px}
+    .report-chips{flex-basis:100%;white-space:normal;overflow:visible;text-overflow:clip}
+    .p6-index-panel{margin-bottom:0}
+
+    .market-charts{padding:10px 12px 16px;gap:12px}
+    .market-chart-card{height:auto;min-height:380px;padding:10px}
+
+    .table-wrapper{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+    .tab-bar{overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+    .tab-btn{padding:10px 14px;font-size:12px}
+
+    .header{padding:12px 14px}
+    .header-top{flex-wrap:wrap;gap:8px}
+
+    .party-wrap{padding:14px 14px}
+    .party-activity-row{grid-template-columns:80px 1fr 1fr;gap:6px;font-size:11px}
+    .party-activity-route{display:none}
+    .party-activity-vessel{grid-column:1 / -1}
+
+    .chat-box{width:100vw;max-height:100vh;height:100vh;border-radius:0}
+  }
   .report-copy-btn{background:var(--accent);color:#fff;border:none;padding:5px 12px;border-radius:var(--radius-sm);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap}
   .report-copy-btn:hover{background:var(--accent-hover)}
   .report-empty{color:var(--text-dim);font-size:12px;font-style:italic;padding:8px 0}
