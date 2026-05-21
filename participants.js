@@ -92,37 +92,95 @@ function aggregateOwners() {
   });
 }
 
+// Collect every fixture event we know about, source-of-truth being price_history
+// (which preserves the original counterparty even if the vessel has since been
+// relet / re-owned). For vessels with no history yet, fall back to current state.
+function collectFixtureEvents() {
+  const events = [];
+  for (const v of vessels) {
+    const histFix = (v.price_history || []).filter(h => h.field === 'fixed_price' || h.field === 'in_house');
+    for (const h of histFix) {
+      events.push({
+        vessel: v,
+        charterer: h.counterparty || (h.field === 'in_house' ? v.owner : null),
+        price: h.value,
+        date: h.t,            // ISO timestamp
+        dateOnly: h.t ? h.t.slice(0, 10) : null,
+        type: h.field,
+        fromHistory: true,
+      });
+    }
+    // Fallback for vessels without logged history but a current FIXED/IN HOUSE state
+    if (v.status === 'FIXED' && v.fixed_price != null && v.date_fixed) {
+      const already = histFix.some(h => h.field === 'fixed_price');
+      if (!already) {
+        events.push({
+          vessel: v,
+          charterer: v.charterer || null,
+          price: v.fixed_price,
+          date: v.date_fixed + 'T12:00:00',
+          dateOnly: v.date_fixed,
+          type: 'fixed_price',
+          fromHistory: false,
+        });
+      }
+    }
+    if (v.status === 'IN HOUSE' && v.date_fixed) {
+      const already = histFix.some(h => h.field === 'in_house');
+      if (!already) {
+        events.push({
+          vessel: v,
+          charterer: v.owner || null,
+          price: v.fixed_price,
+          date: v.date_fixed + 'T12:00:00',
+          dateOnly: v.date_fixed,
+          type: 'in_house',
+          fromHistory: false,
+        });
+      }
+    }
+  }
+  return events;
+}
+
 function aggregateCharterers() {
   const map = new Map();
+
+  // Open-bid side from currently OPEN vessels
   for (const v of vessels) {
     if (v.status !== 'OPEN') continue;
     const name = normalizeParty(v.bidding_charterer);
     if (!name) continue;
     const key = name.toUpperCase();
-    if (!map.has(key)) map.set(key, { name, bidding: [], fixed30: [], fixedAll: [] });
+    if (!map.has(key)) map.set(key, { name, bidding: [], fix30Events: [], fixAllEvents: [] });
     map.get(key).bidding.push(v);
   }
-  for (const v of vessels) {
-    if (v.status !== 'FIXED') continue;
-    const name = normalizeParty(v.charterer);
+
+  // Fixture side from price_history (with current-state fallback)
+  const events = collectFixtureEvents();
+  for (const evt of events) {
+    const name = normalizeParty(evt.charterer);
     if (!name) continue;
     const key = name.toUpperCase();
-    if (!map.has(key)) map.set(key, { name, bidding: [], fixed30: [], fixedAll: [] });
-    if (isWithinDays(v.date_fixed, 30)) map.get(key).fixed30.push(v);
-    map.get(key).fixedAll.push(v);
+    if (!map.has(key)) map.set(key, { name, bidding: [], fix30Events: [], fixAllEvents: [] });
+    map.get(key).fixAllEvents.push(evt);
+    if (isWithinDays(evt.dateOnly, 30)) map.get(key).fix30Events.push(evt);
   }
+
   return [...map.values()].map(g => {
+    const uniqVessels = arr => [...new Set(arr.map(e => e.vessel))];
     const lastBid = g.bidding.map(v => v.last_updated || '').sort().pop() || null;
-    const lastFix = g.fixedAll.map(v => v.last_updated || '').sort().pop() || null;
+    const lastFix = g.fixAllEvents.map(e => e.date || '').sort().pop() || null;
     return {
       name: g.name,
       bidCount: g.bidding.length,
-      fixedCount30: g.fixed30.length,
+      fixedCount30: g.fix30Events.length,
       bidMedian: median(g.bidding.map(v => getP6Values(v).bid).filter(x => x != null)),
-      fixedMedian: median(g.fixed30.map(v => v.fixed_price).filter(x => x != null)),
+      fixedMedian: median(g.fix30Events.map(e => e.price).filter(x => x != null)),
       lastActivity: [lastBid, lastFix].filter(Boolean).sort().pop() || null,
       bidding: g.bidding,
-      fixed: g.fixedAll,
+      fixed: uniqVessels(g.fixAllEvents),
+      fixedEvents: g.fixAllEvents,
       trend: partyTrend(g.name, 'p6_bid'),
     };
   });
@@ -262,11 +320,34 @@ function renderOwnerDrill(r) {
 }
 
 function renderChartererDrill(r) {
-  const recentFixed = r.fixed.filter(v => isWithinDays(v.date_fixed, 60));
+  const recentEvents = (r.fixedEvents || []).filter(e => isWithinDays(e.dateOnly, 60));
   return `<div class="party-drill">
     ${renderDrillList('Bidding on ' + r.bidding.length, r.bidding, 'bidding')}
-    ${renderDrillList('Fixed (last 60d) ' + recentFixed.length, recentFixed, 'fixed')}
+    ${renderFixtureEventList('Fixed (last 60d) ' + recentEvents.length, recentEvents)}
   </div>`;
+}
+
+function renderFixtureEventList(title, events) {
+  if (events.length === 0) {
+    return `<div class="party-drill-section"><div class="party-drill-title">${title}</div><div class="party-empty" style="padding:6px 0">—</div></div>`;
+  }
+  const sorted = events.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  let html = `<div class="party-drill-section"><div class="party-drill-title">${title}</div>`;
+  sorted.forEach(e => {
+    const v = e.vessel;
+    const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
+    const eta = v.eta_ecsa ? fmtDateReport(v.eta_ecsa) : '';
+    const dateFixed = e.dateOnly ? fmtDateReport(e.dateOnly) : '';
+    const tag = e.type === 'in_house' ? ' (in house)' : '';
+    const isStale = v.status === 'OPEN'; // vessel has since been relet
+    const staleTag = isStale ? ' <span class="party-drill-stale" title="Vessel has been relet since this fixture">↺ relet</span>' : '';
+    html += `<div class="party-drill-row">
+      <span class="party-drill-vessel">${v.vessel_name || '?'} <span class="party-drill-specs">${specs}</span>${staleTag}</span>
+      ${eta ? `<span class="party-drill-eta">ETA ${eta}</span>` : ''}
+      <span class="party-drill-stat">${fmtParty$(e.price)} · fixed ${dateFixed}${tag}</span>
+    </div>`;
+  });
+  return html + '</div>';
 }
 
 function renderDrillList(title, list, mode) {
