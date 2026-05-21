@@ -328,6 +328,13 @@
   .party-activity-action.in-house{color:#6B2DBC}
   .party-activity-vessel{color:var(--text-bright);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .party-activity-route{font-size:10px;color:var(--text-dim);text-align:right;font-family:var(--mono)}
+  .party-activity-owner{font-size:10px;color:var(--text-dim);font-weight:500}
+  .party-activity-delta{font-size:10px;padding:1px 6px;border-radius:8px;font-weight:600;margin-left:4px;font-family:var(--mono)}
+  .party-activity-delta.delta-up{background:rgba(220,53,69,0.12);color:rgb(178,40,55)}
+  .party-activity-delta.delta-down{background:rgba(40,167,69,0.12);color:rgb(30,135,55)}
+  .party-show-row{padding:8px 14px;text-align:center;border-top:1px solid var(--border);background:var(--bg3)}
+  .party-show-toggle{background:transparent;border:none;color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;padding:4px 12px;border-radius:var(--radius-sm)}
+  .party-show-toggle:hover{background:rgba(24,95,165,0.08)}
   .party-columns{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
   .party-column-list{display:flex;flex-direction:column;gap:8px}
   .party-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;cursor:pointer;transition:border-color .12s, background .12s}
@@ -6723,6 +6730,15 @@ window.switchTab = function(tab) {
 };
 
 let participantsExpanded = new Set();
+let activityShowAll = false;
+let ownersShowAll = false;
+let charterersShowAll = false;
+const ACTIVITY_DEFAULT = 10;
+const PARTY_DEFAULT = 15;
+
+function toggleActivityExpand() { activityShowAll = !activityShowAll; renderParticipants(); }
+function toggleOwnersExpand() { ownersShowAll = !ownersShowAll; renderParticipants(); }
+function toggleCharterersExpand() { charterersShowAll = !charterersShowAll; renderParticipants(); }
 
 function normalizeParty(s) {
   if (!s) return null;
@@ -6875,26 +6891,53 @@ function aggregateCharterers() {
 
 function byRecent(a, b) { return (b.lastActivity || '').localeCompare(a.lastActivity || ''); }
 
-function buildActivityFeed(limit = 25) {
+function buildActivityFeed(limit) {
   const events = [];
   for (const v of vessels) {
-    for (const h of (v.price_history || [])) {
+    const hist = (v.price_history || []).slice();
+    for (let i = 0; i < hist.length; i++) {
+      const h = hist[i];
       let type = 'edit';
       if (h.field === 'p6_bid') type = 'bid';
       else if (h.field === 'p6_offer') type = 'offer';
       else if (h.field === 'fixed_price') type = 'fixed';
       else if (h.field === 'in_house') type = 'in_house';
-      events.push({ t: h.t, type, vessel: v, actor: normalizeParty(h.counterparty), value: h.value, route: getEffectiveRoute(v) });
+      let prev = null;
+      for (let j = i - 1; j >= 0; j--) { if (hist[j].field === h.field) { prev = hist[j]; break; } }
+      const delta = (prev && h.value != null && prev.value != null) ? (h.value - prev.value) : null;
+      events.push({
+        t: h.t, type, vessel: v,
+        actor: normalizeParty(h.counterparty),
+        owner: normalizeParty(v.owner),
+        value: h.value, delta,
+        route: getEffectiveRoute(v),
+      });
+    }
+    if (hist.length === 0 || !hist.some(h => h.field === 'fixed_price' || h.field === 'in_house')) {
+      if (v.status === 'FIXED' && v.fixed_price != null && v.date_fixed) {
+        events.push({
+          t: v.date_fixed + 'T12:00:00', type: 'fixed', vessel: v,
+          actor: normalizeParty(v.charterer), owner: normalizeParty(v.owner),
+          value: v.fixed_price, delta: null, route: getEffectiveRoute(v),
+        });
+      } else if (v.status === 'IN HOUSE' && v.date_fixed) {
+        events.push({
+          t: v.date_fixed + 'T12:00:00', type: 'in_house', vessel: v,
+          actor: normalizeParty(v.owner), owner: normalizeParty(v.owner),
+          value: v.fixed_price, delta: null, route: getEffectiveRoute(v),
+        });
+      }
     }
   }
   events.sort((a, b) => (b.t || '').localeCompare(a.t || ''));
-  return events.slice(0, limit);
+  return limit ? events.slice(0, limit) : events;
 }
 
 function renderActivityFeed() {
-  const events = buildActivityFeed(25);
-  if (events.length === 0) return `<div class="party-empty">No recent activity logged yet. Activity appears here as you edit bids, offers, and fixtures.</div>`;
-  return events.map(e => {
+  const all = buildActivityFeed();
+  if (all.length === 0) return `<div class="party-empty">No recent activity logged yet. Activity appears here as you edit bids, offers, and fixtures.</div>`;
+  const shown = activityShowAll ? all : all.slice(0, ACTIVITY_DEFAULT);
+  const rowsHtml = shown.map(e => {
     const v = e.vessel;
     const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
     const ts = fmtPartyTs(e.t);
@@ -6904,14 +6947,29 @@ function renderActivityFeed() {
     else if (e.type === 'offer')    { actionCls += ' offer';    actionText = `offer ${fmtParty$(e.value)}`; }
     else if (e.type === 'fixed')    { actionCls += ' fixed';    actionText = `FIXED ${fmtParty$(e.value)}`; }
     else if (e.type === 'in_house') { actionCls += ' in-house'; actionText = `IN HOUSE${e.value != null ? ' ' + fmtParty$(e.value) : ''}`; }
+    let deltaHtml = '';
+    if (e.delta != null && e.delta !== 0) {
+      const isTighter = (e.type === 'bid' && e.delta > 0) || (e.type === 'offer' && e.delta < 0);
+      const cls = isTighter ? 'delta-up' : 'delta-down';
+      const sign = e.delta > 0 ? '+' : '';
+      deltaHtml = ` <span class="party-activity-delta ${cls}">${sign}$${Math.abs(e.delta).toLocaleString()}</span>`;
+    }
+    const ownerSuffix = e.owner ? ` <span class="party-activity-owner">· ${e.owner}</span>` : '';
     return `<div class="party-activity-row">
       <span class="party-activity-ts">${ts}</span>
       ${actor}
-      <span class="${actionCls}">${actionText}</span>
-      <span class="party-activity-vessel">${v.vessel_name || '?'} <span class="party-drill-specs">${specs}</span></span>
+      <span class="${actionCls}">${actionText}${deltaHtml}</span>
+      <span class="party-activity-vessel">${v.vessel_name || '?'} <span class="party-drill-specs">${specs}</span>${ownerSuffix}</span>
       <span class="party-activity-route">${e.route || ''}</span>
     </div>`;
   }).join('');
+  let toggle = '';
+  if (all.length > ACTIVITY_DEFAULT) {
+    toggle = activityShowAll
+      ? `<button class="party-show-toggle" onclick="toggleActivityExpand()">Show less</button>`
+      : `<button class="party-show-toggle" onclick="toggleActivityExpand()">Show all ${all.length} events</button>`;
+  }
+  return rowsHtml + (toggle ? `<div class="party-show-row">${toggle}</div>` : '');
 }
 
 function fmtParty$(n) { return n == null ? '—' : '$' + Math.round(n).toLocaleString(); }
@@ -6964,7 +7022,18 @@ function renderPartyCard(r, type, mkt) {
 
 function renderPartyCardList(rows, type, mkt) {
   if (rows.length === 0) return `<div class="party-empty">No ${type === 'owner' ? 'owners' : 'charterers'} with identifiable names yet.</div>`;
-  return rows.sort(byRecent).map(r => renderPartyCard(r, type, mkt)).join('');
+  const sorted = rows.slice().sort(byRecent);
+  const showAll = type === 'owner' ? ownersShowAll : charterersShowAll;
+  const shown = showAll ? sorted : sorted.slice(0, PARTY_DEFAULT);
+  const cards = shown.map(r => renderPartyCard(r, type, mkt)).join('');
+  let toggle = '';
+  if (sorted.length > PARTY_DEFAULT) {
+    const fn = type === 'owner' ? 'toggleOwnersExpand' : 'toggleCharterersExpand';
+    toggle = showAll
+      ? `<button class="party-show-toggle" onclick="${fn}()">Show top ${PARTY_DEFAULT}</button>`
+      : `<button class="party-show-toggle" onclick="${fn}()">Show all ${sorted.length}</button>`;
+  }
+  return cards + (toggle ? `<div class="party-show-row">${toggle}</div>` : '');
 }
 
 function renderOwnerDrill(r) {

@@ -13,6 +13,25 @@ window.switchTab = function(tab) {
 };
 
 let participantsExpanded = new Set();
+let activityShowAll = false;
+let ownersShowAll = false;
+let charterersShowAll = false;
+
+const ACTIVITY_DEFAULT = 10;
+const PARTY_DEFAULT = 15;
+
+function toggleActivityExpand() {
+  activityShowAll = !activityShowAll;
+  renderParticipants();
+}
+function toggleOwnersExpand() {
+  ownersShowAll = !ownersShowAll;
+  renderParticipants();
+}
+function toggleCharterersExpand() {
+  charterersShowAll = !charterersShowAll;
+  renderParticipants();
+}
 
 function normalizeParty(s) {
   if (!s) return null;
@@ -191,35 +210,73 @@ function byRecent(a, b) { return (b.lastActivity || '').localeCompare(a.lastActi
 
 // ─── Recent activity feed ────────────────────────────────────────────────────
 
-function buildActivityFeed(limit = 25) {
+function buildActivityFeed(limit) {
   const events = [];
   for (const v of vessels) {
-    for (const h of (v.price_history || [])) {
+    const hist = (v.price_history || []).slice();
+    // Walk in order so we can compute delta from previous same-field entry
+    for (let i = 0; i < hist.length; i++) {
+      const h = hist[i];
       let type = 'edit';
       if (h.field === 'p6_bid') type = 'bid';
       else if (h.field === 'p6_offer') type = 'offer';
       else if (h.field === 'fixed_price') type = 'fixed';
       else if (h.field === 'in_house') type = 'in_house';
+      // Find previous same-field entry to compute delta
+      let prev = null;
+      for (let j = i - 1; j >= 0; j--) {
+        if (hist[j].field === h.field) { prev = hist[j]; break; }
+      }
+      const delta = (prev && h.value != null && prev.value != null) ? (h.value - prev.value) : null;
       events.push({
         t: h.t,
         type,
         vessel: v,
         actor: normalizeParty(h.counterparty),
+        owner: normalizeParty(v.owner),
         value: h.value,
+        delta,
         route: typeof getEffectiveRoute === 'function' ? getEffectiveRoute(v) : null,
       });
     }
+    // Fallback: legacy vessels that were FIXED / IN HOUSE before logging existed
+    if (hist.length === 0 || !hist.some(h => h.field === 'fixed_price' || h.field === 'in_house')) {
+      if (v.status === 'FIXED' && v.fixed_price != null && v.date_fixed) {
+        events.push({
+          t: v.date_fixed + 'T12:00:00',
+          type: 'fixed',
+          vessel: v,
+          actor: normalizeParty(v.charterer),
+          owner: normalizeParty(v.owner),
+          value: v.fixed_price,
+          delta: null,
+          route: typeof getEffectiveRoute === 'function' ? getEffectiveRoute(v) : null,
+        });
+      } else if (v.status === 'IN HOUSE' && v.date_fixed) {
+        events.push({
+          t: v.date_fixed + 'T12:00:00',
+          type: 'in_house',
+          vessel: v,
+          actor: normalizeParty(v.owner),
+          owner: normalizeParty(v.owner),
+          value: v.fixed_price,
+          delta: null,
+          route: typeof getEffectiveRoute === 'function' ? getEffectiveRoute(v) : null,
+        });
+      }
+    }
   }
   events.sort((a, b) => (b.t || '').localeCompare(a.t || ''));
-  return events.slice(0, limit);
+  return limit ? events.slice(0, limit) : events;
 }
 
 function renderActivityFeed() {
-  const events = buildActivityFeed(25);
-  if (events.length === 0) {
+  const all = buildActivityFeed();
+  if (all.length === 0) {
     return `<div class="party-empty">No recent activity logged yet. Activity appears here as you edit bids, offers, and fixtures.</div>`;
   }
-  return events.map(e => {
+  const shown = activityShowAll ? all : all.slice(0, ACTIVITY_DEFAULT);
+  const rowsHtml = shown.map(e => {
     const v = e.vessel;
     const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
     const ts = fmtPartyTs(e.t);
@@ -232,14 +289,35 @@ function renderActivityFeed() {
     else if (e.type === 'offer')    { actionCls += ' offer';    actionText = `offer ${fmtParty$(e.value)}`; }
     else if (e.type === 'fixed')    { actionCls += ' fixed';    actionText = `FIXED ${fmtParty$(e.value)}`; }
     else if (e.type === 'in_house') { actionCls += ' in-house'; actionText = `IN HOUSE${e.value != null ? ' ' + fmtParty$(e.value) : ''}`; }
+    // Delta indicator: red if up (more aggressive offer / higher bid), green if discount
+    let deltaHtml = '';
+    if (e.delta != null && e.delta !== 0) {
+      // For bids/offers: a DECREASE in offer = discount (green); INCREASE in bid = aggressive buyer (red)
+      // Keep it intuitive: the sign of the change with $ formatting, color by whether it's pricing tighter (red) or softer (green)
+      const isBidUp = e.type === 'bid' && e.delta > 0;
+      const isOfferDown = e.type === 'offer' && e.delta < 0;
+      const isTighter = isBidUp || isOfferDown; // market moving up / counterparty getting more aggressive
+      const cls = isTighter ? 'delta-up' : 'delta-down';
+      const sign = e.delta > 0 ? '+' : '';
+      deltaHtml = ` <span class="party-activity-delta ${cls}">${sign}$${Math.abs(e.delta).toLocaleString()}</span>`;
+    }
+    const ownerSuffix = e.owner ? ` <span class="party-activity-owner">· ${e.owner}</span>` : '';
     return `<div class="party-activity-row">
       <span class="party-activity-ts">${ts}</span>
       ${actor}
-      <span class="${actionCls}">${actionText}</span>
-      <span class="party-activity-vessel">${v.vessel_name || '?'} <span class="party-drill-specs">${specs}</span></span>
+      <span class="${actionCls}">${actionText}${deltaHtml}</span>
+      <span class="party-activity-vessel">${v.vessel_name || '?'} <span class="party-drill-specs">${specs}</span>${ownerSuffix}</span>
       <span class="party-activity-route">${e.route || ''}</span>
     </div>`;
   }).join('');
+  const hidden = all.length - shown.length;
+  let toggle = '';
+  if (all.length > ACTIVITY_DEFAULT) {
+    toggle = activityShowAll
+      ? `<button class="party-show-toggle" onclick="toggleActivityExpand()">Show less</button>`
+      : `<button class="party-show-toggle" onclick="toggleActivityExpand()">Show all ${all.length} events</button>`;
+  }
+  return rowsHtml + (toggle ? `<div class="party-show-row">${toggle}</div>` : '');
 }
 
 // ─── Cards ───────────────────────────────────────────────────────────────────
@@ -305,7 +383,18 @@ function renderPartyCardList(rows, type, mkt) {
   if (rows.length === 0) {
     return `<div class="party-empty">No ${type === 'owner' ? 'owners' : 'charterers'} with identifiable names yet.</div>`;
   }
-  return rows.sort(byRecent).map(r => renderPartyCard(r, type, mkt)).join('');
+  const sorted = rows.slice().sort(byRecent);
+  const showAll = type === 'owner' ? ownersShowAll : charterersShowAll;
+  const shown = showAll ? sorted : sorted.slice(0, PARTY_DEFAULT);
+  const cards = shown.map(r => renderPartyCard(r, type, mkt)).join('');
+  let toggle = '';
+  if (sorted.length > PARTY_DEFAULT) {
+    const fn = type === 'owner' ? 'toggleOwnersExpand' : 'toggleCharterersExpand';
+    toggle = showAll
+      ? `<button class="party-show-toggle" onclick="${fn}()">Show top ${PARTY_DEFAULT}</button>`
+      : `<button class="party-show-toggle" onclick="${fn}()">Show all ${sorted.length}</button>`;
+  }
+  return cards + (toggle ? `<div class="party-show-row">${toggle}</div>` : '');
 }
 
 // ─── Drill-downs ────────────────────────────────────────────────────────────
