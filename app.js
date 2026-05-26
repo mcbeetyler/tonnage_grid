@@ -1463,6 +1463,30 @@ function cycleStatus(idx) {
   save(); renderTable(); updateStats();
 }
 
+// Copy a single vessel's details to the clipboard in WhatsApp format,
+// picking the right shape based on its current status.
+function copyVesselRow(idx) {
+  const v = vessels[idx];
+  if (!v) return;
+  let text;
+  if (v.status === 'FIXED' || v.status === 'IN HOUSE') {
+    text = (typeof fixtureToWhatsApp === 'function')
+      ? fixtureToWhatsApp(v)
+      : (v.vessel_name || '?') + ' — FIXED ' + (v.fixed_price ? '$' + v.fixed_price.toLocaleString() : '');
+  } else {
+    const p6 = getP6Values(v);
+    const type = (p6.offer != null) ? 'offer' : 'bid';
+    text = (typeof vesselToWhatsApp === 'function')
+      ? vesselToWhatsApp(v, type)
+      : (v.vessel_name || '?');
+  }
+  if (typeof copyToClipboard === 'function') {
+    copyToClipboard(text);
+  } else {
+    navigator.clipboard.writeText(text).catch(() => {});
+  }
+}
+
 function removeVessel(idx) {
   if (!confirm(`Remove ${vessels[idx].vessel_name}?`)) return;
   vessels.splice(idx, 1);
@@ -1610,7 +1634,7 @@ function renderTable() {
       case 'last_updated': return `<td class="td-source">${fmtTimestamp(v.last_updated)}</td>`;
       case 'notes': return `<td class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>`;
       case 'status': return `<td><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>`;
-      case 'actions': return `<td><button class="btn-remove" onclick="removeVessel(${gi})">x</button></td>`;
+      case 'actions': return `<td class="td-actions"><button class="btn-copy-row" onclick="copyVesselRow(${gi})" title="Copy vessel details">⧉</button><button class="btn-remove" onclick="removeVessel(${gi})" title="Remove">x</button></td>`;
       // New CSV columns
       case 'draft': return `<td class="td-specs editable" onclick="startEdit(this,${gi},'draft',true)">${v.draft != null ? v.draft : '—'}</td>`;
       case 'yard': return `<td class="td-source editable" onclick="startEdit(this,${gi},'yard',false)">${v.yard || '—'}</td>`;
