@@ -27,6 +27,10 @@
   .header{background:var(--bg2);border-bottom:1px solid var(--border);padding:20px 28px 16px}
   .header-top{display:flex;align-items:center;gap:20px;margin-bottom:16px}
   .header-title{font-weight:700;font-size:18px;color:var(--text-bright);letter-spacing:-.4px}
+  .world-clocks{display:flex;gap:8px;margin:0 auto}
+  .world-clock{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;min-width:72px;text-align:center;line-height:1.1}
+  .world-clock-label{font-size:10px;color:var(--text-dim);letter-spacing:.6px;font-weight:600;margin-bottom:2px}
+  .world-clock-time{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text-bright)}
   .header-subtitle{font-size:12px;color:var(--text-dim);font-weight:400}
   .header-stats{display:flex;gap:12px;margin-bottom:16px}
   .stat{padding:12px 20px;background:var(--bg3);border-radius:var(--radius);border:1px solid var(--border);min-width:100px}
@@ -406,6 +410,9 @@
     /* Header padding tighter */
     .header{padding:12px 14px}
     .header-top{flex-wrap:wrap;gap:8px}
+    .world-clocks{order:3;flex-basis:100%;justify-content:flex-start;margin:4px 0 0}
+    .world-clock{min-width:60px;padding:3px 6px}
+    .world-clock-time{font-size:12px}
 
     /* Participants */
     .party-wrap{padding:14px 14px}
@@ -474,6 +481,12 @@
     <div>
       <div class="header-title">Panamax Tonnage Tracker</div>
       <div class="header-subtitle">Arrow Shipbroking — Geneva Atlantic Desk</div>
+    </div>
+    <div class="world-clocks" id="worldClocks">
+      <div class="world-clock"><div class="world-clock-label">NY</div><div class="world-clock-time" id="clock-NY">—</div></div>
+      <div class="world-clock"><div class="world-clock-label">LON</div><div class="world-clock-time" id="clock-LON">—</div></div>
+      <div class="world-clock"><div class="world-clock-label">DXB</div><div class="world-clock-time" id="clock-DXB">—</div></div>
+      <div class="world-clock"><div class="world-clock-label">SG</div><div class="world-clock-time" id="clock-SG">—</div></div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <button id="askBoardBtn" onclick="openChat()" style="font-size:11px;padding:6px 12px;border-radius:var(--radius-sm);background:var(--accent);color:#fff;border:none;font-weight:600;cursor:pointer">Ask the board</button>

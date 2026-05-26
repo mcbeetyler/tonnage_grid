@@ -42,6 +42,28 @@ if (oldVisible && !localStorage.getItem('pt_col_order')) {
 let _saveTimer = null;
 let lastSyncStatus = null; // 'ok', 'error', 'pending'
 
+// ─── World clocks ────────────────────────────────────────────────────────────
+const WORLD_CLOCKS = [
+  { label: 'NY',  tz: 'America/New_York' },
+  { label: 'LON', tz: 'Europe/London' },
+  { label: 'DXB', tz: 'Asia/Dubai' },
+  { label: 'SG',  tz: 'Asia/Singapore' },
+];
+function updateWorldClocks() {
+  const now = new Date();
+  for (const { label, tz } of WORLD_CLOCKS) {
+    const el = document.getElementById('clock-' + label);
+    if (!el) continue;
+    try {
+      el.textContent = new Intl.DateTimeFormat('en-GB', {
+        timeZone: tz, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+      }).format(now);
+    } catch { /* unsupported timezone */ }
+  }
+}
+setInterval(updateWorldClocks, 1000);
+document.addEventListener('DOMContentLoaded', updateWorldClocks);
+
 function updateSyncBadge(status, detail) {
   lastSyncStatus = status;
   const badge = document.getElementById('syncBadge');
