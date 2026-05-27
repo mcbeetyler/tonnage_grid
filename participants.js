@@ -111,50 +111,58 @@ function aggregateOwners() {
   });
 }
 
-// Collect every fixture event we know about, source-of-truth being price_history
-// (which preserves the original counterparty even if the vessel has since been
-// relet / re-owned). For vessels with no history yet, fall back to current state.
+// Collect every fixture event we know about, source-of-truth being price_history.
+// A vessel can only be fixed once per "cycle" (cycles are bounded by relet
+// events). So within each cycle we keep ONLY the most recent fixed_price /
+// in_house entry — typo corrections to the same fixture don't double-count.
 function collectFixtureEvents() {
   const events = [];
   for (const v of vessels) {
-    const histFix = (v.price_history || []).filter(h => h.field === 'fixed_price' || h.field === 'in_house');
-    for (const h of histFix) {
-      events.push({
-        vessel: v,
-        charterer: h.counterparty || (h.field === 'in_house' ? v.owner : null),
-        price: h.value,
-        date: h.t,            // ISO timestamp
-        dateOnly: h.t ? h.t.slice(0, 10) : null,
-        type: h.field,
-        fromHistory: true,
-      });
+    const hist = (v.price_history || []).slice().sort((a, b) => (a.t || '').localeCompare(b.t || ''));
+
+    // Segment history by relet events; within each segment a fixture appears
+    // at most once (later entries overwrite earlier — i.e. typo corrections).
+    const segments = [[]];
+    for (const h of hist) {
+      if (h.field === 'relet') segments.push([]);
+      else segments[segments.length - 1].push(h);
     }
-    // Fallback for vessels without logged history but a current FIXED/IN HOUSE state
-    if (v.status === 'FIXED' && v.fixed_price != null && v.date_fixed) {
-      const already = histFix.some(h => h.field === 'fixed_price');
-      if (!already) {
+    for (const seg of segments) {
+      const latest = {}; // field -> entry
+      for (const h of seg) {
+        if (h.field !== 'fixed_price' && h.field !== 'in_house') continue;
+        const cur = latest[h.field];
+        if (!cur || (h.t || '') > (cur.t || '')) latest[h.field] = h;
+      }
+      for (const field of Object.keys(latest)) {
+        const h = latest[field];
         events.push({
           vessel: v,
-          charterer: v.charterer || null,
-          price: v.fixed_price,
-          date: v.date_fixed + 'T12:00:00',
-          dateOnly: v.date_fixed,
-          type: 'fixed_price',
-          fromHistory: false,
+          charterer: h.counterparty || (h.field === 'in_house' ? v.owner : null),
+          price: h.value,
+          date: h.t,
+          dateOnly: h.t ? h.t.slice(0, 10) : null,
+          type: h.field,
+          fromHistory: true,
         });
       }
     }
-    if (v.status === 'IN HOUSE' && v.date_fixed) {
-      const already = histFix.some(h => h.field === 'in_house');
-      if (!already) {
+
+    // Fallback for vessels with no logged fixture history but a current
+    // FIXED / IN HOUSE state.
+    const histHasFix = hist.some(h => h.field === 'fixed_price' || h.field === 'in_house');
+    if (!histHasFix) {
+      if (v.status === 'FIXED' && v.fixed_price != null && v.date_fixed) {
         events.push({
-          vessel: v,
-          charterer: v.owner || null,
-          price: v.fixed_price,
-          date: v.date_fixed + 'T12:00:00',
-          dateOnly: v.date_fixed,
-          type: 'in_house',
-          fromHistory: false,
+          vessel: v, charterer: v.charterer || null, price: v.fixed_price,
+          date: v.date_fixed + 'T12:00:00', dateOnly: v.date_fixed,
+          type: 'fixed_price', fromHistory: false,
+        });
+      } else if (v.status === 'IN HOUSE' && v.date_fixed) {
+        events.push({
+          vessel: v, charterer: v.owner || null, price: v.fixed_price,
+          date: v.date_fixed + 'T12:00:00', dateOnly: v.date_fixed,
+          type: 'in_house', fromHistory: false,
         });
       }
     }
@@ -213,10 +221,29 @@ function byRecent(a, b) { return (b.lastActivity || '').localeCompare(a.lastActi
 function buildActivityFeed(limit) {
   const events = [];
   for (const v of vessels) {
-    const hist = (v.price_history || []).slice();
-    // Walk in order so we can compute delta from previous same-field entry
+    const hist = (v.price_history || []).slice().sort((a, b) => (a.t || '').localeCompare(b.t || ''));
+
+    // Pre-compute which fixture/in-house entries should be kept (one per cycle —
+    // typo corrections get suppressed). Cycles are bounded by relet events.
+    const fixtureKeep = new Set();
+    let segLatestFix = null;
+    let segLatestInHouse = null;
+    const flush = () => {
+      if (segLatestFix) fixtureKeep.add(segLatestFix);
+      if (segLatestInHouse) fixtureKeep.add(segLatestInHouse);
+      segLatestFix = null; segLatestInHouse = null;
+    };
+    for (const h of hist) {
+      if (h.field === 'relet') { flush(); }
+      else if (h.field === 'fixed_price') segLatestFix = h;
+      else if (h.field === 'in_house') segLatestInHouse = h;
+    }
+    flush();
+
     for (let i = 0; i < hist.length; i++) {
       const h = hist[i];
+      // Skip superseded fixture entries (the typo corrections we want hidden)
+      if ((h.field === 'fixed_price' || h.field === 'in_house') && !fixtureKeep.has(h)) continue;
       let type = 'edit';
       if (h.field === 'p6_bid') type = 'bid';
       else if (h.field === 'p6_offer') type = 'offer';
