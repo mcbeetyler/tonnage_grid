@@ -158,6 +158,9 @@
   .btn-remove:hover{border-color:var(--red);color:var(--red);background:var(--red-light)}
   .btn-copy-row{background:none;border:1px solid var(--border);color:var(--text-dim);padding:4px 8px;font-size:12px;border-radius:var(--radius-sm);cursor:pointer;margin-right:4px;line-height:1}
   .btn-copy-row:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light)}
+  .btn-relet{background:#FFF3D1;border:1px solid #E5C97D;color:#8A6300;padding:4px 8px;font-size:12px;font-weight:700;border-radius:var(--radius-sm);cursor:pointer;margin-right:4px;line-height:1}
+  .btn-relet:hover{background:#F8E199}
+  .party-activity-action.relet{color:#8A6300}
   .td-actions{white-space:nowrap}
 
   /* Mode toggle */
@@ -3842,6 +3845,58 @@ function cycleStatus(idx) {
   save(); renderTable(); updateStats();
 }
 
+function reletVessel(idx) {
+  const v = vessels[idx];
+  if (!v) return;
+  if (v.status !== 'FIXED' && v.status !== 'IN HOUSE') {
+    alert('Relet only applies to fixed / in-house vessels.');
+    return;
+  }
+  const suggested = v.charterer || v.owner || '';
+  const newOwner = prompt(`Relet ${v.vessel_name} back to market.\n\nNew disponent owner (typically the previous charterer):`, suggested);
+  if (newOwner === null) return;
+
+  const hist = v.price_history || [];
+  const priorField = v.status === 'IN HOUSE' ? 'in_house' : 'fixed_price';
+  const priorCp = v.status === 'IN HOUSE' ? v.owner : v.charterer;
+  const alreadyLogged = hist.some(h => h.field === priorField && h.value === v.fixed_price && (h.counterparty || '') === (priorCp || ''));
+  if (!alreadyLogged && v.fixed_price != null) {
+    v.price_history = hist.concat({
+      t: v.date_fixed ? v.date_fixed + 'T12:00:00' : new Date().toISOString(),
+      field: priorField, value: v.fixed_price, counterparty: priorCp || null,
+    });
+    if (v.price_history.length > 50) v.price_history = v.price_history.slice(-50);
+  }
+  v.price_history = (v.price_history || []).concat({
+    t: new Date().toISOString(), field: 'relet', value: null, counterparty: (newOwner || '').trim() || null,
+  });
+  if (v.price_history.length > 50) v.price_history = v.price_history.slice(-50);
+
+  const priorOwner = v.owner;
+  const priorChart = v.charterer;
+  v.status = 'OPEN';
+  v.owner = (newOwner || '').trim() || v.owner;
+
+  if (v.market_colour && v.market_colour[0]) {
+    v.market_colour[0].p6_bid = null;
+    v.market_colour[0].p6_offer = null;
+    v.market_colour[0].bid_usd = null;
+    v.market_colour[0].offer_usd = null;
+  }
+  v.hire_offer = null;
+  v.bb_offer = null;
+  v.bidding_charterer = null;
+  v.charterer = null;
+  v.fixed_price = null;
+  v.date_fixed = null;
+
+  const reletNote = `Relet ${priorChart ? `from ${priorChart}` : ''}${priorOwner && priorOwner !== v.owner ? ` (prev owner ${priorOwner})` : ''}`.trim();
+  v.notes = v.notes ? `${v.notes} · ${reletNote}` : reletNote;
+
+  touchVessel(idx);
+  save(); renderTable(); updateStats();
+}
+
 function copyVesselRow(idx) {
   const v = vessels[idx];
   if (!v) return;
@@ -4005,7 +4060,11 @@ function renderTable() {
       case 'last_updated': return `<td class="td-source">${fmtTimestamp(v.last_updated)}</td>`;
       case 'notes': return `<td class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>`;
       case 'status': return `<td><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>`;
-      case 'actions': return `<td class="td-actions"><button class="btn-copy-row" onclick="copyVesselRow(${gi})" title="Copy vessel details">⧉</button><button class="btn-remove" onclick="removeVessel(${gi})" title="Remove">x</button></td>`;
+      case 'actions': {
+        const showRelet = v.status === 'FIXED' || v.status === 'IN HOUSE';
+        const reletBtn = showRelet ? `<button class="btn-relet" onclick="reletVessel(${gi})" title="Bring back to market as relet">↺</button>` : '';
+        return `<td class="td-actions">${reletBtn}<button class="btn-copy-row" onclick="copyVesselRow(${gi})" title="Copy vessel details">⧉</button><button class="btn-remove" onclick="removeVessel(${gi})" title="Remove">x</button></td>`;
+      }
       // New CSV columns
       case 'draft': return `<td class="td-specs editable" onclick="startEdit(this,${gi},'draft',true)">${v.draft != null ? v.draft : '—'}</td>`;
       case 'yard': return `<td class="td-source editable" onclick="startEdit(this,${gi},'yard',false)">${v.yard || '—'}</td>`;
@@ -6956,6 +7015,7 @@ function buildActivityFeed(limit) {
       else if (h.field === 'p6_offer') type = 'offer';
       else if (h.field === 'fixed_price') type = 'fixed';
       else if (h.field === 'in_house') type = 'in_house';
+      else if (h.field === 'relet') type = 'relet';
       let prev = null;
       for (let j = i - 1; j >= 0; j--) { if (hist[j].field === h.field) { prev = hist[j]; break; } }
       const delta = (prev && h.value != null && prev.value != null) ? (h.value - prev.value) : null;
@@ -7001,6 +7061,7 @@ function renderActivityFeed() {
     else if (e.type === 'offer')    { actionCls += ' offer';    actionText = `offer ${fmtParty$(e.value)}`; }
     else if (e.type === 'fixed')    { actionCls += ' fixed';    actionText = `FIXED ${fmtParty$(e.value)}`; }
     else if (e.type === 'in_house') { actionCls += ' in-house'; actionText = `IN HOUSE${e.value != null ? ' ' + fmtParty$(e.value) : ''}`; }
+    else if (e.type === 'relet')    { actionCls += ' relet';    actionText = `RELET to ${e.actor || '?'}`; }
     let deltaHtml = '';
     if (e.delta != null && e.delta !== 0) {
       const isTighter = (e.type === 'bid' && e.delta > 0) || (e.type === 'offer' && e.delta < 0);

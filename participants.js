@@ -222,6 +222,7 @@ function buildActivityFeed(limit) {
       else if (h.field === 'p6_offer') type = 'offer';
       else if (h.field === 'fixed_price') type = 'fixed';
       else if (h.field === 'in_house') type = 'in_house';
+      else if (h.field === 'relet') type = 'relet';
       // Find previous same-field entry to compute delta
       let prev = null;
       for (let j = i - 1; j >= 0; j--) {
@@ -289,6 +290,7 @@ function renderActivityFeed() {
     else if (e.type === 'offer')    { actionCls += ' offer';    actionText = `offer ${fmtParty$(e.value)}`; }
     else if (e.type === 'fixed')    { actionCls += ' fixed';    actionText = `FIXED ${fmtParty$(e.value)}`; }
     else if (e.type === 'in_house') { actionCls += ' in-house'; actionText = `IN HOUSE${e.value != null ? ' ' + fmtParty$(e.value) : ''}`; }
+    else if (e.type === 'relet')    { actionCls += ' relet';    actionText = `RELET to ${e.actor || '?'}`; }
     // Delta indicator: red if up (more aggressive offer / higher bid), green if discount
     let deltaHtml = '';
     if (e.delta != null && e.delta !== 0) {

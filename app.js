@@ -1509,6 +1509,83 @@ function copyVesselRow(idx) {
   }
 }
 
+// Bring a fixed/in-house vessel back to the market as a relet.
+// - Preserves the original fixture in price_history (synthesises an entry for
+//   legacy vessels with no history) so the original charterer keeps credit.
+// - Clears stale quote-side fields (p6_bid/offer, hire_offer, bb_offer,
+//   bidding_charterer) since they belonged to the previous cycle.
+// - Flips status to OPEN and prompts for the new disponent owner (defaulting
+//   to the previous charterer — common case in a relet).
+function reletVessel(idx) {
+  const v = vessels[idx];
+  if (!v) return;
+  if (v.status !== 'FIXED' && v.status !== 'IN HOUSE') {
+    alert('Relet only applies to fixed / in-house vessels.');
+    return;
+  }
+  const suggested = v.charterer || v.owner || '';
+  const newOwner = prompt(
+    `Relet ${v.vessel_name} back to market.\n\n` +
+    `New disponent owner (typically the previous charterer):`,
+    suggested
+  );
+  if (newOwner === null) return; // cancelled
+
+  // 1. Ensure the prior fixture is captured in price_history (so charterer
+  //    credit doesn't depend on the soon-to-be-cleared current fields).
+  const hist = v.price_history || [];
+  const priorField = v.status === 'IN HOUSE' ? 'in_house' : 'fixed_price';
+  const priorCp = v.status === 'IN HOUSE' ? v.owner : v.charterer;
+  const alreadyLogged = hist.some(h =>
+    h.field === priorField && h.value === v.fixed_price && (h.counterparty || '') === (priorCp || '')
+  );
+  if (!alreadyLogged && v.fixed_price != null) {
+    v.price_history = hist.concat({
+      t: v.date_fixed ? v.date_fixed + 'T12:00:00' : new Date().toISOString(),
+      field: priorField,
+      value: v.fixed_price,
+      counterparty: priorCp || null,
+    });
+    if (v.price_history.length > 50) v.price_history = v.price_history.slice(-50);
+  }
+
+  // 2. Add an explicit relet event so it shows up in the Activity feed.
+  v.price_history = (v.price_history || []).concat({
+    t: new Date().toISOString(),
+    field: 'relet',
+    value: null,
+    counterparty: (newOwner || '').trim() || null,
+  });
+  if (v.price_history.length > 50) v.price_history = v.price_history.slice(-50);
+
+  // 3. Move to OPEN and update owner.
+  const priorOwner = v.owner;
+  const priorChart = v.charterer;
+  v.status = 'OPEN';
+  v.owner = (newOwner || '').trim() || v.owner;
+
+  // 4. Clear stale fields from the prior cycle.
+  if (v.market_colour && v.market_colour[0]) {
+    v.market_colour[0].p6_bid = null;
+    v.market_colour[0].p6_offer = null;
+    v.market_colour[0].bid_usd = null;
+    v.market_colour[0].offer_usd = null;
+  }
+  v.hire_offer = null;
+  v.bb_offer = null;
+  v.bidding_charterer = null;
+  v.charterer = null;
+  v.fixed_price = null;
+  v.date_fixed = null;
+
+  // 5. Append a tracking note.
+  const reletNote = `Relet ${priorChart ? `from ${priorChart}` : ''}${priorOwner && priorOwner !== v.owner ? ` (prev owner ${priorOwner})` : ''}`.trim();
+  v.notes = v.notes ? `${v.notes} · ${reletNote}` : reletNote;
+
+  touchVessel(idx);
+  save(); renderTable(); updateStats();
+}
+
 function removeVessel(idx) {
   if (!confirm(`Remove ${vessels[idx].vessel_name}?`)) return;
   vessels.splice(idx, 1);
@@ -1656,7 +1733,13 @@ function renderTable() {
       case 'last_updated': return `<td class="td-source">${fmtTimestamp(v.last_updated)}</td>`;
       case 'notes': return `<td class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>`;
       case 'status': return `<td><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>`;
-      case 'actions': return `<td class="td-actions"><button class="btn-copy-row" onclick="copyVesselRow(${gi})" title="Copy vessel details">⧉</button><button class="btn-remove" onclick="removeVessel(${gi})" title="Remove">x</button></td>`;
+      case 'actions': {
+        const showRelet = v.status === 'FIXED' || v.status === 'IN HOUSE';
+        const reletBtn = showRelet
+          ? `<button class="btn-relet" onclick="reletVessel(${gi})" title="Bring back to market as relet">↺</button>`
+          : '';
+        return `<td class="td-actions">${reletBtn}<button class="btn-copy-row" onclick="copyVesselRow(${gi})" title="Copy vessel details">⧉</button><button class="btn-remove" onclick="removeVessel(${gi})" title="Remove">x</button></td>`;
+      }
       // New CSV columns
       case 'draft': return `<td class="td-specs editable" onclick="startEdit(this,${gi},'draft',true)">${v.draft != null ? v.draft : '—'}</td>`;
       case 'yard': return `<td class="td-source editable" onclick="startEdit(this,${gi},'yard',false)">${v.yard || '—'}</td>`;
