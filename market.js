@@ -87,6 +87,7 @@ function getRecencyThresholdMs() {
   const now = Date.now();
   if (filter === 'day')  return now - 86400000;
   if (filter === 'week') return now - 7 * 86400000;
+  if (filter === 'twoweeks') return now - 14 * 86400000;
   if (filter === 'month') return now - 30 * 86400000;
   if (filter === 'wtd') {
     // Since 00:00 Monday of the current week
