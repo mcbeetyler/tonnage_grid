@@ -702,15 +702,17 @@ async function parseCargoPaste() {
     }
   }
 
-  // Mark cargoes that were in current but not in new paste as "departed"
-  // by not including them in newCurrentIds. They remain in history.
+  // Cargoes that were live but are NOT in this paste — broker dropped them,
+  // typically because the cargo was covered. Auto-mark as fixed and stamp
+  // departed_at. User can untoggle via the cargo row if it was a mistake.
   const departedIds = cargoCurrent.filter(id => !newCurrentIds.includes(id));
-  const departedCount = departedIds.length;
-
-  // For departed cargoes, set departed_at = today if not already set
+  let autoFixedCount = 0;
   for (const id of departedIds) {
     const c = historyMap.get(id);
-    if (c && !c.departed_at) c.departed_at = today;
+    if (!c) continue;
+    if (!c.departed_at) c.departed_at = today;
+    if (!c.fixed) { c.fixed = true; autoFixedCount++; }
+    c.fresh = false;
   }
 
   cargoCurrent = newCurrentIds;
@@ -720,7 +722,7 @@ async function parseCargoPaste() {
   // Show summary
   const preview = document.createElement('div');
   preview.style.cssText = 'padding:8px 12px;margin-top:6px;background:var(--green-light);color:var(--green);border-radius:6px;font-size:11px';
-  preview.textContent = `Parsed ${parsed.length} cargoes: ${addedCount} new, ${updatedCount} still live, ${departedCount} departed.`;
+  preview.textContent = `Parsed ${parsed.length} cargoes: ${addedCount} new, ${updatedCount} still live, ${autoFixedCount} auto-marked FIXED (dropped from update).`;
   const body = document.getElementById('cargoPasteBody');
   const existing = body.querySelector('.parse-summary');
   if (existing) existing.remove();
