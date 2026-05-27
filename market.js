@@ -256,16 +256,45 @@ function cargoLaycanDate(laycan) {
   return new Date(year, month, day);
 }
 
-// Collect open cargoes (in cargoCurrent, not fixed), filtered by Window,
-// then cluster cargoes whose laycan starts are within ~2 days of each other.
+// Map the Market tab's Route filter code to the cargo book's `stem` value.
+// Returns null when no filter should apply (e.g. "all routes" or a route
+// that has no cargo-stem equivalent).
+function routeToCargoStem(route) {
+  if (!route || route === 'all') return null;
+  const map = {
+    'ECSA FH': 'ECSA Fronthaul',
+    'ECSA TA': 'ECSA TA',
+    'USG FH': 'USG Fronthaul',
+    'USG TA': 'USG TA',
+    'NCSA FH': 'NCSA Fronthaul',
+    'NCSA TA': 'NCSA TA',
+    'USEC FH': 'USEC Fronthaul',
+    'USEC TA': 'USEC TA',
+    'EC CAN FH': 'EC CAN Fronthaul',
+    'EC CAN TA': 'EC CAN TA',
+    'CONT/BALTIC FH': 'Cont/Baltic Fronthaul',
+    'CONT/BALTIC TA': 'Cont/Baltic TA',
+    'WAFR FH': 'WAFR Fronthaul',
+    'WAFR TA': 'WAFR TA',
+    'BSEA/MED FH': 'Bsea/Med Fronthaul',
+    'BSEA/MED TA': 'Bsea/Med TA',
+  };
+  return map[route] || null;
+}
+
+// Collect open cargoes (in cargoCurrent, not fixed), filtered by Window
+// AND by stem (mapped from the toolbar Route filter), then cluster cargoes
+// whose laycan starts are within ~2 days of each other.
 function collectCargoClusters() {
   if (typeof cargoHistory === 'undefined' || typeof cargoCurrent === 'undefined') return [];
   const mode = getMarketFilter();
+  const stemFilter = routeToCargoStem(getMarketRouteFilter());
   const currentSet = new Set(cargoCurrent || []);
   const withX = [];
   for (const c of (cargoHistory || [])) {
     if (!currentSet.has(c.id)) continue;
     if (c.fixed) continue;
+    if (stemFilter && c.stem !== stemFilter) continue;
     const d = cargoLaycanDate(c.laycan);
     if (!d) continue;
     const iso = d.toISOString().slice(0, 10);
