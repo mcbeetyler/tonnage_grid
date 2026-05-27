@@ -75,6 +75,61 @@ function getMarketRouteFilter() {
   return sel ? sel.value : 'ECSA FH';
 }
 
+function getMarketRecencyFilter() {
+  const sel = document.getElementById('marketRecency');
+  return sel ? sel.value : 'all';
+}
+
+// Returns the earliest timestamp (ms) that still counts as "recent" for the
+// current recency filter. 0 = no filter (all data passes).
+function getRecencyThresholdMs() {
+  const filter = getMarketRecencyFilter();
+  const now = Date.now();
+  if (filter === 'day')  return now - 86400000;
+  if (filter === 'week') return now - 7 * 86400000;
+  if (filter === 'month') return now - 30 * 86400000;
+  if (filter === 'wtd') {
+    // Since 00:00 Monday of the current week
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    const offset = (d.getDay() + 6) % 7; // Sun=6, Mon=0, Tue=1, ...
+    d.setDate(d.getDate() - offset);
+    return d.getTime();
+  }
+  return 0;
+}
+
+// Most-recent update timestamp for a specific series on this vessel.
+// Reads from price_history; falls back to vessel.last_updated for vessels
+// without logged history yet.
+function lastUpdatedMsFor(v, field) {
+  const hist = (v.price_history || []);
+  let latest = 0;
+  for (const h of hist) {
+    if (h.field === field) {
+      const t = new Date(h.t || 0).getTime();
+      if (t > latest) latest = t;
+    }
+  }
+  if (latest) return latest;
+  if (v.last_updated) return new Date(v.last_updated).getTime() || 0;
+  return 0;
+}
+
+function lastUpdatedMsForFixture(v) {
+  const hist = (v.price_history || []);
+  let latest = 0;
+  for (const h of hist) {
+    if (h.field === 'fixed_price' || h.field === 'in_house') {
+      const t = new Date(h.t || 0).getTime();
+      if (t > latest) latest = t;
+    }
+  }
+  if (latest) return latest;
+  if (v.date_fixed) return new Date(v.date_fixed + 'T12:00:00').getTime() || 0;
+  if (v.last_updated) return new Date(v.last_updated).getTime() || 0;
+  return 0;
+}
+
 function populateMarketRoutes() {
   const sel = document.getElementById('marketRoute');
   if (!sel) return;
@@ -134,6 +189,7 @@ function renderMarketCharts() {
 function collectMarketPoints() {
   const mode = getMarketFilter();
   const routeFilter = getMarketRouteFilter();
+  const recencyMs = getRecencyThresholdMs();
   const offers = [];
   const bids = [];
   const fixtures = [];
@@ -143,10 +199,16 @@ function collectMarketPoints() {
     const x = new Date(v.eta_ecsa).getTime();
     const p6 = getP6Values(v);
     if (v.status === 'OPEN') {
-      if (p6.offer != null) offers.push({ x, y: p6.offer, v });
-      if (p6.bid != null) bids.push({ x, y: p6.bid, v });
+      if (p6.offer != null && (!recencyMs || lastUpdatedMsFor(v, 'p6_offer') >= recencyMs)) {
+        offers.push({ x, y: p6.offer, v });
+      }
+      if (p6.bid != null && (!recencyMs || lastUpdatedMsFor(v, 'p6_bid') >= recencyMs)) {
+        bids.push({ x, y: p6.bid, v });
+      }
     } else if (v.status === 'FIXED' && v.fixed_price != null) {
-      fixtures.push({ x, y: v.fixed_price, v });
+      if (!recencyMs || lastUpdatedMsForFixture(v) >= recencyMs) {
+        fixtures.push({ x, y: v.fixed_price, v });
+      }
     }
   }
   return { offers, bids, fixtures };

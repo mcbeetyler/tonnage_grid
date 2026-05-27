@@ -914,6 +914,14 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
     <span class="toolbar-label">Window</span>
     <span class="toolbar-label">Route</span>
     <select class="form-select" id="marketRoute" onchange="renderMarketCharts()" style="width:130px"></select>
+    <span class="toolbar-label">Updated</span>
+    <select class="form-select" id="marketRecency" onchange="renderMarketCharts()" style="width:150px">
+      <option value="all">Any time</option>
+      <option value="day">Last 24 hours</option>
+      <option value="wtd">Week to date (since Mon)</option>
+      <option value="week">Last 7 days</option>
+      <option value="month">Last 30 days</option>
+    </select>
     <select class="form-select" id="marketMonth" onchange="renderMarketCharts()" style="width:150px"></select>
     <button class="report-copy-btn" onclick="renderMarketCharts()" title="Re-read board state and redraw">Refresh</button>
   </div>
