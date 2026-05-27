@@ -315,6 +315,7 @@
   .market-toggle.active.offers,.market-toggle.active.median-offer{background:rgba(220,53,69,0.15);color:rgb(178,40,55);border-color:rgba(220,53,69,0.45)}
   .market-toggle.active.bids,.market-toggle.active.median-bid{background:rgba(40,167,69,0.15);color:rgb(30,135,55);border-color:rgba(40,167,69,0.45)}
   .market-toggle.active.fixtures{background:rgba(24,95,165,0.15);color:rgb(24,95,165);border-color:rgba(24,95,165,0.45)}
+  .market-toggle.active.cargoes{background:rgba(140,90,30,0.15);color:rgb(140,90,30);border-color:rgba(140,90,30,0.45)}
 
   /* Participants tab */
   .party-wrap{padding:18px 28px 24px;max-width:1500px;margin:0 auto}
@@ -933,6 +934,7 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
     <button id="marketToggle-fixtures" class="market-toggle fixtures" onclick="toggleMarketSeries('fixtures')">× Fixtures</button>
     <button id="marketToggle-medianOffer" class="market-toggle median-offer" onclick="toggleMarketSeries('medianOffer')">⋯ Median offer</button>
     <button id="marketToggle-medianBid" class="market-toggle median-bid" onclick="toggleMarketSeries('medianBid')">⋯ Median bid</button>
+    <button id="marketToggle-cargoes" class="market-toggle cargoes" onclick="toggleMarketSeries('cargoes')" title="Open cargoes at their laycan dates">◆ Cargoes</button>
   </div>
   <div class="market-charts">
     <div class="market-chart-card">

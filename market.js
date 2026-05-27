@@ -10,7 +10,7 @@ let marketChart = null;
 let marketBoxChart = null;
 
 // Series visibility toggles — synced across both charts and persisted.
-const DEFAULT_MARKET_VIS = { offers: true, bids: true, fixtures: true, medianOffer: true, medianBid: true };
+const DEFAULT_MARKET_VIS = { offers: true, bids: true, fixtures: true, medianOffer: true, medianBid: true, cargoes: false };
 let marketVisibility = (() => {
   try {
     const saved = JSON.parse(localStorage.getItem('pt_market_vis') || 'null');
@@ -30,7 +30,7 @@ function toggleMarketSeries(key) {
 }
 
 function updateMarketToggleUI() {
-  ['offers', 'bids', 'fixtures', 'medianOffer', 'medianBid'].forEach(k => {
+  ['offers', 'bids', 'fixtures', 'medianOffer', 'medianBid', 'cargoes'].forEach(k => {
     const btn = document.getElementById('marketToggle-' + k);
     if (btn) btn.classList.toggle('active', !!marketVisibility[k]);
   });
@@ -234,12 +234,68 @@ function computeMarketYRange(data) {
   };
 }
 
+// Parse a cargo's laycan string (e.g. "5-10 May", "15 May", "May") to a JS Date
+// for plotting. Uses the first day of any range. Year inferred if missing.
+function cargoLaycanDate(laycan) {
+  if (!laycan) return null;
+  const lc = String(laycan).toLowerCase().trim();
+  const monthMatch = lc.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
+  if (!monthMatch) return null;
+  const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  const month = months.indexOf(monthMatch[1]);
+  const dayMatch = lc.match(/(\d{1,2})/);
+  const day = dayMatch ? parseInt(dayMatch[1], 10) : 1;
+  const yearMatch = lc.match(/\b(20\d{2})\b/);
+  let year = yearMatch ? parseInt(yearMatch[1], 10) : new Date().getFullYear();
+  // If month implies the past and year wasn't specified, roll to next year
+  if (!yearMatch) {
+    const today = new Date();
+    const probe = new Date(year, month, day);
+    if (probe.getTime() < today.getTime() - 60 * 86400000) year += 1;
+  }
+  return new Date(year, month, day);
+}
+
+// Collect open cargoes (in cargoCurrent, not fixed), filtered by Window,
+// then cluster cargoes whose laycan starts are within ~2 days of each other.
+function collectCargoClusters() {
+  if (typeof cargoHistory === 'undefined' || typeof cargoCurrent === 'undefined') return [];
+  const mode = getMarketFilter();
+  const currentSet = new Set(cargoCurrent || []);
+  const withX = [];
+  for (const c of (cargoHistory || [])) {
+    if (!currentSet.has(c.id)) continue;
+    if (c.fixed) continue;
+    const d = cargoLaycanDate(c.laycan);
+    if (!d) continue;
+    const iso = d.toISOString().slice(0, 10);
+    if (!inMarketWindow(iso, mode)) continue;
+    withX.push({ cargo: c, x: d.getTime() });
+  }
+  withX.sort((a, b) => a.x - b.x);
+  const TWO_DAYS = 2 * 86400000;
+  const clusters = [];
+  for (const item of withX) {
+    const last = clusters[clusters.length - 1];
+    if (last && (item.x - last.x) <= TWO_DAYS) {
+      last.cargoes.push(item.cargo);
+    } else {
+      clusters.push({ x: item.x, cargoes: [item.cargo] });
+    }
+  }
+  return clusters;
+}
+
 function renderMarketChart() {
   const canvas = document.getElementById('marketChart');
   if (!canvas) return;
   const points = collectMarketPoints();
   const { offers, bids, fixtures } = points;
   const yRange = computeMarketYRange(points);
+  const cargoClusters = collectCargoClusters();
+  // Cargo points sit on a hidden secondary y-axis at y=0.5 (max=10) so they
+  // sit near the bottom of the chart regardless of the main y range.
+  const cargoData = cargoClusters.map(c => ({ x: c.x, y: 0.5, _cargoes: c.cargoes }));
 
   const summary = document.getElementById('marketSummary');
   if (summary) {
@@ -323,6 +379,26 @@ function renderMarketChart() {
           tension: 0.2,
           order: 10,
         },
+        {
+          label: 'Cargoes',
+          data: cargoData,
+          hidden: !marketVisibility.cargoes,
+          yAxisID: 'yCargo',
+          backgroundColor: 'rgba(140, 90, 30, 0.55)',
+          borderColor: 'rgba(140, 90, 30, 1)',
+          borderWidth: 1.5,
+          pointStyle: 'rectRot',
+          pointRadius: (ctx) => {
+            const n = ctx.raw && ctx.raw._cargoes ? ctx.raw._cargoes.length : 1;
+            return Math.min(5 + n, 12);
+          },
+          pointHoverRadius: (ctx) => {
+            const n = ctx.raw && ctx.raw._cargoes ? ctx.raw._cargoes.length : 1;
+            return Math.min(7 + n, 14);
+          },
+          showLine: false,
+          order: 20,
+        },
       ],
     },
     options: {
@@ -339,6 +415,21 @@ function renderMarketChart() {
             },
             label: (ctx) => {
               const p = ctx.raw;
+              // Cargo cluster point: list each cargo in the cluster
+              if (p && p._cargoes) {
+                const cs = p._cargoes;
+                const lines = [`${cs.length} cargo${cs.length === 1 ? '' : 'es'}`];
+                cs.slice(0, 8).forEach(c => {
+                  const charterer = c.charterer || '?';
+                  const stem = c.stem ? ` ${c.stem}` : '';
+                  const size = c.size ? ` ${c.size}` : '';
+                  const route = (c.load || '') + (c.disch ? ' → ' + c.disch : '');
+                  const lc = c.laycan || '';
+                  lines.push(`• ${charterer}${stem}${size} · ${route} · lc ${lc}`);
+                });
+                if (cs.length > 8) lines.push(`… +${cs.length - 8} more`);
+                return lines;
+              }
               const $val = '$' + ctx.parsed.y.toLocaleString();
               if (!p || !p.v) return `${ctx.dataset.label}: ${$val}`;
               const v = p.v;
@@ -380,6 +471,9 @@ function renderMarketChart() {
           },
           title: { display: true, text: 'P6 Equivalent ($/day)', font: { size: 11 } },
           grid: { color: 'rgba(0,0,0,0.05)' },
+        },
+        yCargo: {
+          type: 'linear', display: false, min: 0, max: 10, position: 'right',
         },
       },
     },

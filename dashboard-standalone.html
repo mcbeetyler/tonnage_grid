@@ -315,6 +315,7 @@
   .market-toggle.active.offers,.market-toggle.active.median-offer{background:rgba(220,53,69,0.15);color:rgb(178,40,55);border-color:rgba(220,53,69,0.45)}
   .market-toggle.active.bids,.market-toggle.active.median-bid{background:rgba(40,167,69,0.15);color:rgb(30,135,55);border-color:rgba(40,167,69,0.45)}
   .market-toggle.active.fixtures{background:rgba(24,95,165,0.15);color:rgb(24,95,165);border-color:rgba(24,95,165,0.45)}
+  .market-toggle.active.cargoes{background:rgba(140,90,30,0.15);color:rgb(140,90,30);border-color:rgba(140,90,30,0.45)}
 
   /* Participants tab */
   .party-wrap{padding:18px 28px 24px;max-width:1500px;margin:0 auto}
@@ -919,6 +920,7 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
     <button id="marketToggle-fixtures" class="market-toggle fixtures" onclick="toggleMarketSeries('fixtures')">× Fixtures</button>
     <button id="marketToggle-medianOffer" class="market-toggle median-offer" onclick="toggleMarketSeries('medianOffer')">⋯ Median offer</button>
     <button id="marketToggle-medianBid" class="market-toggle median-bid" onclick="toggleMarketSeries('medianBid')">⋯ Median bid</button>
+    <button id="marketToggle-cargoes" class="market-toggle cargoes" onclick="toggleMarketSeries('cargoes')" title="Open cargoes at their laycan dates">◆ Cargoes</button>
   </div>
   <div class="market-charts">
     <div class="market-chart-card">
@@ -6410,7 +6412,7 @@ function copyToClipboard(text) {
 let marketChart = null;
 let marketBoxChart = null;
 
-const DEFAULT_MARKET_VIS = { offers: true, bids: true, fixtures: true, medianOffer: true, medianBid: true };
+const DEFAULT_MARKET_VIS = { offers: true, bids: true, fixtures: true, medianOffer: true, medianBid: true, cargoes: false };
 let marketVisibility = (() => {
   try {
     const saved = JSON.parse(localStorage.getItem('pt_market_vis') || 'null');
@@ -6430,7 +6432,7 @@ function toggleMarketSeries(key) {
 }
 
 function updateMarketToggleUI() {
-  ['offers', 'bids', 'fixtures', 'medianOffer', 'medianBid'].forEach(k => {
+  ['offers', 'bids', 'fixtures', 'medianOffer', 'medianBid', 'cargoes'].forEach(k => {
     const btn = document.getElementById('marketToggle-' + k);
     if (btn) btn.classList.toggle('active', !!marketVisibility[k]);
   });
@@ -6623,12 +6625,57 @@ function medianByBucket(points) {
   return result;
 }
 
+function cargoLaycanDate(laycan) {
+  if (!laycan) return null;
+  const lc = String(laycan).toLowerCase().trim();
+  const monthMatch = lc.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
+  if (!monthMatch) return null;
+  const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  const month = months.indexOf(monthMatch[1]);
+  const dayMatch = lc.match(/(\d{1,2})/);
+  const day = dayMatch ? parseInt(dayMatch[1], 10) : 1;
+  const yearMatch = lc.match(/\b(20\d{2})\b/);
+  let year = yearMatch ? parseInt(yearMatch[1], 10) : new Date().getFullYear();
+  if (!yearMatch) {
+    const probe = new Date(year, month, day);
+    if (probe.getTime() < Date.now() - 60 * 86400000) year += 1;
+  }
+  return new Date(year, month, day);
+}
+
+function collectCargoClusters() {
+  if (typeof cargoHistory === 'undefined' || typeof cargoCurrent === 'undefined') return [];
+  const mode = getMarketFilter();
+  const currentSet = new Set(cargoCurrent || []);
+  const withX = [];
+  for (const c of (cargoHistory || [])) {
+    if (!currentSet.has(c.id)) continue;
+    if (c.fixed) continue;
+    const d = cargoLaycanDate(c.laycan);
+    if (!d) continue;
+    const iso = d.toISOString().slice(0, 10);
+    if (!inMarketWindow(iso, mode)) continue;
+    withX.push({ cargo: c, x: d.getTime() });
+  }
+  withX.sort((a, b) => a.x - b.x);
+  const TWO_DAYS = 2 * 86400000;
+  const clusters = [];
+  for (const item of withX) {
+    const last = clusters[clusters.length - 1];
+    if (last && (item.x - last.x) <= TWO_DAYS) last.cargoes.push(item.cargo);
+    else clusters.push({ x: item.x, cargoes: [item.cargo] });
+  }
+  return clusters;
+}
+
 function renderMarketChart() {
   const canvas = document.getElementById('marketChart');
   if (!canvas) return;
   const points = collectMarketPoints();
   const { offers, bids, fixtures } = points;
   const yRange = computeMarketYRange(points);
+  const cargoClusters = collectCargoClusters();
+  const cargoData = cargoClusters.map(c => ({ x: c.x, y: 0.5, _cargoes: c.cargoes }));
 
   const summary = document.getElementById('marketSummary');
   if (summary) {
@@ -6675,6 +6722,15 @@ function renderMarketChart() {
           borderColor: GREEN, borderDash: [6, 4], borderWidth: 2,
           pointRadius: 0, pointHoverRadius: 0, showLine: true, fill: false, tension: 0.2, order: 10,
         },
+        {
+          label: 'Cargoes', data: cargoData, hidden: !marketVisibility.cargoes,
+          yAxisID: 'yCargo',
+          backgroundColor: 'rgba(140, 90, 30, 0.55)', borderColor: 'rgba(140, 90, 30, 1)', borderWidth: 1.5,
+          pointStyle: 'rectRot',
+          pointRadius: (ctx) => { const n = ctx.raw && ctx.raw._cargoes ? ctx.raw._cargoes.length : 1; return Math.min(5 + n, 12); },
+          pointHoverRadius: (ctx) => { const n = ctx.raw && ctx.raw._cargoes ? ctx.raw._cargoes.length : 1; return Math.min(7 + n, 14); },
+          showLine: false, order: 20,
+        },
       ],
     },
     options: {
@@ -6691,6 +6747,20 @@ function renderMarketChart() {
             },
             label: (ctx) => {
               const p = ctx.raw;
+              if (p && p._cargoes) {
+                const cs = p._cargoes;
+                const lines = [`${cs.length} cargo${cs.length === 1 ? '' : 'es'}`];
+                cs.slice(0, 8).forEach(c => {
+                  const charterer = c.charterer || '?';
+                  const stem = c.stem ? ` ${c.stem}` : '';
+                  const size = c.size ? ` ${c.size}` : '';
+                  const route = (c.load || '') + (c.disch ? ' → ' + c.disch : '');
+                  const lc = c.laycan || '';
+                  lines.push(`• ${charterer}${stem}${size} · ${route} · lc ${lc}`);
+                });
+                if (cs.length > 8) lines.push(`… +${cs.length - 8} more`);
+                return lines;
+              }
               const $val = '$' + ctx.parsed.y.toLocaleString();
               if (!p || !p.v) return `${ctx.dataset.label}: ${$val}`;
               const v = p.v;
@@ -6731,6 +6801,7 @@ function renderMarketChart() {
           title: { display: true, text: 'P6 Equivalent ($/day)', font: { size: 11 } },
           grid: { color: 'rgba(0,0,0,0.05)' },
         },
+        yCargo: { type: 'linear', display: false, min: 0, max: 10, position: 'right' },
       },
     },
   });
