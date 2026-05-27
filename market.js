@@ -256,45 +256,39 @@ function cargoLaycanDate(laycan) {
   return new Date(year, month, day);
 }
 
-// Map the Market tab's Route filter code to the cargo book's `stem` value.
-// Returns null when no filter should apply (e.g. "all routes" or a route
-// that has no cargo-stem equivalent).
-function routeToCargoStem(route) {
-  if (!route || route === 'all') return null;
-  const map = {
-    'ECSA FH': 'ECSA Fronthaul',
-    'ECSA TA': 'ECSA TA',
-    'USG FH': 'USG Fronthaul',
-    'USG TA': 'USG TA',
-    'NCSA FH': 'NCSA Fronthaul',
-    'NCSA TA': 'NCSA TA',
-    'USEC FH': 'USEC Fronthaul',
-    'USEC TA': 'USEC TA',
-    'EC CAN FH': 'EC CAN Fronthaul',
-    'EC CAN TA': 'EC CAN TA',
-    'CONT/BALTIC FH': 'Cont/Baltic Fronthaul',
-    'CONT/BALTIC TA': 'Cont/Baltic TA',
-    'WAFR FH': 'WAFR Fronthaul',
-    'WAFR TA': 'WAFR TA',
-    'BSEA/MED FH': 'Bsea/Med Fronthaul',
-    'BSEA/MED TA': 'Bsea/Med TA',
-  };
-  return map[route] || null;
+// Normalize a stem / route string so variants match. Examples:
+//   "ECSA FH" / "ECSA Fronthaul" / "ecsa fronthaul" → "ecsafh"
+//   "USG TA" / "USG Transatlantic" → "usgta"
+function stemKey(s) {
+  if (!s) return '';
+  return String(s)
+    .toLowerCase()
+    // Strip slashes etc., keep words for next step
+    .replace(/[/\\.]/g, ' ')
+    // Collapse fronthaul / fhaul / fh → 'fh'
+    .replace(/\bfronthaul\b/g, 'fh')
+    .replace(/\bfhaul\b/g, 'fh')
+    // Collapse transatlantic → ta
+    .replace(/\btransatlantic\b/g, 'ta')
+    // Remove every non-letter (spaces, punctuation, etc.)
+    .replace(/[^a-z]/g, '')
+    .trim();
 }
 
-// Collect open cargoes (in cargoCurrent, not fixed), filtered by Window
-// AND by stem (mapped from the toolbar Route filter), then cluster cargoes
-// whose laycan starts are within ~2 days of each other.
+// Collect open cargoes (in cargoCurrent, not fixed), filtered by Window AND
+// by stem matched against the toolbar Route filter (normalized so "ECSA FH"
+// matches stems written as "ECSA Fronthaul" / "Ecsa fronthaul" / etc).
 function collectCargoClusters() {
   if (typeof cargoHistory === 'undefined' || typeof cargoCurrent === 'undefined') return [];
   const mode = getMarketFilter();
-  const stemFilter = routeToCargoStem(getMarketRouteFilter());
+  const routeFilter = getMarketRouteFilter();
+  const targetStem = (!routeFilter || routeFilter === 'all') ? null : stemKey(routeFilter);
   const currentSet = new Set(cargoCurrent || []);
   const withX = [];
   for (const c of (cargoHistory || [])) {
     if (!currentSet.has(c.id)) continue;
     if (c.fixed) continue;
-    if (stemFilter && c.stem !== stemFilter) continue;
+    if (targetStem && stemKey(c.stem) !== targetStem) continue;
     const d = cargoLaycanDate(c.laycan);
     if (!d) continue;
     const iso = d.toISOString().slice(0, 10);
