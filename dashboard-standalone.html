@@ -162,6 +162,27 @@
   .btn-relet:hover{background:#F8E199}
   .btn-fail{background:#FBE5E5;border:1px solid #E59B9B;color:#A32D2D;padding:4px 8px;font-size:12px;font-weight:700;border-radius:var(--radius-sm);cursor:pointer;margin-right:4px;line-height:1}
   .btn-fail:hover{background:#F4C3C3}
+  .bid-extra-chip{font-size:9px;background:var(--bg3);color:var(--text-dim);padding:1px 5px;border-radius:6px;margin-left:4px;font-weight:600;vertical-align:1px}
+  .bids-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:250}
+  .bids-overlay.open{display:flex}
+  .bids-box{width:min(560px, 92vw);background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 32px rgba(0,0,0,.35);display:flex;flex-direction:column;max-height:80vh}
+  .bids-head-bar{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg3);border-radius:var(--radius) var(--radius) 0 0}
+  .bids-title{font-size:13px;font-weight:700;color:var(--text-bright);flex:1}
+  .bids-close{background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;line-height:1;padding:4px 8px}
+  .bids-close:hover{color:var(--text-bright)}
+  .bids-body{flex:1;overflow-y:auto;padding:8px}
+  .bids-row{display:grid;grid-template-columns:1.4fr 1fr 1fr 30px;gap:8px;padding:6px 10px;align-items:center;border-bottom:1px solid var(--border)}
+  .bids-row.bids-head{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);padding:8px 10px 4px}
+  .bids-row.bids-add{background:var(--bg3);border-radius:var(--radius-sm);margin-top:6px;border-bottom:none}
+  .bids-row input{padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text-bright);font-size:12px;font-family:inherit;width:100%}
+  .bids-row input.mono{font-family:var(--mono)}
+  .bids-row input:focus{outline:none;border-color:var(--accent)}
+  .bid-ts{font-size:10px;color:var(--text-dim);font-family:var(--mono)}
+  .bid-remove{background:none;border:1px solid var(--border);color:var(--text-dim);font-size:13px;line-height:1;padding:2px 6px;border-radius:var(--radius-sm);cursor:pointer}
+  .bid-remove:hover{border-color:var(--red);color:var(--red);background:var(--red-light)}
+  .bids-foot{display:flex;justify-content:flex-end;gap:8px;padding:10px 16px;border-top:1px solid var(--border)}
+  .bids-save{background:var(--accent);color:#fff;border:none;padding:6px 16px;font-size:12px;font-weight:600;border-radius:var(--radius-sm);cursor:pointer}
+  .bids-save:hover{background:var(--accent-hover)}
   .party-activity-action.relet{color:#8A6300}
   .party-activity-action.failed{color:#A32D2D}
   .td-actions{white-space:nowrap}
@@ -987,6 +1008,19 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
     </div>
   </div>
 </div><!-- end tab-participants -->
+
+<div class="bids-overlay" id="bidsPopupOverlay" onclick="if(event.target===this) closeBidsPopup()">
+  <div class="bids-box">
+    <div class="bids-head-bar">
+      <div class="bids-title" id="bidsPopupTitle">Bids</div>
+      <button class="bids-close" onclick="closeBidsPopup()" title="Close">×</button>
+    </div>
+    <div class="bids-body" id="bidsPopupBody"></div>
+    <div class="bids-foot">
+      <button class="bids-save" onclick="popupSaveBids()">Save</button>
+    </div>
+  </div>
+</div>
 
 <div class="chat-overlay" id="chatOverlay" onclick="if(event.target===this) closeChat()">
   <div class="chat-box">
@@ -2581,6 +2615,38 @@ function getP6Values(v) {
   return { bid: mc ? mc.p6_bid : null, offer: mc ? mc.p6_offer : null };
 }
 
+function getAllBids(v) {
+  if (v.bids && v.bids.length > 0) return v.bids;
+  const legacy = getP6Values(v).bid;
+  if (legacy != null) return [{ charterer: v.bidding_charterer || '', p6_bid: legacy, t: v.last_updated || null }];
+  return [];
+}
+function getBestBid(v) {
+  const bids = getAllBids(v);
+  if (bids.length === 0) return null;
+  return bids.slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0))[0];
+}
+function setVesselBids(idx, bids) {
+  const v = vessels[idx];
+  if (!v) return;
+  v.bids = (bids || []).filter(b => b && b.p6_bid != null);
+  const best = getBestBid(v);
+  const newBestBid = best ? best.p6_bid : null;
+  const newBestBidder = best ? (best.charterer || null) : null;
+  const beforeBid = getP6Values(v).bid;
+  if (!v.market_colour || !v.market_colour[0]) {
+    v.market_colour = [{ route: 'ECSA FH', p6_bid: newBestBid, p6_offer: null, bid_usd: null, offer_usd: null }];
+  } else {
+    v.market_colour[0].p6_bid = newBestBid;
+  }
+  v.bidding_charterer = newBestBidder;
+  if (newBestBid != null && newBestBid !== beforeBid) {
+    logPriceChange(v, 'p6_bid', newBestBid, newBestBidder);
+  }
+  touchVessel(idx);
+  save();
+}
+
 function getEffectiveRoute(v) {
   if (v.route) return v.route;
   const mc = v.market_colour && v.market_colour[0];
@@ -2748,6 +2814,90 @@ function applyEdit(idx, field, val) {
   }
 
   save();
+}
+
+// ─── Bids popup ──────────────────────────────────────────────────────────────
+let _bidsPopupIdx = null;
+function openBidsPopup(idx) {
+  _bidsPopupIdx = idx;
+  const overlay = document.getElementById('bidsPopupOverlay');
+  if (!overlay) return;
+  overlay.classList.add('open');
+  renderBidsPopup();
+  setTimeout(() => {
+    const firstInput = document.querySelector('#bidsPopupBody .bids-row input');
+    if (firstInput) firstInput.focus();
+  }, 50);
+}
+function closeBidsPopup() {
+  _bidsPopupIdx = null;
+  const overlay = document.getElementById('bidsPopupOverlay');
+  if (overlay) overlay.classList.remove('open');
+}
+function renderBidsPopup() {
+  if (_bidsPopupIdx == null) return;
+  const v = vessels[_bidsPopupIdx];
+  if (!v) return;
+  const title = document.getElementById('bidsPopupTitle');
+  if (title) {
+    const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
+    title.textContent = `Bids on ${v.vessel_name || '?'} (${specs})`;
+  }
+  const body = document.getElementById('bidsPopupBody');
+  if (!body) return;
+  const bids = getAllBids(v).slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0));
+  let html = `<div class="bids-row bids-head"><span>Charterer</span><span>P6 Bid</span><span>Updated</span><span></span></div>`;
+  bids.forEach((b, i) => {
+    const ts = b.t ? fmtTimestamp(b.t) : '—';
+    html += `<div class="bids-row" data-i="${i}">
+      <input class="bid-cp" value="${(b.charterer || '').replace(/"/g, '&quot;')}" placeholder="(charterer)">
+      <input class="bid-px mono" value="${b.p6_bid != null ? b.p6_bid : ''}" type="number" placeholder="0">
+      <span class="bid-ts">${ts}</span>
+      <button class="bid-remove" onclick="popupRemoveBid(${i})" title="Remove">×</button>
+    </div>`;
+  });
+  html += `<div class="bids-row bids-add" data-i="-1">
+    <input class="bid-cp" placeholder="(new bidder)">
+    <input class="bid-px mono" type="number" placeholder="0">
+    <span class="bid-ts">—</span>
+    <span></span>
+  </div>`;
+  body.innerHTML = html;
+}
+function popupRemoveBid(i) {
+  if (_bidsPopupIdx == null) return;
+  const v = vessels[_bidsPopupIdx];
+  const bids = getAllBids(v).slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0));
+  bids.splice(i, 1);
+  v.bids = bids;
+  renderBidsPopup();
+}
+function popupSaveBids() {
+  if (_bidsPopupIdx == null) return;
+  const v = vessels[_bidsPopupIdx];
+  const existing = getAllBids(v).slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0));
+  const rows = document.querySelectorAll('#bidsPopupBody .bids-row');
+  const collected = [];
+  const nowIso = new Date().toISOString();
+  rows.forEach(row => {
+    if (row.classList.contains('bids-head')) return;
+    const i = parseInt(row.dataset.i, 10);
+    const cpInput = row.querySelector('.bid-cp');
+    const pxInput = row.querySelector('.bid-px');
+    if (!cpInput || !pxInput) return;
+    const cp = (cpInput.value || '').trim();
+    const px = parseFloat(pxInput.value);
+    if (!isFinite(px) || px <= 0) return;
+    let t = nowIso;
+    if (i >= 0 && existing[i]) {
+      const prev = existing[i];
+      if (prev.p6_bid === px && (prev.charterer || '') === cp) t = prev.t || nowIso;
+    }
+    collected.push({ charterer: cp || null, p6_bid: px, t });
+  });
+  setVesselBids(_bidsPopupIdx, collected);
+  renderTable();
+  closeBidsPopup();
 }
 
 // ─── Mode Toggle ─────────────────────────────────────────────────────────────
@@ -4118,8 +4268,22 @@ function renderTable() {
         const etaText = v.eta_ecsa ? `${fmtDate(v.eta_ecsa)}${v.eta_ecsa_end ? '–' + fmtDate(v.eta_ecsa_end).split(' ')[0] : ''}${v.eta_type === 'ONW' ? ' <span class="onw-badge">ONW</span>' : ''}` : '—';
         return `<td class="td-eta editable" onclick="startEdit(this,${gi},'eta_ecsa',true)">${etaText}</td>`;
       }
-      case 'p6_bid': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_bid',true)"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>`;
-      case 'bidding_charterer': return `<td class="td-owner editable" onclick="startEdit(this,${gi},'bidding_charterer',false)" title="Leading bidder (or NFD / CNR)">${v.bidding_charterer || '—'}</td>`;
+      case 'p6_bid': {
+        const all = getAllBids(v);
+        const extra = all.length > 1 ? ` <span class="bid-extra-chip" title="${all.length} bidders — click to manage">+${all.length - 1}</span>` : '';
+        const tooltip = all.length > 1
+          ? all.slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0)).map(b => `${b.charterer || '?'} ${fmtNum(b.p6_bid)}`).join(' · ')
+          : 'Click to manage bidders';
+        return `<td class="td-p6 editable" onclick="openBidsPopup(${gi})" title="${tooltip.replace(/"/g,'&quot;')}"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span>${extra}</td>`;
+      }
+      case 'bidding_charterer': {
+        const all = getAllBids(v);
+        const extra = all.length > 1 ? ` <span class="bid-extra-chip" title="${all.length} bidders">+${all.length - 1}</span>` : '';
+        const tooltip = all.length > 1
+          ? all.slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0)).map(b => `${b.charterer || '?'} ${fmtNum(b.p6_bid)}`).join(' · ')
+          : 'Click to manage bidders';
+        return `<td class="td-owner editable" onclick="openBidsPopup(${gi})" title="${tooltip.replace(/"/g,'&quot;')}">${v.bidding_charterer || '—'}${extra}</td>`;
+      }
       case 'route': {
         const eff = getEffectiveRoute(v);
         const isOverride = !!v.route;

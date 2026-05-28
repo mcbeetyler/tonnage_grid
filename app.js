@@ -154,6 +154,53 @@ function getP6Values(v) {
   return { bid: mc ? mc.p6_bid : null, offer: mc ? mc.p6_offer : null };
 }
 
+// ─── Multiple bidders ────────────────────────────────────────────────────────
+// v.bids = [{ charterer, p6_bid, t }] — canonical source when present.
+// Legacy single-bid data (v.market_colour[0].p6_bid + v.bidding_charterer)
+// is synthesized on first popup open. getBestBid returns the highest-priced
+// entry; that flows through to the existing p6_bid + bidding_charterer fields
+// so reports / market / charts keep working unchanged.
+function getAllBids(v) {
+  if (v.bids && v.bids.length > 0) return v.bids;
+  const legacy = getP6Values(v).bid;
+  if (legacy != null) {
+    return [{ charterer: v.bidding_charterer || '', p6_bid: legacy, t: v.last_updated || null }];
+  }
+  return [];
+}
+
+function getBestBid(v) {
+  const bids = getAllBids(v);
+  if (bids.length === 0) return null;
+  return bids.slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0))[0];
+}
+
+// Save a bids array to a vessel and sync derived fields + price_history.
+function setVesselBids(idx, bids) {
+  const v = vessels[idx];
+  if (!v) return;
+  v.bids = (bids || []).filter(b => b && b.p6_bid != null);
+  const best = getBestBid(v);
+  const newBestBid = best ? best.p6_bid : null;
+  const newBestBidder = best ? (best.charterer || null) : null;
+  const beforeBid = getP6Values(v).bid;
+
+  // Sync derived fields used by everything else
+  if (!v.market_colour || !v.market_colour[0]) {
+    v.market_colour = [{ route: 'ECSA FH', p6_bid: newBestBid, p6_offer: null, bid_usd: null, offer_usd: null }];
+  } else {
+    v.market_colour[0].p6_bid = newBestBid;
+  }
+  v.bidding_charterer = newBestBidder;
+
+  // Log price-history entry if best bid value changed
+  if (newBestBid != null && newBestBid !== beforeBid) {
+    logPriceChange(v, 'p6_bid', newBestBid, newBestBidder);
+  }
+  touchVessel(idx);
+  save();
+}
+
 // Effective route for a vessel: user override (e.g. fixed for TA after being
 // quoted on FH) wins; otherwise fall back to the parsed market-colour route;
 // final fallback is 'ECSA FH' since that's the desk's primary book.
@@ -330,6 +377,102 @@ function applyEdit(idx, field, val) {
   }
 
   save();
+}
+
+// ─── Bids popup (multiple bidders per vessel) ───────────────────────────────
+
+let _bidsPopupIdx = null;
+
+function openBidsPopup(idx) {
+  _bidsPopupIdx = idx;
+  const overlay = document.getElementById('bidsPopupOverlay');
+  if (!overlay) return;
+  overlay.classList.add('open');
+  renderBidsPopup();
+  setTimeout(() => {
+    const firstInput = document.querySelector('#bidsPopupBody .bids-row input');
+    if (firstInput) firstInput.focus();
+  }, 50);
+}
+
+function closeBidsPopup() {
+  _bidsPopupIdx = null;
+  const overlay = document.getElementById('bidsPopupOverlay');
+  if (overlay) overlay.classList.remove('open');
+}
+
+function renderBidsPopup() {
+  if (_bidsPopupIdx == null) return;
+  const v = vessels[_bidsPopupIdx];
+  if (!v) return;
+  const title = document.getElementById('bidsPopupTitle');
+  if (title) {
+    const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
+    title.textContent = `Bids on ${v.vessel_name || '?'} (${specs})`;
+  }
+  const body = document.getElementById('bidsPopupBody');
+  if (!body) return;
+  const bids = getAllBids(v).slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0));
+  // Always show one empty row at the end for adding a new bidder
+  let html = `<div class="bids-row bids-head">
+    <span>Charterer</span><span>P6 Bid</span><span>Updated</span><span></span>
+  </div>`;
+  bids.forEach((b, i) => {
+    const ts = b.t ? fmtTimestamp(b.t) : '—';
+    html += `<div class="bids-row" data-i="${i}">
+      <input class="bid-cp" value="${(b.charterer || '').replace(/"/g, '&quot;')}" placeholder="(charterer)">
+      <input class="bid-px mono" value="${b.p6_bid != null ? b.p6_bid : ''}" type="number" placeholder="0">
+      <span class="bid-ts">${ts}</span>
+      <button class="bid-remove" onclick="popupRemoveBid(${i})" title="Remove">×</button>
+    </div>`;
+  });
+  // Add-new row
+  html += `<div class="bids-row bids-add" data-i="-1">
+    <input class="bid-cp" placeholder="(new bidder)">
+    <input class="bid-px mono" type="number" placeholder="0">
+    <span class="bid-ts">—</span>
+    <span></span>
+  </div>`;
+  body.innerHTML = html;
+}
+
+function popupRemoveBid(i) {
+  if (_bidsPopupIdx == null) return;
+  const v = vessels[_bidsPopupIdx];
+  const bids = getAllBids(v).slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0));
+  bids.splice(i, 1);
+  // Persist v.bids in-place so re-render works, then re-render
+  v.bids = bids;
+  renderBidsPopup();
+}
+
+function popupSaveBids() {
+  if (_bidsPopupIdx == null) return;
+  const v = vessels[_bidsPopupIdx];
+  const existing = getAllBids(v).slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0));
+  const rows = document.querySelectorAll('#bidsPopupBody .bids-row');
+  const collected = [];
+  const nowIso = new Date().toISOString();
+  rows.forEach(row => {
+    if (row.classList.contains('bids-head')) return;
+    const i = parseInt(row.dataset.i, 10);
+    const cpInput = row.querySelector('.bid-cp');
+    const pxInput = row.querySelector('.bid-px');
+    if (!cpInput || !pxInput) return;
+    const cp = (cpInput.value || '').trim();
+    const px = parseFloat(pxInput.value);
+    if (!isFinite(px) || px <= 0) return;
+    // Preserve existing timestamp if the bid hasn't changed; otherwise stamp now
+    let t = nowIso;
+    if (i >= 0 && existing[i]) {
+      const prev = existing[i];
+      if (prev.p6_bid === px && (prev.charterer || '') === cp) t = prev.t || nowIso;
+    }
+    collected.push({ charterer: cp || null, p6_bid: px, t });
+  });
+  setVesselBids(_bidsPopupIdx, collected);
+  renderTable();
+  closeBidsPopup();
 }
 
 // ─── Mode Toggle ─────────────────────────────────────────────────────────────
@@ -1765,8 +1908,24 @@ function renderTable() {
         const etaText = v.eta_ecsa ? `${fmtDate(v.eta_ecsa)}${v.eta_ecsa_end ? '–' + fmtDate(v.eta_ecsa_end).split(' ')[0] : ''}${v.eta_type === 'ONW' ? ' <span class="onw-badge">ONW</span>' : ''}` : '—';
         return `<td class="td-eta editable" onclick="startEdit(this,${gi},'eta_ecsa',true)">${etaText}</td>`;
       }
-      case 'p6_bid': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_bid',true)"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span></td>`;
-      case 'bidding_charterer': return `<td class="td-owner editable" onclick="startEdit(this,${gi},'bidding_charterer',false)" title="Leading bidder (or NFD / CNR)">${v.bidding_charterer || '—'}</td>`;
+      case 'p6_bid': {
+        const all = getAllBids(v);
+        const extra = all.length > 1 ? ` <span class="bid-extra-chip" title="${all.length} bidders — click to manage">+${all.length - 1}</span>` : '';
+        const tooltip = all.length > 1
+          ? all.slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0))
+              .map(b => `${b.charterer || '?'} ${fmtNum(b.p6_bid)}`).join(' · ')
+          : 'Click to manage bidders';
+        return `<td class="td-p6 editable" onclick="openBidsPopup(${gi})" title="${tooltip.replace(/"/g,'&quot;')}"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span>${extra}</td>`;
+      }
+      case 'bidding_charterer': {
+        const all = getAllBids(v);
+        const extra = all.length > 1 ? ` <span class="bid-extra-chip" title="${all.length} bidders">+${all.length - 1}</span>` : '';
+        const tooltip = all.length > 1
+          ? all.slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0))
+              .map(b => `${b.charterer || '?'} ${fmtNum(b.p6_bid)}`).join(' · ')
+          : 'Click to manage bidders';
+        return `<td class="td-owner editable" onclick="openBidsPopup(${gi})" title="${tooltip.replace(/"/g,'&quot;')}">${v.bidding_charterer || '—'}${extra}</td>`;
+      }
       case 'route': {
         const eff = getEffectiveRoute(v);
         const isOverride = !!v.route;
