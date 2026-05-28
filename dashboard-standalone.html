@@ -5427,11 +5427,19 @@ window.switchTab = function(tab) {
 
 // ─── Bunker prices + Voyage TCE calculator ───────────────────────────────────
 
+// Calibrated to match Tyler's voyage estimator (PMX82 ECO, 53.5 $/mt at
+// VLSFO $780.5 → GTCE ~$19,011/day on P8 ECSA→N.China). Tune as needed.
 const ROUTE_DEFAULTS = {
-  p8: { name: 'P8 ECSA → N.China', cargo_size: 66000, sea_days_laden: 39, sea_days_ballast: 35,
-        port_days_load: 3, port_days_disch: 4, port_costs: 135000, commission: 0.05 },
-  p7: { name: 'P7 USG → N.China',  cargo_size: 66000, sea_days_laden: 34, sea_days_ballast: 30,
-        port_days_load: 3, port_days_disch: 4, port_costs: 110000, commission: 0.05 },
+  p8: { name: 'P8 ECSA → N.China',
+        cargo_size: 70000, sea_days_laden: 41, sea_days_ballast: 37,
+        port_days_load: 13, port_days_disch: 15,
+        port_costs: 120000, misc_cost: 10000,
+        voy_commission: 0.05, tc_commission: 0.0375 },
+  p7: { name: 'P7 USG → N.China',
+        cargo_size: 70000, sea_days_laden: 38, sea_days_ballast: 32,
+        port_days_load: 9, port_days_disch: 14,
+        port_costs: 100000, misc_cost: 10000,
+        voy_commission: 0.05, tc_commission: 0.0375 },
 };
 const VESSEL_DEFAULTS = { sea_consumption: 23, port_consumption: 3.5 };
 
@@ -5476,20 +5484,24 @@ function renderBunkerPanel() {
   stamp.className = 'voyage-bunkers-stamp ' + cls;
 }
 
+// Returns GROSS TCE (matches how TC offers are quoted on the board):
+//   gross_freight × (1 − voy_comm) − bunkers − port − misc
+//   ÷ total_days ÷ (1 − tc_comm)
 function pmtToTce(pmt, section) {
   const route = ROUTE_DEFAULTS[section];
   if (!route) return null;
   const b = getBunkers();
   if (!b.vlsfo || !isFinite(pmt) || pmt <= 0) return null;
   const grossFreight = pmt * route.cargo_size;
-  const netFreight = grossFreight * (1 - route.commission);
+  const freightAfterVoyComm = grossFreight * (1 - route.voy_commission);
   const seaDays = route.sea_days_laden + route.sea_days_ballast;
   const portDays = route.port_days_load + route.port_days_disch;
   const totalDays = seaDays + portDays;
-  const seaBunker = seaDays * VESSEL_DEFAULTS.sea_consumption * b.vlsfo;
+  const seaBunker  = seaDays  * VESSEL_DEFAULTS.sea_consumption  * b.vlsfo;
   const portBunker = portDays * VESSEL_DEFAULTS.port_consumption * b.vlsfo;
-  const totalCosts = route.port_costs + seaBunker + portBunker;
-  return (netFreight - totalCosts) / totalDays;
+  const totalCosts = route.port_costs + (route.misc_cost || 0) + seaBunker + portBunker;
+  const ntce = (freightAfterVoyComm - totalCosts) / totalDays;
+  return ntce / (1 - route.tc_commission);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

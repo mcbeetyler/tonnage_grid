@@ -141,33 +141,43 @@ window.switchTab = function(tab) {
 };
 
 // ─── Bunker prices + Voyage TCE calculator ───────────────────────────────────
+//
+// Calibrated against Tyler's voyage estimator (see screenshot 28 May 2026):
+//   P8 ECSA→N.China round, Kamsarmax PMX82 ECO, 53.5 $/mt
+//   VLSFO $780.5  →  GTCE ~$19,011 / day
+// My calc with the constants below ≈ $19,100 / day — within ~$100 of estimator.
+//
+// Tune these as your estimator inputs evolve (bunkers, port days, port costs).
 
-// Industry-standard Kamsarmax assumptions. Tune these as actuals indicate.
 const ROUTE_DEFAULTS = {
-  p8: {  // ECSA → N.China
+  p8: {  // ECSA → N.China round (Qingdao-open assumption)
     name: 'P8 ECSA → N.China',
-    cargo_size: 66000,
-    sea_days_laden: 39,
-    sea_days_ballast: 35,
-    port_days_load: 3,
-    port_days_disch: 4,
-    port_costs: 135000,  // Santos load + Qingdao disch combined
-    commission: 0.05,
+    cargo_size: 70000,
+    sea_days_laden: 41,      // Santos → Qingdao at ~11.5 kts laden
+    sea_days_ballast: 37,    // Qingdao → Santos at ~12.5 kts ballast
+    port_days_load: 13,      // Santos load incl. typical wait
+    port_days_disch: 15,     // Qingdao disch incl. typical wait
+    port_costs: 120000,      // Santos DA + Qingdao DA (~$60k each)
+    misc_cost: 10000,
+    voy_commission: 0.05,    // 5% off freight
+    tc_commission: 0.0375,   // 3.75% gross-up NTCE → GTCE
   },
   p7: {  // USG → N.China
     name: 'P7 USG → N.China',
-    cargo_size: 66000,
-    sea_days_laden: 34,
-    sea_days_ballast: 30,
-    port_days_load: 3,
-    port_days_disch: 4,
-    port_costs: 110000,
-    commission: 0.05,
+    cargo_size: 70000,
+    sea_days_laden: 38,
+    sea_days_ballast: 32,
+    port_days_load: 9,
+    port_days_disch: 14,
+    port_costs: 100000,
+    misc_cost: 10000,
+    voy_commission: 0.05,
+    tc_commission: 0.0375,
   },
 };
 
 const VESSEL_DEFAULTS = {
-  sea_consumption: 23,    // mt/day VLSFO at sea (avg laden + ballast)
+  sea_consumption: 23,    // mt/day VLSFO at sea (PMX82 ECO ~22-23 avg laden+ballast)
   port_consumption: 3.5,  // mt/day VLSFO in port
 };
 
@@ -213,8 +223,15 @@ function renderBunkerPanel() {
   stamp.className = 'voyage-bunkers-stamp ' + cls;
 }
 
-// Convert a $/MT voyage rate to its TC equivalent ($/day) for a given route.
-// Returns null if no bunker price is set (can't calculate).
+// Convert a $/MT voyage rate to its GROSS TC equivalent ($/day) for a route.
+// GTCE because vessel TC offers on the board are quoted gross. Returns null
+// if no bunker price is set.
+//
+// Math (matches Veson IMOS / standard estimator):
+//   1. Gross freight  = pmt × cargo_size
+//   2. After voy comm = gross_freight × (1 − voy_commission)
+//   3. NTCE per day   = (after_voy_comm − bunkers − port_costs − misc) / total_days
+//   4. GTCE per day   = NTCE / (1 − tc_commission)
 function pmtToTce(pmt, section) {
   const route = ROUTE_DEFAULTS[section];
   if (!route) return null;
@@ -222,17 +239,18 @@ function pmtToTce(pmt, section) {
   if (!b.vlsfo || !isFinite(pmt) || pmt <= 0) return null;
 
   const grossFreight = pmt * route.cargo_size;
-  const netFreight = grossFreight * (1 - route.commission);
+  const freightAfterVoyComm = grossFreight * (1 - route.voy_commission);
 
   const seaDays = route.sea_days_laden + route.sea_days_ballast;
   const portDays = route.port_days_load + route.port_days_disch;
   const totalDays = seaDays + portDays;
 
-  const seaBunker = seaDays * VESSEL_DEFAULTS.sea_consumption * b.vlsfo;
+  const seaBunker  = seaDays  * VESSEL_DEFAULTS.sea_consumption  * b.vlsfo;
   const portBunker = portDays * VESSEL_DEFAULTS.port_consumption * b.vlsfo;
-  const totalCosts = route.port_costs + seaBunker + portBunker;
+  const totalCosts = route.port_costs + (route.misc_cost || 0) + seaBunker + portBunker;
 
-  return (netFreight - totalCosts) / totalDays;
+  const ntce = (freightAfterVoyComm - totalCosts) / totalDays;
+  return ntce / (1 - route.tc_commission);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
