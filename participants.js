@@ -111,6 +111,23 @@ function aggregateOwners() {
   });
 }
 
+// Look in price_history for the first explicit follow-up event after a fixture
+// (a 'relet' or 'failed' entry). Returns 'relet' / 'failed' / null.
+// Fallback: if vessel is currently OPEN but no follow-up event logged, assume
+// the vessel was relet (legacy data before the explicit actions existed).
+function outcomeAfterFixture(v, fixtureT) {
+  const hist = v.price_history || [];
+  let earliestEvent = null;
+  for (const h of hist) {
+    if (h.field !== 'relet' && h.field !== 'failed') continue;
+    if (!h.t || h.t <= (fixtureT || '')) continue;
+    if (!earliestEvent || h.t < earliestEvent.t) earliestEvent = h;
+  }
+  if (earliestEvent) return earliestEvent.field;
+  if (v.status === 'OPEN') return 'relet'; // legacy fallback
+  return null;
+}
+
 // Collect every fixture event we know about, source-of-truth being price_history.
 // A vessel can only be fixed once per "cycle" (cycles are bounded by relet
 // events). So within each cycle we keep ONLY the most recent fixed_price /
@@ -144,6 +161,7 @@ function collectFixtureEvents() {
           dateOnly: h.t ? h.t.slice(0, 10) : null,
           type: h.field,
           fromHistory: true,
+          outcome: outcomeAfterFixture(v, h.t),
         });
       }
     }
@@ -459,10 +477,14 @@ function renderFixtureEventList(title, events) {
     const eta = v.eta_ecsa ? fmtDateReport(v.eta_ecsa) : '';
     const dateFixed = e.dateOnly ? fmtDateReport(e.dateOnly) : '';
     const tag = e.type === 'in_house' ? ' (in house)' : '';
-    const isStale = v.status === 'OPEN'; // vessel has since been relet
-    const staleTag = isStale ? ' <span class="party-drill-stale" title="Vessel has been relet since this fixture">↺ relet</span>' : '';
+    let outcomeBadge = '';
+    if (e.outcome === 'failed') {
+      outcomeBadge = ' <span class="party-drill-failed" title="Subs lifted — fixture failed">✗ failed</span>';
+    } else if (e.outcome === 'relet') {
+      outcomeBadge = ' <span class="party-drill-stale" title="Vessel has been relet since this fixture">↺ relet</span>';
+    }
     html += `<div class="party-drill-row">
-      <span class="party-drill-vessel">${v.vessel_name || '?'} <span class="party-drill-specs">${specs}</span>${staleTag}</span>
+      <span class="party-drill-vessel">${v.vessel_name || '?'} <span class="party-drill-specs">${specs}</span>${outcomeBadge}</span>
       ${eta ? `<span class="party-drill-eta">ETA ${eta}</span>` : ''}
       <span class="party-drill-stat">${fmtParty$(e.price)} · fixed ${dateFixed}${tag}</span>
     </div>`;

@@ -390,6 +390,7 @@
   .party-drill-eta{color:var(--text-dim);font-family:var(--mono);font-size:10px;min-width:60px}
   .party-drill-stat{font-family:var(--mono);font-size:11px;color:var(--text-bright);min-width:140px;text-align:right}
   .party-drill-stale{font-size:9px;background:#FFF3D1;color:#8A6300;padding:1px 5px;border-radius:6px;margin-left:6px;font-weight:600}
+  .party-drill-failed{font-size:9px;background:#FBE5E5;color:#A32D2D;padding:1px 5px;border-radius:6px;margin-left:6px;font-weight:600}
   @media (max-width: 900px) {
     .party-columns{grid-template-columns:1fr}
   }
@@ -7292,6 +7293,19 @@ function aggregateOwners() {
   });
 }
 
+function outcomeAfterFixture(v, fixtureT) {
+  const hist = v.price_history || [];
+  let earliestEvent = null;
+  for (const h of hist) {
+    if (h.field !== 'relet' && h.field !== 'failed') continue;
+    if (!h.t || h.t <= (fixtureT || '')) continue;
+    if (!earliestEvent || h.t < earliestEvent.t) earliestEvent = h;
+  }
+  if (earliestEvent) return earliestEvent.field;
+  if (v.status === 'OPEN') return 'relet';
+  return null;
+}
+
 function collectFixtureEvents() {
   const events = [];
   for (const v of vessels) {
@@ -7316,6 +7330,7 @@ function collectFixtureEvents() {
           price: h.value, date: h.t,
           dateOnly: h.t ? h.t.slice(0, 10) : null,
           type: h.field, fromHistory: true,
+          outcome: outcomeAfterFixture(v, h.t),
         });
       }
     }
@@ -7574,10 +7589,14 @@ function renderFixtureEventList(title, events) {
     const eta = v.eta_ecsa ? fmtDateReport(v.eta_ecsa) : '';
     const dateFixed = e.dateOnly ? fmtDateReport(e.dateOnly) : '';
     const tag = e.type === 'in_house' ? ' (in house)' : '';
-    const isStale = v.status === 'OPEN';
-    const staleTag = isStale ? ' <span class="party-drill-stale" title="Vessel has been relet since this fixture">↺ relet</span>' : '';
+    let outcomeBadge = '';
+    if (e.outcome === 'failed') {
+      outcomeBadge = ' <span class="party-drill-failed" title="Subs lifted — fixture failed">✗ failed</span>';
+    } else if (e.outcome === 'relet') {
+      outcomeBadge = ' <span class="party-drill-stale" title="Vessel has been relet since this fixture">↺ relet</span>';
+    }
     html += `<div class="party-drill-row">
-      <span class="party-drill-vessel">${v.vessel_name || '?'} <span class="party-drill-specs">${specs}</span>${staleTag}</span>
+      <span class="party-drill-vessel">${v.vessel_name || '?'} <span class="party-drill-specs">${specs}</span>${outcomeBadge}</span>
       ${eta ? `<span class="party-drill-eta">ETA ${eta}</span>` : ''}
       <span class="party-drill-stat">${fmtParty$(e.price)} · fixed ${dateFixed}${tag}</span>
     </div>`;
