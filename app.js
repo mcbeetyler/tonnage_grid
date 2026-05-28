@@ -1509,6 +1509,57 @@ function copyVesselRow(idx) {
   }
 }
 
+// Mark a fixed/in-house vessel as having FAILED and put it back to market.
+// - Logs a 'failed' event in price_history so charterer + price are kept for
+//   market intelligence (the "we saw $X" memory).
+// - Clears bid-side residue (bidding_charterer, p6_bid, charterer, fixed_price,
+//   date_fixed). Keeps p6_offer / hire_offer / bb_offer untouched — an owner's
+//   ask typically doesn't change just because subs were lifted.
+// - Flips status straight to OPEN; appends a "Failed X $Y" note for lineage.
+function failVessel(idx) {
+  const v = vessels[idx];
+  if (!v) return;
+  if (v.status !== 'FIXED' && v.status !== 'IN HOUSE') {
+    alert('Failed & relist only applies to fixed / in-house vessels.');
+    return;
+  }
+  const counterpartyName = v.charterer || v.bidding_charterer || '(unknown)';
+  const priceForNote = v.fixed_price || getP6Values(v).bid;
+  const priceTxt = priceForNote ? '$' + priceForNote.toLocaleString() : '';
+  if (!confirm(`Mark ${v.vessel_name} as FAILED with ${counterpartyName} ${priceTxt} and put back on market?`)) return;
+
+  // Log the failure to price_history (counterparty = who would have taken it)
+  v.price_history = v.price_history || [];
+  v.price_history.push({
+    t: new Date().toISOString(),
+    field: 'failed',
+    value: priceForNote || null,
+    counterparty: counterpartyName === '(unknown)' ? null : counterpartyName,
+  });
+  if (v.price_history.length > 50) v.price_history = v.price_history.slice(-50);
+
+  // Snapshot the prior negotiation for the note
+  const priorChart = v.charterer || v.bidding_charterer;
+
+  // Flip back to OPEN and wipe stale bid-side fields
+  v.status = 'OPEN';
+  v.charterer = null;
+  v.fixed_price = null;
+  v.date_fixed = null;
+  v.bidding_charterer = null;
+  if (v.market_colour && v.market_colour[0]) {
+    v.market_colour[0].p6_bid = null;
+    v.market_colour[0].bid_usd = null;
+  }
+  // p6_offer / hire_offer / bb_offer intentionally kept — owner's ask stands
+
+  const failNote = `Failed ${priorChart || ''}${priceTxt ? ' ' + priceTxt : ''}`.trim();
+  v.notes = v.notes ? `${v.notes} · ${failNote}` : failNote;
+
+  touchVessel(idx);
+  save(); renderTable(); updateStats();
+}
+
 // Bring a fixed/in-house vessel back to the market as a relet.
 // - Preserves the original fixture in price_history (synthesises an entry for
 //   legacy vessels with no history) so the original charterer keeps credit.
@@ -1734,11 +1785,14 @@ function renderTable() {
       case 'notes': return `<td class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>`;
       case 'status': return `<td><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>`;
       case 'actions': {
-        const showRelet = v.status === 'FIXED' || v.status === 'IN HOUSE';
-        const reletBtn = showRelet
+        const onSubs = v.status === 'FIXED' || v.status === 'IN HOUSE';
+        const reletBtn = onSubs
           ? `<button class="btn-relet" onclick="reletVessel(${gi})" title="Bring back to market as relet">↺</button>`
           : '';
-        return `<td class="td-actions">${reletBtn}<button class="btn-copy-row" onclick="copyVesselRow(${gi})" title="Copy vessel details">⧉</button><button class="btn-remove" onclick="removeVessel(${gi})" title="Remove">x</button></td>`;
+        const failBtn = onSubs
+          ? `<button class="btn-fail" onclick="failVessel(${gi})" title="Failed &amp; relist (subs lifted, back to market)">✗</button>`
+          : '';
+        return `<td class="td-actions">${failBtn}${reletBtn}<button class="btn-copy-row" onclick="copyVesselRow(${gi})" title="Copy vessel details">⧉</button><button class="btn-remove" onclick="removeVessel(${gi})" title="Remove">x</button></td>`;
       }
       // New CSV columns
       case 'draft': return `<td class="td-specs editable" onclick="startEdit(this,${gi},'draft',true)">${v.draft != null ? v.draft : '—'}</td>`;

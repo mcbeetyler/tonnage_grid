@@ -160,7 +160,10 @@
   .btn-copy-row:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light)}
   .btn-relet{background:#FFF3D1;border:1px solid #E5C97D;color:#8A6300;padding:4px 8px;font-size:12px;font-weight:700;border-radius:var(--radius-sm);cursor:pointer;margin-right:4px;line-height:1}
   .btn-relet:hover{background:#F8E199}
+  .btn-fail{background:#FBE5E5;border:1px solid #E59B9B;color:#A32D2D;padding:4px 8px;font-size:12px;font-weight:700;border-radius:var(--radius-sm);cursor:pointer;margin-right:4px;line-height:1}
+  .btn-fail:hover{background:#F4C3C3}
   .party-activity-action.relet{color:#8A6300}
+  .party-activity-action.failed{color:#A32D2D}
   .td-actions{white-space:nowrap}
 
   /* Mode toggle */
@@ -3878,6 +3881,46 @@ function cycleStatus(idx) {
   save(); renderTable(); updateStats();
 }
 
+function failVessel(idx) {
+  const v = vessels[idx];
+  if (!v) return;
+  if (v.status !== 'FIXED' && v.status !== 'IN HOUSE') {
+    alert('Failed & relist only applies to fixed / in-house vessels.');
+    return;
+  }
+  const counterpartyName = v.charterer || v.bidding_charterer || '(unknown)';
+  const priceForNote = v.fixed_price || getP6Values(v).bid;
+  const priceTxt = priceForNote ? '$' + priceForNote.toLocaleString() : '';
+  if (!confirm(`Mark ${v.vessel_name} as FAILED with ${counterpartyName} ${priceTxt} and put back on market?`)) return;
+
+  v.price_history = v.price_history || [];
+  v.price_history.push({
+    t: new Date().toISOString(),
+    field: 'failed',
+    value: priceForNote || null,
+    counterparty: counterpartyName === '(unknown)' ? null : counterpartyName,
+  });
+  if (v.price_history.length > 50) v.price_history = v.price_history.slice(-50);
+
+  const priorChart = v.charterer || v.bidding_charterer;
+
+  v.status = 'OPEN';
+  v.charterer = null;
+  v.fixed_price = null;
+  v.date_fixed = null;
+  v.bidding_charterer = null;
+  if (v.market_colour && v.market_colour[0]) {
+    v.market_colour[0].p6_bid = null;
+    v.market_colour[0].bid_usd = null;
+  }
+
+  const failNote = `Failed ${priorChart || ''}${priceTxt ? ' ' + priceTxt : ''}`.trim();
+  v.notes = v.notes ? `${v.notes} · ${failNote}` : failNote;
+
+  touchVessel(idx);
+  save(); renderTable(); updateStats();
+}
+
 function reletVessel(idx) {
   const v = vessels[idx];
   if (!v) return;
@@ -4094,9 +4137,10 @@ function renderTable() {
       case 'notes': return `<td class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>`;
       case 'status': return `<td><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>`;
       case 'actions': {
-        const showRelet = v.status === 'FIXED' || v.status === 'IN HOUSE';
-        const reletBtn = showRelet ? `<button class="btn-relet" onclick="reletVessel(${gi})" title="Bring back to market as relet">↺</button>` : '';
-        return `<td class="td-actions">${reletBtn}<button class="btn-copy-row" onclick="copyVesselRow(${gi})" title="Copy vessel details">⧉</button><button class="btn-remove" onclick="removeVessel(${gi})" title="Remove">x</button></td>`;
+        const onSubs = v.status === 'FIXED' || v.status === 'IN HOUSE';
+        const reletBtn = onSubs ? `<button class="btn-relet" onclick="reletVessel(${gi})" title="Bring back to market as relet">↺</button>` : '';
+        const failBtn = onSubs ? `<button class="btn-fail" onclick="failVessel(${gi})" title="Failed &amp; relist (subs lifted, back to market)">✗</button>` : '';
+        return `<td class="td-actions">${failBtn}${reletBtn}<button class="btn-copy-row" onclick="copyVesselRow(${gi})" title="Copy vessel details">⧉</button><button class="btn-remove" onclick="removeVessel(${gi})" title="Remove">x</button></td>`;
       }
       // New CSV columns
       case 'draft': return `<td class="td-specs editable" onclick="startEdit(this,${gi},'draft',true)">${v.draft != null ? v.draft : '—'}</td>`;
@@ -7352,6 +7396,7 @@ function buildActivityFeed(limit) {
       else if (h.field === 'fixed_price') type = 'fixed';
       else if (h.field === 'in_house') type = 'in_house';
       else if (h.field === 'relet') type = 'relet';
+      else if (h.field === 'failed') type = 'failed';
       let prev = null;
       for (let j = i - 1; j >= 0; j--) { if (hist[j].field === h.field) { prev = hist[j]; break; } }
       const delta = (prev && h.value != null && prev.value != null) ? (h.value - prev.value) : null;
@@ -7398,6 +7443,7 @@ function renderActivityFeed() {
     else if (e.type === 'fixed')    { actionCls += ' fixed';    actionText = `FIXED ${fmtParty$(e.value)}`; }
     else if (e.type === 'in_house') { actionCls += ' in-house'; actionText = `IN HOUSE${e.value != null ? ' ' + fmtParty$(e.value) : ''}`; }
     else if (e.type === 'relet')    { actionCls += ' relet';    actionText = `RELET to ${e.actor || '?'}`; }
+    else if (e.type === 'failed')   { actionCls += ' failed';   actionText = `FAILED${e.value != null ? ' ' + fmtParty$(e.value) : ''}`; }
     let deltaHtml = '';
     if (e.delta != null && e.delta !== 0) {
       const isTighter = (e.type === 'bid' && e.delta > 0) || (e.type === 'offer' && e.delta < 0);
