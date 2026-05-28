@@ -111,19 +111,20 @@ async function loadVoyagesFromServer() {
     const serverP8 = Array.isArray(data.p8) ? data.p8 : [];
     const serverTotal = serverP7.length + serverP8.length;
     const localTotal = (voyageData.p7 || []).length + (voyageData.p8 || []).length;
+    const serverBunkers = data.bunkers || null;
 
-    // Only overwrite local with server data if server has MORE data, or if local is empty.
-    // This protects against silently losing local edits when the server is empty
-    // (e.g. file:// usage, failed middleware auth, fresh deployment).
     if (serverTotal > localTotal || localTotal === 0) {
-      voyageData = { p7: serverP7, p8: serverP8 };
+      voyageData = { p7: serverP7, p8: serverP8, bunkers: serverBunkers || voyageData.bunkers || null };
       localStorage.setItem('pt_voyages', JSON.stringify(voyageData));
     } else if (localTotal > serverTotal) {
-      // Local is ahead — push to server to sync
       saveVoyages();
+    } else if (serverBunkers && !voyageData.bunkers) {
+      voyageData.bunkers = serverBunkers;
+      localStorage.setItem('pt_voyages', JSON.stringify(voyageData));
     }
   } catch (e) { /* localStorage fallback */ }
   renderVoyages();
+  renderBunkerPanel();
 }
 
 // Hook into existing tab switcher
@@ -136,8 +137,103 @@ window.switchTab = function(tab) {
     document.getElementById('tab-' + tab).classList.add('active');
     document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`).classList.add('active');
   }
-  if (tab === 'voyages') loadVoyagesFromServer();
+  if (tab === 'voyages') { loadVoyagesFromServer(); renderBunkerPanel(); }
 };
+
+// ─── Bunker prices + Voyage TCE calculator ───────────────────────────────────
+
+// Industry-standard Kamsarmax assumptions. Tune these as actuals indicate.
+const ROUTE_DEFAULTS = {
+  p8: {  // ECSA → N.China
+    name: 'P8 ECSA → N.China',
+    cargo_size: 66000,
+    sea_days_laden: 39,
+    sea_days_ballast: 35,
+    port_days_load: 3,
+    port_days_disch: 4,
+    port_costs: 135000,  // Santos load + Qingdao disch combined
+    commission: 0.05,
+  },
+  p7: {  // USG → N.China
+    name: 'P7 USG → N.China',
+    cargo_size: 66000,
+    sea_days_laden: 34,
+    sea_days_ballast: 30,
+    port_days_load: 3,
+    port_days_disch: 4,
+    port_costs: 110000,
+    commission: 0.05,
+  },
+};
+
+const VESSEL_DEFAULTS = {
+  sea_consumption: 23,    // mt/day VLSFO at sea (avg laden + ballast)
+  port_consumption: 3.5,  // mt/day VLSFO in port
+};
+
+function getBunkers() {
+  return (voyageData && voyageData.bunkers) || { vlsfo: null, lsmgo: null, updated: null };
+}
+
+function saveBunkers() {
+  const vInput = document.getElementById('bunkerVLSFO');
+  const mInput = document.getElementById('bunkerLSMGO');
+  if (!vInput || !mInput) return;
+  const vlsfo = parseFloat(vInput.value);
+  const lsmgo = parseFloat(mInput.value);
+  voyageData.bunkers = {
+    vlsfo: isNaN(vlsfo) ? null : vlsfo,
+    lsmgo: isNaN(lsmgo) ? null : lsmgo,
+    updated: new Date().toISOString(),
+  };
+  saveVoyages();
+  renderBunkerPanel();
+}
+
+function renderBunkerPanel() {
+  const b = getBunkers();
+  const inV = document.getElementById('bunkerVLSFO');
+  const inM = document.getElementById('bunkerLSMGO');
+  if (inV && inV !== document.activeElement) inV.value = b.vlsfo != null ? b.vlsfo : '';
+  if (inM && inM !== document.activeElement) inM.value = b.lsmgo != null ? b.lsmgo : '';
+
+  const stamp = document.getElementById('voyageBunkersStamp');
+  if (!stamp) return;
+  if (!b.updated) {
+    stamp.textContent = 'No bunker data — enter VLSFO to enable TCE conversion';
+    stamp.className = 'voyage-bunkers-stamp warn';
+    return;
+  }
+  const days = (Date.now() - new Date(b.updated).getTime()) / 86400000;
+  let cls = '';
+  if (days > 5) cls = 'stale';
+  else if (days > 3) cls = 'warn';
+  const ago = days < 1 ? 'today' : days < 2 ? 'yesterday' : `${Math.floor(days)} days ago`;
+  stamp.textContent = `Updated ${ago}`;
+  stamp.className = 'voyage-bunkers-stamp ' + cls;
+}
+
+// Convert a $/MT voyage rate to its TC equivalent ($/day) for a given route.
+// Returns null if no bunker price is set (can't calculate).
+function pmtToTce(pmt, section) {
+  const route = ROUTE_DEFAULTS[section];
+  if (!route) return null;
+  const b = getBunkers();
+  if (!b.vlsfo || !isFinite(pmt) || pmt <= 0) return null;
+
+  const grossFreight = pmt * route.cargo_size;
+  const netFreight = grossFreight * (1 - route.commission);
+
+  const seaDays = route.sea_days_laden + route.sea_days_ballast;
+  const portDays = route.port_days_load + route.port_days_disch;
+  const totalDays = seaDays + portDays;
+
+  const seaBunker = seaDays * VESSEL_DEFAULTS.sea_consumption * b.vlsfo;
+  const portBunker = portDays * VESSEL_DEFAULTS.port_consumption * b.vlsfo;
+  const totalCosts = route.port_costs + seaBunker + portBunker;
+
+  return (netFreight - totalCosts) / totalDays;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -688,7 +784,9 @@ async function parseVoyagePaste() {
   alert(`Added ${added} voyage(s) to ${section.toUpperCase()}.`);
 }
 
-// Init if voyages tab is active
+// Init if voyages tab is active (or just render the bunker panel either way)
+document.addEventListener('DOMContentLoaded', renderBunkerPanel);
 if (document.getElementById('tab-voyages') && document.getElementById('tab-voyages').classList.contains('active')) {
   renderVoyages();
+  renderBunkerPanel();
 }

@@ -10,7 +10,7 @@ let marketChart = null;
 let marketBoxChart = null;
 
 // Series visibility toggles — synced across both charts and persisted.
-const DEFAULT_MARKET_VIS = { offers: true, bids: true, fixtures: true, medianOffer: true, medianBid: true, cargoes: false };
+const DEFAULT_MARKET_VIS = { offers: true, bids: true, fixtures: true, medianOffer: true, medianBid: true, cargoes: false, voyageOffers: false, voyageBids: false };
 let marketVisibility = (() => {
   try {
     const saved = JSON.parse(localStorage.getItem('pt_market_vis') || 'null');
@@ -30,7 +30,7 @@ function toggleMarketSeries(key) {
 }
 
 function updateMarketToggleUI() {
-  ['offers', 'bids', 'fixtures', 'medianOffer', 'medianBid', 'cargoes'].forEach(k => {
+  ['offers', 'bids', 'fixtures', 'medianOffer', 'medianBid', 'cargoes', 'voyageOffers', 'voyageBids'].forEach(k => {
     const btn = document.getElementById('marketToggle-' + k);
     if (btn) btn.classList.toggle('active', !!marketVisibility[k]);
   });
@@ -309,12 +309,59 @@ function collectCargoClusters() {
   return clusters;
 }
 
+// Voyage section → Route filter mapping. P8 = ECSA → N.China = ECSA FH.
+// P7 = USG → N.China = USG FH. Other voyage sections aren't tracked.
+const VOYAGE_SECTION_TO_ROUTE = { p8: 'ECSA FH', p7: 'USG FH' };
+
+// Collect voyage bids/offers, converting $/MT to TC equivalent ($/day) via
+// pmtToTce (defined in voyages.js). Returns null TCEs are skipped (means no
+// bunker price set, or the rate is non-numeric).
+function collectVoyagePoints() {
+  if (typeof voyageData === 'undefined' || typeof pmtToTce !== 'function') {
+    return { offers: [], bids: [] };
+  }
+  const mode = getMarketFilter();
+  const routeFilter = getMarketRouteFilter();
+  const offers = [];
+  const bids = [];
+  for (const section of ['p7', 'p8']) {
+    const sectionRoute = VOYAGE_SECTION_TO_ROUTE[section];
+    if (routeFilter !== 'all' && sectionRoute !== routeFilter) continue;
+    const arr = (voyageData && voyageData[section]) || [];
+    for (const v of arr) {
+      const d = cargoLaycanDate(v.laycan);
+      if (!d) continue;
+      const iso = d.toISOString().slice(0, 10);
+      if (!inMarketWindow(iso, mode)) continue;
+      const x = d.getTime();
+      const offerPmt = parseFloat(String(v.offer || '').replace(/[$,\s]/g, ''));
+      const bidPmt   = parseFloat(String(v.bid   || '').replace(/[$,\s]/g, ''));
+      if (isFinite(offerPmt) && offerPmt > 0) {
+        const tce = pmtToTce(offerPmt, section);
+        if (tce != null) offers.push({ x, y: tce, voyage: v, section, pmt: offerPmt });
+      }
+      if (isFinite(bidPmt) && bidPmt > 0) {
+        const tce = pmtToTce(bidPmt, section);
+        if (tce != null) bids.push({ x, y: tce, voyage: v, section, pmt: bidPmt });
+      }
+    }
+  }
+  return { offers, bids };
+}
+
 function renderMarketChart() {
   const canvas = document.getElementById('marketChart');
   if (!canvas) return;
   const points = collectMarketPoints();
   const { offers, bids, fixtures } = points;
-  const yRange = computeMarketYRange(points);
+  const voyagePoints = collectVoyagePoints();
+  // Voyage TCEs join the main y-range computation so they influence the scale
+  const allForRange = {
+    offers: offers.concat(voyagePoints.offers),
+    bids: bids.concat(voyagePoints.bids),
+    fixtures,
+  };
+  const yRange = computeMarketYRange(allForRange);
   const cargoClusters = collectCargoClusters();
   // Cargo points sit on a hidden secondary y-axis at y=0.5 (max=10) so they
   // sit near the bottom of the chart regardless of the main y range.
@@ -403,6 +450,33 @@ function renderMarketChart() {
           order: 10,
         },
         {
+          label: 'Voyage offers',
+          data: voyagePoints.offers,
+          hidden: !marketVisibility.voyageOffers,
+          backgroundColor: 'rgba(220, 53, 69, 0.35)',
+          borderColor: RED,
+          borderWidth: 1.5,
+          pointStyle: 'triangle',
+          pointRadius: 7,
+          pointHoverRadius: 9,
+          rotation: 180, // point-down triangle to differentiate from voyage bids
+          showLine: false,
+          order: 15,
+        },
+        {
+          label: 'Voyage bids',
+          data: voyagePoints.bids,
+          hidden: !marketVisibility.voyageBids,
+          backgroundColor: 'rgba(40, 167, 69, 0.35)',
+          borderColor: GREEN,
+          borderWidth: 1.5,
+          pointStyle: 'triangle',
+          pointRadius: 7,
+          pointHoverRadius: 9,
+          showLine: false,
+          order: 15,
+        },
+        {
           label: 'Cargoes',
           data: cargoData,
           hidden: !marketVisibility.cargoes,
@@ -438,6 +512,20 @@ function renderMarketChart() {
             },
             label: (ctx) => {
               const p = ctx.raw;
+              // Voyage point: show original PMT + derived TCE
+              if (p && p.voyage) {
+                const v = p.voyage;
+                const sectionName = (typeof ROUTE_DEFAULTS !== 'undefined' && ROUTE_DEFAULTS[p.section])
+                  ? ROUTE_DEFAULTS[p.section].name : p.section.toUpperCase();
+                const lines = [
+                  `${ctx.dataset.label} · ${sectionName}`,
+                  `$${p.pmt}/mt → TCE $${Math.round(ctx.parsed.y).toLocaleString()}/day`,
+                ];
+                if (v.buyer_seller) lines.push(v.buyer_seller);
+                if (v.cgo_stem) lines.push('Cargo: ' + v.cgo_stem);
+                if (v.laycan) lines.push('Laycan: ' + v.laycan);
+                return lines;
+              }
               // Cargo cluster point: list each cargo in the cluster
               if (p && p._cargoes) {
                 const cs = p._cargoes;

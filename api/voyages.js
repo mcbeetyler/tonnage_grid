@@ -10,17 +10,21 @@ export const config = {
 };
 
 // Voyages storage:
-//   pt_voyages = { p7: [...], p8: [...] }
+//   pt_voyages = { p7: [...], p8: [...], bunkers: { vlsfo, lsmgo, updated } }
 export default async function handler(req, res) {
   if (req.method === 'GET') {
-    const voyages = await kv.get('pt_voyages') ?? { p7: [], p8: [] };
+    const voyages = await kv.get('pt_voyages') ?? { p7: [], p8: [], bunkers: null };
     res.status(200).json(voyages);
   } else if (req.method === 'POST') {
     const body = req.body;
     if (!body || typeof body !== 'object') {
-      return res.status(400).json({ error: 'Expected {p7, p8} object' });
+      return res.status(400).json({ error: 'Expected {p7, p8, bunkers?} object' });
     }
-    await kv.set('pt_voyages', { p7: body.p7 || [], p8: body.p8 || [] });
+    await kv.set('pt_voyages', {
+      p7: body.p7 || [],
+      p8: body.p8 || [],
+      bunkers: body.bunkers || null,
+    });
     res.status(200).json({ ok: true });
   } else {
     res.status(405).end();

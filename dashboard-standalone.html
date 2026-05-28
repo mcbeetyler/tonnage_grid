@@ -316,6 +316,16 @@
   .market-toggle.active.bids,.market-toggle.active.median-bid{background:rgba(40,167,69,0.15);color:rgb(30,135,55);border-color:rgba(40,167,69,0.45)}
   .market-toggle.active.fixtures{background:rgba(24,95,165,0.15);color:rgb(24,95,165);border-color:rgba(24,95,165,0.45)}
   .market-toggle.active.cargoes{background:rgba(140,90,30,0.15);color:rgb(140,90,30);border-color:rgba(140,90,30,0.45)}
+  .market-toggle.active.voyageOffers{background:rgba(220,53,69,0.12);color:rgb(178,40,55);border-color:rgba(220,53,69,0.45)}
+  .market-toggle.active.voyageBids{background:rgba(40,167,69,0.12);color:rgb(30,135,55);border-color:rgba(40,167,69,0.45)}
+  .voyage-bunkers{display:flex;gap:14px;align-items:center;padding:10px 16px;margin:14px 28px 0;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);flex-wrap:wrap}
+  .voyage-bunkers-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim)}
+  .voyage-bunkers-field{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--text-bright)}
+  .voyage-bunkers-field input{width:80px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--mono);font-size:12px;background:var(--bg);color:var(--text-bright)}
+  .voyage-bunkers-field input:focus{outline:none;border-color:var(--accent)}
+  .voyage-bunkers-stamp{font-size:10px;color:var(--text-dim);margin-left:auto;font-family:var(--mono)}
+  .voyage-bunkers-stamp.warn{color:#BA7517;font-weight:600}
+  .voyage-bunkers-stamp.stale{color:#A32D2D;font-weight:600}
 
   /* Participants tab */
   .party-wrap{padding:18px 28px 24px;max-width:1500px;margin:0 auto}
@@ -777,6 +787,16 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 </div><!-- end tab-cargo -->
 
 <div id="tab-voyages" class="tab-panel">
+  <div class="voyage-bunkers">
+    <span class="voyage-bunkers-label">Bunkers</span>
+    <label class="voyage-bunkers-field">VLSFO <span style="color:var(--text-dim);font-weight:400">$/mt</span>
+      <input type="number" id="bunkerVLSFO" step="1" onblur="saveBunkers()" onkeydown="if(event.key==='Enter') this.blur()">
+    </label>
+    <label class="voyage-bunkers-field">LSMGO <span style="color:var(--text-dim);font-weight:400">$/mt</span>
+      <input type="number" id="bunkerLSMGO" step="1" onblur="saveBunkers()" onkeydown="if(event.key==='Enter') this.blur()">
+    </label>
+    <span class="voyage-bunkers-stamp" id="voyageBunkersStamp"></span>
+  </div>
   <!-- Paste bar -->
   <div style="padding:14px 28px 0">
     <div style="display:flex;justify-content:flex-end;margin-bottom:6px">
@@ -921,6 +941,8 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
     <button id="marketToggle-medianOffer" class="market-toggle median-offer" onclick="toggleMarketSeries('medianOffer')">⋯ Median offer</button>
     <button id="marketToggle-medianBid" class="market-toggle median-bid" onclick="toggleMarketSeries('medianBid')">⋯ Median bid</button>
     <button id="marketToggle-cargoes" class="market-toggle cargoes" onclick="toggleMarketSeries('cargoes')" title="Open cargoes at their laycan dates">◆ Cargoes</button>
+    <button id="marketToggle-voyageOffers" class="market-toggle voyageOffers" onclick="toggleMarketSeries('voyageOffers')" title="Voyage offers converted to TC equivalent">▽ Voy offers</button>
+    <button id="marketToggle-voyageBids" class="market-toggle voyageBids" onclick="toggleMarketSeries('voyageBids')" title="Voyage bids converted to TC equivalent">△ Voy bids</button>
   </div>
   <div class="market-charts">
     <div class="market-chart-card">
@@ -5330,19 +5352,20 @@ async function loadVoyagesFromServer() {
     const serverP8 = Array.isArray(data.p8) ? data.p8 : [];
     const serverTotal = serverP7.length + serverP8.length;
     const localTotal = (voyageData.p7 || []).length + (voyageData.p8 || []).length;
+    const serverBunkers = data.bunkers || null;
 
-    // Only overwrite local with server data if server has MORE data, or if local is empty.
-    // This protects against silently losing local edits when the server is empty
-    // (e.g. file:// usage, failed middleware auth, fresh deployment).
     if (serverTotal > localTotal || localTotal === 0) {
-      voyageData = { p7: serverP7, p8: serverP8 };
+      voyageData = { p7: serverP7, p8: serverP8, bunkers: serverBunkers || voyageData.bunkers || null };
       localStorage.setItem('pt_voyages', JSON.stringify(voyageData));
     } else if (localTotal > serverTotal) {
-      // Local is ahead — push to server to sync
       saveVoyages();
+    } else if (serverBunkers && !voyageData.bunkers) {
+      voyageData.bunkers = serverBunkers;
+      localStorage.setItem('pt_voyages', JSON.stringify(voyageData));
     }
   } catch (e) { /* localStorage fallback */ }
   renderVoyages();
+  renderBunkerPanel();
 }
 
 // Hook into existing tab switcher
@@ -5355,8 +5378,75 @@ window.switchTab = function(tab) {
     document.getElementById('tab-' + tab).classList.add('active');
     document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`).classList.add('active');
   }
-  if (tab === 'voyages') loadVoyagesFromServer();
+  if (tab === 'voyages') { loadVoyagesFromServer(); renderBunkerPanel(); }
 };
+
+// ─── Bunker prices + Voyage TCE calculator ───────────────────────────────────
+
+const ROUTE_DEFAULTS = {
+  p8: { name: 'P8 ECSA → N.China', cargo_size: 66000, sea_days_laden: 39, sea_days_ballast: 35,
+        port_days_load: 3, port_days_disch: 4, port_costs: 135000, commission: 0.05 },
+  p7: { name: 'P7 USG → N.China',  cargo_size: 66000, sea_days_laden: 34, sea_days_ballast: 30,
+        port_days_load: 3, port_days_disch: 4, port_costs: 110000, commission: 0.05 },
+};
+const VESSEL_DEFAULTS = { sea_consumption: 23, port_consumption: 3.5 };
+
+function getBunkers() {
+  return (voyageData && voyageData.bunkers) || { vlsfo: null, lsmgo: null, updated: null };
+}
+
+function saveBunkers() {
+  const vInput = document.getElementById('bunkerVLSFO');
+  const mInput = document.getElementById('bunkerLSMGO');
+  if (!vInput || !mInput) return;
+  const vlsfo = parseFloat(vInput.value);
+  const lsmgo = parseFloat(mInput.value);
+  voyageData.bunkers = {
+    vlsfo: isNaN(vlsfo) ? null : vlsfo,
+    lsmgo: isNaN(lsmgo) ? null : lsmgo,
+    updated: new Date().toISOString(),
+  };
+  saveVoyages();
+  renderBunkerPanel();
+}
+
+function renderBunkerPanel() {
+  const b = getBunkers();
+  const inV = document.getElementById('bunkerVLSFO');
+  const inM = document.getElementById('bunkerLSMGO');
+  if (inV && inV !== document.activeElement) inV.value = b.vlsfo != null ? b.vlsfo : '';
+  if (inM && inM !== document.activeElement) inM.value = b.lsmgo != null ? b.lsmgo : '';
+  const stamp = document.getElementById('voyageBunkersStamp');
+  if (!stamp) return;
+  if (!b.updated) {
+    stamp.textContent = 'No bunker data — enter VLSFO to enable TCE conversion';
+    stamp.className = 'voyage-bunkers-stamp warn';
+    return;
+  }
+  const days = (Date.now() - new Date(b.updated).getTime()) / 86400000;
+  let cls = '';
+  if (days > 5) cls = 'stale';
+  else if (days > 3) cls = 'warn';
+  const ago = days < 1 ? 'today' : days < 2 ? 'yesterday' : `${Math.floor(days)} days ago`;
+  stamp.textContent = `Updated ${ago}`;
+  stamp.className = 'voyage-bunkers-stamp ' + cls;
+}
+
+function pmtToTce(pmt, section) {
+  const route = ROUTE_DEFAULTS[section];
+  if (!route) return null;
+  const b = getBunkers();
+  if (!b.vlsfo || !isFinite(pmt) || pmt <= 0) return null;
+  const grossFreight = pmt * route.cargo_size;
+  const netFreight = grossFreight * (1 - route.commission);
+  const seaDays = route.sea_days_laden + route.sea_days_ballast;
+  const portDays = route.port_days_load + route.port_days_disch;
+  const totalDays = seaDays + portDays;
+  const seaBunker = seaDays * VESSEL_DEFAULTS.sea_consumption * b.vlsfo;
+  const portBunker = portDays * VESSEL_DEFAULTS.port_consumption * b.vlsfo;
+  const totalCosts = route.port_costs + seaBunker + portBunker;
+  return (netFreight - totalCosts) / totalDays;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -5908,8 +5998,10 @@ async function parseVoyagePaste() {
 }
 
 // Init if voyages tab is active
+document.addEventListener('DOMContentLoaded', renderBunkerPanel);
 if (document.getElementById('tab-voyages') && document.getElementById('tab-voyages').classList.contains('active')) {
   renderVoyages();
+  renderBunkerPanel();
 }
 
 </script>
@@ -6412,7 +6504,7 @@ function copyToClipboard(text) {
 let marketChart = null;
 let marketBoxChart = null;
 
-const DEFAULT_MARKET_VIS = { offers: true, bids: true, fixtures: true, medianOffer: true, medianBid: true, cargoes: false };
+const DEFAULT_MARKET_VIS = { offers: true, bids: true, fixtures: true, medianOffer: true, medianBid: true, cargoes: false, voyageOffers: false, voyageBids: false };
 let marketVisibility = (() => {
   try {
     const saved = JSON.parse(localStorage.getItem('pt_market_vis') || 'null');
@@ -6432,7 +6524,7 @@ function toggleMarketSeries(key) {
 }
 
 function updateMarketToggleUI() {
-  ['offers', 'bids', 'fixtures', 'medianOffer', 'medianBid', 'cargoes'].forEach(k => {
+  ['offers', 'bids', 'fixtures', 'medianOffer', 'medianBid', 'cargoes', 'voyageOffers', 'voyageBids'].forEach(k => {
     const btn = document.getElementById('marketToggle-' + k);
     if (btn) btn.classList.toggle('active', !!marketVisibility[k]);
   });
@@ -6683,12 +6775,46 @@ function collectCargoClusters() {
   return clusters;
 }
 
+const VOYAGE_SECTION_TO_ROUTE = { p8: 'ECSA FH', p7: 'USG FH' };
+
+function collectVoyagePoints() {
+  if (typeof voyageData === 'undefined' || typeof pmtToTce !== 'function') return { offers: [], bids: [] };
+  const mode = getMarketFilter();
+  const routeFilter = getMarketRouteFilter();
+  const offers = [], bids = [];
+  for (const section of ['p7', 'p8']) {
+    const sectionRoute = VOYAGE_SECTION_TO_ROUTE[section];
+    if (routeFilter !== 'all' && sectionRoute !== routeFilter) continue;
+    const arr = (voyageData && voyageData[section]) || [];
+    for (const v of arr) {
+      const d = cargoLaycanDate(v.laycan);
+      if (!d) continue;
+      const iso = d.toISOString().slice(0, 10);
+      if (!inMarketWindow(iso, mode)) continue;
+      const x = d.getTime();
+      const offerPmt = parseFloat(String(v.offer || '').replace(/[$,\s]/g, ''));
+      const bidPmt   = parseFloat(String(v.bid   || '').replace(/[$,\s]/g, ''));
+      if (isFinite(offerPmt) && offerPmt > 0) {
+        const tce = pmtToTce(offerPmt, section);
+        if (tce != null) offers.push({ x, y: tce, voyage: v, section, pmt: offerPmt });
+      }
+      if (isFinite(bidPmt) && bidPmt > 0) {
+        const tce = pmtToTce(bidPmt, section);
+        if (tce != null) bids.push({ x, y: tce, voyage: v, section, pmt: bidPmt });
+      }
+    }
+  }
+  return { offers, bids };
+}
+
 function renderMarketChart() {
   const canvas = document.getElementById('marketChart');
   if (!canvas) return;
   const points = collectMarketPoints();
   const { offers, bids, fixtures } = points;
-  const yRange = computeMarketYRange(points);
+  const voyagePoints = collectVoyagePoints();
+  const allForRange = { offers: offers.concat(voyagePoints.offers), bids: bids.concat(voyagePoints.bids), fixtures };
+  const yRange = computeMarketYRange(allForRange);
   const cargoClusters = collectCargoClusters();
   const cargoData = cargoClusters.map(c => ({ x: c.x, y: 0.5, _cargoes: c.cargoes }));
 
@@ -6738,6 +6864,18 @@ function renderMarketChart() {
           pointRadius: 0, pointHoverRadius: 0, showLine: true, fill: false, tension: 0.2, order: 10,
         },
         {
+          label: 'Voyage offers', data: voyagePoints.offers, hidden: !marketVisibility.voyageOffers,
+          backgroundColor: 'rgba(220, 53, 69, 0.35)', borderColor: RED, borderWidth: 1.5,
+          pointStyle: 'triangle', pointRadius: 7, pointHoverRadius: 9, rotation: 180,
+          showLine: false, order: 15,
+        },
+        {
+          label: 'Voyage bids', data: voyagePoints.bids, hidden: !marketVisibility.voyageBids,
+          backgroundColor: 'rgba(40, 167, 69, 0.35)', borderColor: GREEN, borderWidth: 1.5,
+          pointStyle: 'triangle', pointRadius: 7, pointHoverRadius: 9,
+          showLine: false, order: 15,
+        },
+        {
           label: 'Cargoes', data: cargoData, hidden: !marketVisibility.cargoes,
           yAxisID: 'yCargo',
           backgroundColor: 'rgba(140, 90, 30, 0.55)', borderColor: 'rgba(140, 90, 30, 1)', borderWidth: 1.5,
@@ -6762,6 +6900,19 @@ function renderMarketChart() {
             },
             label: (ctx) => {
               const p = ctx.raw;
+              if (p && p.voyage) {
+                const v = p.voyage;
+                const sectionName = (typeof ROUTE_DEFAULTS !== 'undefined' && ROUTE_DEFAULTS[p.section])
+                  ? ROUTE_DEFAULTS[p.section].name : p.section.toUpperCase();
+                const lines = [
+                  `${ctx.dataset.label} · ${sectionName}`,
+                  `$${p.pmt}/mt → TCE $${Math.round(ctx.parsed.y).toLocaleString()}/day`,
+                ];
+                if (v.buyer_seller) lines.push(v.buyer_seller);
+                if (v.cgo_stem) lines.push('Cargo: ' + v.cgo_stem);
+                if (v.laycan) lines.push('Laycan: ' + v.laycan);
+                return lines;
+              }
               if (p && p._cargoes) {
                 const cs = p._cargoes;
                 const lines = [`${cs.length} cargo${cs.length === 1 ? '' : 'es'}`];
