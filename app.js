@@ -1975,7 +1975,12 @@ function renderTable() {
 
     switch (col) {
       case 'laycan': return laycan ? `<span class="td-laycan laycan-color-${lcIdx}">${laycan}</span>` : '<span style="color:var(--text-dim)">—</span>';
-      case 'vessel': return `<td class="td-vessel editable" onclick="startEdit(this,${gi},'vessel_name',true)">${v.vessel_name || '—'}${warnDot}</td>`;
+      case 'vessel': {
+        const quietH = hoursAgo(v.last_updated);
+        const quietBadge = v.status === 'OPEN' && quietH !== null && quietH > 96
+          ? `<span class="quiet-badge" title="No update in ${Math.floor(quietH/24)}d — may have gone quiet">?</span>` : '';
+        return `<td class="td-vessel editable" onclick="startEdit(this,${gi},'vessel_name',true)">${v.vessel_name || '—'}${warnDot}${quietBadge}</td>`;
+      }
       case 'owner': return `<td class="td-owner editable" onclick="startEdit(this,${gi},'owner',false)">${v.owner || '—'}</td>`;
       case 'dwt': return `<td class="td-specs editable" onclick="startEdit(this,${gi},'dwt',true)">${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '—'}</td>`;
       case 'built': return `<td class="td-specs editable" onclick="startEdit(this,${gi},'build_year',true)">${v.build_year || '—'}</td>`;
@@ -2062,16 +2067,17 @@ function renderTable() {
     }
 
     const laycanClass = laycan ? 'laycan-' + laycan.toLowerCase().replace(/\s+/g, '-') : '';
+    const quietHours = hoursAgo(v.last_updated);
+    const isQuiet = v.status === 'OPEN' && quietHours !== null && quietHours > 96;
 
     // Build cells in column order
     const cells = visCols.map(col => {
       const html = cellHTML(col, v, gi);
-      // cellHTML returns full <td> for most, but laycan returns just inner HTML
       if (col === 'laycan') return `<td>${html}</td>`;
       return html;
     }).join('');
 
-    rows.push(`<tr class="${laycanClass}">${cells}</tr>`);
+    rows.push(`<tr class="${laycanClass}${isQuiet ? ' row-quiet' : ''}">${cells}</tr>`);
   }
 
   tbody.innerHTML = rows.join('');
