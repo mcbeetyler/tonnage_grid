@@ -1545,6 +1545,7 @@ function handleAdd() {
         }
       }
 
+      console.log('[merge] pre-build merged_hire:', merged_hire, 'p6_offer:', merged_mc && merged_mc[0] && merged_mc[0].p6_offer, 'pv.hire_offer:', pv.hire_offer);
       vessels[existIdx] = {
         ...existing,
         ...pv,
@@ -1560,6 +1561,7 @@ function handleAdd() {
         status: pv.status !== 'OPEN' ? pv.status : existing.status,
         last_updated: now,
       };
+      console.log('[merge] post-assign hire_offer:', vessels[existIdx].hire_offer, 'p6_offer:', vessels[existIdx].market_colour && vessels[existIdx].market_colour[0] && vessels[existIdx].market_colour[0].p6_offer);
     } else {
       // New vessel — stamp timestamps and sync top-level fields
       const mc = pv.market_colour && pv.market_colour[0];
