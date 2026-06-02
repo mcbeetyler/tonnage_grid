@@ -1506,8 +1506,10 @@ function handleAdd() {
       vessels[existIdx] = {
         ...existing,
         ...pv,
-        // Preserve existing rates — mergeMarketColour already handled them
+        // Rates: mergeMarketColour already handled these — don't let pv clobber them
         market_colour: existing.market_colour,
+        hire_offer: existing.hire_offer,
+        bb_offer: existing.bb_offer,
         offer_updated_at: existing.offer_updated_at,
         bid_updated_at: existing.bid_updated_at,
         // Preserve owner/notes/status unless incoming has better data
