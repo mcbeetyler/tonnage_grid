@@ -1403,23 +1403,9 @@ async function handleParse() {
     preview.className = 'preview-box has-content';
     btnAdd.disabled = false;
   } catch (e) {
-    preview.textContent = 'AI parse error: ' + e.message + '\n\nTrying regex fallback...';
+    preview.textContent = 'Parse error: ' + e.message;
     preview.className = 'preview-box has-error';
-    // Auto-fallback to regex
-    try {
-      const parsed = parseMultipleMessages(raw);
-      pendingParsed = parsed;
-      const summary = parsed.map(v =>
-        `${v.vessel_name || '?'} (${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '?'}/${v.build_year || '?'}) ETA: ${fmtDate(v.eta_ecsa)} ${v.eta_type === 'ONW' ? 'ONW' : ''} [${v.status}]`
-      ).join('\n');
-      preview.textContent = `Regex fallback parsed ${parsed.length} vessel(s):\n${summary}`;
-      preview.className = 'preview-box has-content';
-      btnAdd.disabled = false;
-    } catch (e2) {
-      preview.textContent = 'Both AI and regex parsing failed:\n' + e.message + '\n' + e2.message;
-      preview.className = 'preview-box has-error';
-      btnAdd.disabled = true;
-    }
+    btnAdd.disabled = true;
   } finally {
     btnParse.disabled = false;
     btnParse.textContent = 'Parse (AI)';
