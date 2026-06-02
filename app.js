@@ -1470,6 +1470,9 @@ function mergeMarketColour(existing, incoming, now) {
     exMC.offer_usd  = inMC.offer_usd  ?? exMC.offer_usd;
     exMC.p6_offer   = inMC.p6_offer   ?? exMC.p6_offer;
     exMC.bb_usd     = inMC.bb_usd     ?? exMC.bb_usd;
+    // Sync hire_offer top-level field (what the board displays)
+    if (inMC.offer_usd != null) existing.hire_offer = inMC.offer_usd;
+    if (inMC.bb_usd != null) existing.bb_offer = inMC.bb_usd;
     existing.offer_updated_at = now;
   }
 
@@ -1514,11 +1517,13 @@ function handleAdd() {
         last_updated: now,
       };
     } else {
-      // New vessel — stamp timestamps if rates present
+      // New vessel — stamp timestamps and sync top-level fields
       const mc = pv.market_colour && pv.market_colour[0];
       if (mc) {
         if (mc.offer_usd != null || mc.p6_offer != null) pv.offer_updated_at = now;
         if (mc.bid_usd  != null || mc.p6_bid   != null) pv.bid_updated_at   = now;
+        if (mc.offer_usd != null && !pv.hire_offer) pv.hire_offer = mc.offer_usd;
+        if (mc.bb_usd   != null && !pv.bb_offer)   pv.bb_offer   = mc.bb_usd;
       }
       vessels.push(pv);
     }
