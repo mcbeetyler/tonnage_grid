@@ -1389,13 +1389,6 @@ async function handleParse() {
     return;
   }
 
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    // Fall back to regex if no API key
-    handleParseRegex();
-    return;
-  }
-
   btnParse.disabled = true;
   btnParse.textContent = 'Parsing...';
   preview.textContent = 'Sending to Claude API...';
