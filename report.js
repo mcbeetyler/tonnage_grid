@@ -242,11 +242,13 @@ function renderP6IndexRow(v, type) {
   const p6 = getP6Values(v);
   const val = type === 'offer' ? p6.offer : p6.bid;
   const eta = v.eta_ecsa ? fmtDateReport(v.eta_ecsa) : '';
-  const ts = v.last_updated ? fmtTimestamp(v.last_updated) : '';
-  return `<div class="p6-index-row">
+  const tsField = type === 'offer' ? v.offer_updated_at : v.bid_updated_at;
+  const ts = tsField ? fmtTimestamp(tsField) : (v.last_updated ? fmtTimestamp(v.last_updated) : '');
+  const stale = stalenessTag(tsField, type === 'offer' ? 'Offer' : 'Bid');
+  return `<div class="p6-index-row${stale ? ' p6-index-row-stale' : ''}">
     <div class="p6-index-row-name" title="${(v.vessel_name || '').replace(/"/g,'&quot;')}">${v.vessel_name || '?'}</div>
     <div class="p6-index-row-eta">${eta}</div>
-    <div class="p6-index-row-val ${type}">${val != null ? val.toLocaleString() : '—'}</div>
+    <div class="p6-index-row-val ${type}">${val != null ? val.toLocaleString() : '—'}${stale}</div>
     ${ts ? `<div class="p6-index-row-ts">${ts}</div>` : ''}
   </div>`;
 }
@@ -260,6 +262,8 @@ function renderReportCard(v, rank, type) {
   const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
   const hire = v.hire_offer ? '$' + v.hire_offer.toLocaleString() : '';
   const bb = v.bb_offer ? '$' + v.bb_offer.toLocaleString() : '';
+  const tsField = type === 'offer' ? v.offer_updated_at : v.bid_updated_at;
+  const stale = stalenessTag(tsField, type === 'offer' ? 'Offer' : 'Bid');
 
   const safeName = (v.vessel_name || '').replace(/'/g, "\\'");
 
@@ -270,12 +274,12 @@ function renderReportCard(v, rank, type) {
   if (hire) chips.push('Hire ' + hire);
   if (bb) chips.push('BB ' + bb);
 
-  return `<div class="report-card">
+  return `<div class="report-card${stale ? ' report-card-stale' : ''}">
     <span class="report-rank">${rank}</span>
     <span class="report-vessel-name">${v.vessel_name || '—'} <span class="report-specs">${specs}</span></span>
     <span class="report-owner">${v.owner || '—'}</span>
     <span class="report-chips">${chips.join(' · ')}</span>
-    <span class="report-p6 ${type}">${val != null ? '$' + val.toLocaleString() : '—'}</span>
+    <span class="report-p6 ${type}">${val != null ? '$' + val.toLocaleString() : '—'}${stale}</span>
     <button class="btn-remove" onclick="excludeFromReport('${safeName}')" title="Remove" style="padding:2px 6px">x</button>
   </div>`;
 }
