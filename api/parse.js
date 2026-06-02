@@ -47,19 +47,34 @@ PARSING RULES:
 - Use current year (${new Date().getFullYear()}) for dates without a year
 - Return an array of vessel objects — one object per vessel
 - Multiple vessels may be in one paste, separated by blank lines or concatenated — parse each separately
-- "offer 23250" = hire offer $23,250/day → offer_usd: 23250
-- "holds a 22k bid" / "said to hold a 22k bid" = hire bid $22,000/day → bid_usd: 22000
-- "Ideas 18k" = hire offer $18,000/day
-- "try 18k infront" = hire bid $18,000/day
-- "RATING 21500" = hire offer $21,500/day
+RATE PARSING — CRITICAL:
+- European decimal notation is common: "26,5K" = 26,500 (NOT 265,000). A comma before a single digit before K = decimal separator.
+- "RATED 26,5K" = hire offer 26,500/day → offer_usd: 26500
+- "RATED X" / "RATING X" / "Ideas X" / "offer X" = hire offer → offer_usd
+- "TRY 26K" / "TRY LESS" after a rated offer = soft indication owner will negotiate down — treat as approximate bid signal → bid_usd: 26000
+- "holds a 22k bid" / "said to hold a 22k bid" = hire bid → bid_usd: 22000
+- "try 18k infront" = hire bid → bid_usd: 18000
 - "Claims seeing 20k vs 21,500 (p6: 16,700 vs 18k)" → bid_usd:20000, offer_usd:21500, p6_bid:16700, p6_offer:18000
-- "SLD" = sailed (vessel has departed that port)
-- "SBRAZIL" / "S BRAZIL" = South Brazil loading area (ECSA)
-- Range ETAs "24-25 JUNE" → eta_ecsa: earliest date, eta_ecsa_end: latest date, eta_type: "ONW"
-- "ECSA OPT NCSA/FEAST" = vessel offered on ECSA FH or NCSA FH — create one market_colour entry per route
-- Messages without " - " separator are still valid — parse what you can
-- Bullet points (•), dashes, or unconventional formatting are common — ignore formatting, extract content
-- If ambiguous or partial, still extract what you can — never skip a vessel
+- "WILL DO BETTER AGAINST BID" = owner is flexible, note in notes only
+- User may append their own P6 calculation at the end of a paste, e.g. "at 26k offer, i run to 22,500 p6" → p6_offer: 22500. Extract this even if it's not in the original message.
+
+SOURCE/OWNER PHRASES:
+- "H/OWNS" or "HOUSE OWNERS" = owner is marketing their own vessel directly. The name that follows is the owner. Set same name for both source and owner.
+- "WITH BROKER MV..." = broker is BROKER, owner unknown
+- "A/C CHARTERER" = account of charterer (cargo fixture context)
+
+GEOGRAPHY:
+- "ECSAM" / "ECSA M" = ECSA (M = main range, ignore suffix)
+- "SBRAZIL" / "S BRAZIL" / "S BRZ" = South Brazil = ECSA loading area
+- "SLD" = sailed (vessel departed that port, use as current_position context)
+- "X KANDLA" / "EX KANDLA" = vessel departing/recently left KANDLA → current_position: KANDLA
+
+OTHER RULES:
+- Range ETAs "23/25 JUNE" or "23-25 JUNE" → eta_ecsa: earliest, eta_ecsa_end: latest, eta_type: "ONW"
+- "ECSA OPT NCSA/FEAST" = vessel offered on multiple routes — one market_colour entry per route
+- Messages without " - " separator are still valid
+- Bullet points (•), dashes, unconventional formatting — ignore formatting, extract content
+- If ambiguous or partial, extract what you can — never skip a vessel
 - "nfd" = no fixed date → eta_type: "ONW"
 - Speed/consumption specs (e.g. "14.5K / 32MT") → ignore
 
