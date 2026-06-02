@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "@vercel/kv": "latest"
+    "@vercel/kv": "latest",
+    "@anthropic-ai/sdk": "latest"
   }
 }
