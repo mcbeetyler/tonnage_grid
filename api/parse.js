@@ -63,6 +63,27 @@ PARSING RULES:
 - "nfd" = no fixed date → eta_type: "ONW"
 - Speed/consumption specs (e.g. "14.5K / 32MT") → ignore
 
+FIXTURE REPORTS:
+Daily fixture reports mix vessel fixtures and cargo fixtures. Parse both:
+
+Vessel fixture: a named ship that has been fixed. Identifiable by MV/MT prefix or vessel name.
+- "MV GUOYUAN 18 76/12 ABIDJAN 15-26 JUNE - FXD FOR NORTH LOADING, NFD" → vessel_name: "GUOYUAN 18", dwt: 76000, build_year: 2012, current_position: "ABIDJAN", open_date range 15-26 JUN, status: "FIXED", notes: "FXD FOR NORTH LOADING, NFD"
+- Extract fixed_price from rate if stated (e.g. "FXD 19.5K" → fixed_price: 19500)
+- "NFD" = no fixed date (charterer not yet disclosed) → note in notes field
+
+Cargo fixture: a cargo/stem that has been covered, no specific vessel named yet (or vessel unknown to us).
+- "CARGILL 20-30JUN ECSA FHAUL - TAKEN ONE AT 19.5K P6- NFD YET" → this is a cargo fixture
+- "A/C MINGWAH ECSA/NSCA TO SPORE-JPN 1-10 JUL GONE - NFD" → cargo fixture, A/C = account of (charterer)
+- For cargo fixtures: set vessel_name to null, owner to null, status: "FIXED"
+- Put charterer name in charterer field ("CARGILL", "MINGWAH")
+- Put the rate in fixed_price if stated as P6 equivalent (19.5K P6 → fixed_price: 19500)
+- Put laycan/shipment dates in open_date (earliest) and open_date_end (latest)
+- Put route in market_colour[0].route
+- Store full line verbatim in notes
+- Set a field: fixture_type: "cargo" for cargo fixtures, "vessel" for vessel fixtures
+
+All fixtures: status must be "FIXED". Include as much detail as you can extract.
+
 Return ONLY a valid JSON array. No markdown, no explanation, no code fences.`;
 
 export default async function handler(req, res) {
