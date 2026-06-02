@@ -4,6 +4,5 @@
   "type": "module",
   "dependencies": {
     "@vercel/kv": "latest",
-    "@anthropic-ai/sdk": "latest"
   }
 }

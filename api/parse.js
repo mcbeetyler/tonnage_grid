@@ -1,6 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const PARSE_SYSTEM_PROMPT = `You are a dry bulk shipping message parser. Extract vessel tonnage data from WhatsApp messages into structured JSON.
 
@@ -57,14 +54,28 @@ export default async function handler(req, res) {
   if (!text) return res.status(400).json({ error: 'No text provided' });
 
   try {
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 4096,
-      system: PARSE_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: `Parse these vessel tonnage messages into JSON:\n\n${text}` }],
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 4096,
+        system: PARSE_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: `Parse these vessel tonnage messages into JSON:\n\n${text}` }],
+      }),
     });
 
-    const raw = message.content.find(b => b.type === 'text')?.text;
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(`Anthropic API error ${response.status}: ${err.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    const raw = data.content.find(b => b.type === 'text')?.text;
     if (!raw) throw new Error('No response from model');
 
     const parsed = JSON.parse(raw);
