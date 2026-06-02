@@ -623,26 +623,25 @@ Return ONLY valid JSON array. No markdown, no explanation.`;
 
 async function parseWithAPI(rawText) {
   // Try server-side endpoint first (Sonnet, no key needed per device)
-  try {
-    const serverResp = await fetch('/api/parse', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: rawText }),
-    });
-    if (serverResp.ok) {
-      const vessels = await serverResp.json();
-      return vessels.map(v => ({
-        ...v,
-        raw: rawText,
-        parsed_at: new Date().toISOString(),
-        parse_warnings: [],
-        status: v.status || 'OPEN',
-        market_colour: v.market_colour || [],
-      }));
-    }
-  } catch (_) {
-    // Server unavailable — fall through to browser-direct path below
+  const serverResp = await fetch('/api/parse', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: rawText }),
+  });
+  if (serverResp.ok) {
+    const vessels = await serverResp.json();
+    return vessels.map(v => ({
+      ...v,
+      raw: rawText,
+      parsed_at: new Date().toISOString(),
+      parse_warnings: [],
+      status: v.status || 'OPEN',
+      market_colour: v.market_colour || [],
+    }));
   }
+  // Surface the actual server error so we can diagnose
+  const errBody = await serverResp.json().catch(() => ({}));
+  throw new Error(`Server parse failed (${serverResp.status}): ${errBody.error || serverResp.statusText}`);
 
   // Browser-direct fallback: uses per-device API key + Haiku (existing behaviour)
   const apiKey = getApiKey();
