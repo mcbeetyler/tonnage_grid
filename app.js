@@ -149,6 +149,21 @@ function fmtTimestamp(iso) {
   return `${day} ${months[d.getMonth()]} ${h}:${m}`;
 }
 
+const STALE_HOURS = 48;
+function hoursAgo(isoTs) {
+  if (!isoTs) return null;
+  return (Date.now() - new Date(isoTs).getTime()) / 36e5;
+}
+function stalenessTag(isoTs, label) {
+  const h = hoursAgo(isoTs);
+  if (h === null) return '';
+  if (h > STALE_HOURS) {
+    const d = h > 48 ? `${Math.floor(h/24)}d` : `${Math.round(h)}h`;
+    return `<span class="stale-tag" title="${label} last updated ${d} ago">↻ ${d}</span>`;
+  }
+  return '';
+}
+
 function getP6Values(v) {
   const mc = v.market_colour && v.market_colour[0];
   return { bid: mc ? mc.p6_bid : null, offer: mc ? mc.p6_offer : null };
@@ -1433,8 +1448,49 @@ function handleParseRegex() {
   }
 }
 
+function mergeMarketColour(existing, incoming, now) {
+  // Offers: always take the latest (owner has updated their ask)
+  // Bids: keep highest, unless a fresh offer accompanies this message (means market has moved)
+  const exMC = existing.market_colour && existing.market_colour[0];
+  const inMC = incoming.market_colour && incoming.market_colour[0];
+  if (!inMC) return; // nothing to merge
+
+  const hasNewOffer = inMC.offer_usd != null || inMC.p6_offer != null;
+  const hasNewBid   = inMC.bid_usd  != null || inMC.p6_bid   != null;
+
+  if (!exMC) {
+    existing.market_colour = incoming.market_colour;
+    if (hasNewOffer) existing.offer_updated_at = now;
+    if (hasNewBid)   existing.bid_updated_at   = now;
+    return;
+  }
+
+  // Offer — always overwrite with latest
+  if (hasNewOffer) {
+    exMC.offer_usd  = inMC.offer_usd  ?? exMC.offer_usd;
+    exMC.p6_offer   = inMC.p6_offer   ?? exMC.p6_offer;
+    exMC.bb_usd     = inMC.bb_usd     ?? exMC.bb_usd;
+    existing.offer_updated_at = now;
+  }
+
+  // Bid — update if: new bid is higher, OR a fresh offer came with this message (market moved)
+  if (hasNewBid) {
+    const newBid = inMC.p6_bid ?? inMC.bid_usd ?? 0;
+    const oldBid = exMC.p6_bid ?? exMC.bid_usd ?? 0;
+    if (newBid >= oldBid || hasNewOffer) {
+      exMC.bid_usd = inMC.bid_usd ?? exMC.bid_usd;
+      exMC.p6_bid  = inMC.p6_bid  ?? exMC.p6_bid;
+      existing.bid_updated_at = now;
+    }
+  }
+
+  // Route — update if incoming has one
+  if (inMC.route) exMC.route = inMC.route;
+}
+
 function handleAdd() {
   if (!pendingParsed) return;
+  const now = new Date().toISOString();
   for (const pv of pendingParsed) {
     const existIdx = vessels.findIndex(v =>
       v.vessel_name && pv.vessel_name &&
@@ -1442,8 +1498,28 @@ function handleAdd() {
     );
     if (existIdx !== -1) {
       const existing = vessels[existIdx];
-      vessels[existIdx] = { ...existing, ...pv, owner: pv.owner || existing.owner, notes: pv.notes || existing.notes, status: pv.status !== 'OPEN' ? pv.status : existing.status };
+      // Smart merge: rates handled separately, non-rate fields overwrite
+      mergeMarketColour(existing, pv, now);
+      vessels[existIdx] = {
+        ...existing,
+        ...pv,
+        // Preserve existing rates — mergeMarketColour already handled them
+        market_colour: existing.market_colour,
+        offer_updated_at: existing.offer_updated_at,
+        bid_updated_at: existing.bid_updated_at,
+        // Preserve owner/notes/status unless incoming has better data
+        owner: pv.owner || existing.owner,
+        notes: pv.notes || existing.notes,
+        status: pv.status !== 'OPEN' ? pv.status : existing.status,
+        last_updated: now,
+      };
     } else {
+      // New vessel — stamp timestamps if rates present
+      const mc = pv.market_colour && pv.market_colour[0];
+      if (mc) {
+        if (mc.offer_usd != null || mc.p6_offer != null) pv.offer_updated_at = now;
+        if (mc.bid_usd  != null || mc.p6_bid   != null) pv.bid_updated_at   = now;
+      }
       vessels.push(pv);
     }
   }
@@ -1916,7 +1992,9 @@ function renderTable() {
           ? all.slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0))
               .map(b => `${b.charterer || '?'} ${fmtNum(b.p6_bid)}`).join(' · ')
           : 'Click to manage bidders';
-        return `<td class="td-p6 editable" onclick="openBidsPopup(${gi})" title="${tooltip.replace(/"/g,'&quot;')}"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span>${extra}</td>`;
+        const bidStale = stalenessTag(v.bid_updated_at, 'Bid');
+        const bidCls = bidStale ? ' stale' : '';
+        return `<td class="td-p6 editable${bidCls}" onclick="openBidsPopup(${gi})" title="${tooltip.replace(/"/g,'&quot;')}"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span>${extra}${bidStale}</td>`;
       }
       case 'bidding_charterer': {
         const all = getAllBids(v);
@@ -1932,7 +2010,11 @@ function renderTable() {
         const isOverride = !!v.route;
         return `<td class="td-port editable" onclick="startEdit(this,${gi},'route',false)" title="Effective route (override of quoted route if set)"><span${isOverride ? ' style="font-weight:600"' : ''}>${eff}</span></td>`;
       }
-      case 'p6_offer': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'p6_offer',true)"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span></td>`;
+      case 'p6_offer': {
+        const offerStale = stalenessTag(v.offer_updated_at, 'Offer');
+        const offerCls = offerStale ? ' stale' : '';
+        return `<td class="td-p6 editable${offerCls}" onclick="startEdit(this,${gi},'p6_offer',true)"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span>${offerStale}</td>`;
+      }
       case 'spread': {
         if (spread == null) return `<td>—</td>`;
         const cls = spread > 0 ? 'spread-pos' : spread < 0 ? 'spread-neg' : 'spread-zero';
