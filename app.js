@@ -1505,20 +1505,58 @@ function handleAdd() {
     );
     if (existIdx !== -1) {
       const existing = vessels[existIdx];
-      // Smart merge: rates handled separately, non-rate fields overwrite
-      mergeMarketColour(existing, pv, now);
+      // Compute merged rate values into locals — no mutation, no spread-ordering ambiguity
+      const exMC = existing.market_colour && existing.market_colour[0];
+      const inMC = pv.market_colour && pv.market_colour[0];
+
+      let merged_mc        = existing.market_colour;
+      let merged_hire      = existing.hire_offer;
+      let merged_bb        = existing.bb_offer;
+      let merged_offer_at  = existing.offer_updated_at;
+      let merged_bid_at    = existing.bid_updated_at;
+
+      if (inMC) {
+        const hasNewOffer = inMC.offer_usd != null || inMC.p6_offer != null;
+        const hasNewBid   = inMC.bid_usd   != null || inMC.p6_bid   != null;
+
+        if (!exMC) {
+          merged_mc = pv.market_colour;
+          if (hasNewOffer) merged_offer_at = now;
+          if (hasNewBid)   merged_bid_at   = now;
+        } else {
+          const newMC = { ...exMC };
+          if (hasNewOffer) {
+            if (inMC.offer_usd != null) { newMC.offer_usd = inMC.offer_usd; merged_hire = inMC.offer_usd; }
+            if (inMC.p6_offer  != null)   newMC.p6_offer  = inMC.p6_offer;
+            if (inMC.bb_usd    != null) { newMC.bb_usd    = inMC.bb_usd;   merged_bb   = inMC.bb_usd; }
+            merged_offer_at = now;
+          }
+          if (hasNewBid) {
+            const newBid = inMC.p6_bid ?? inMC.bid_usd ?? 0;
+            const oldBid = exMC.p6_bid ?? exMC.bid_usd ?? 0;
+            if (newBid >= oldBid || hasNewOffer) {
+              if (inMC.bid_usd != null) newMC.bid_usd = inMC.bid_usd;
+              if (inMC.p6_bid  != null) newMC.p6_bid  = inMC.p6_bid;
+              merged_bid_at = now;
+            }
+          }
+          if (inMC.route) newMC.route = inMC.route;
+          merged_mc = [newMC, ...existing.market_colour.slice(1)];
+        }
+      }
+
       vessels[existIdx] = {
         ...existing,
         ...pv,
-        // Rates: mergeMarketColour already handled these — don't let pv clobber them
-        market_colour: existing.market_colour,
-        hire_offer: existing.hire_offer,
-        bb_offer: existing.bb_offer,
-        offer_updated_at: existing.offer_updated_at,
-        bid_updated_at: existing.bid_updated_at,
-        // Preserve owner/notes/status unless incoming has better data
-        owner: pv.owner || existing.owner,
-        notes: pv.notes || existing.notes,
+        // Rate fields — explicitly computed above, never clobbered by spread
+        market_colour:    merged_mc,
+        hire_offer:       merged_hire,
+        bb_offer:         merged_bb,
+        offer_updated_at: merged_offer_at,
+        bid_updated_at:   merged_bid_at,
+        // Non-rate fields
+        owner:  pv.owner  || existing.owner,
+        notes:  pv.notes  || existing.notes,
         status: pv.status !== 'OPEN' ? pv.status : existing.status,
         last_updated: now,
       };
