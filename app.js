@@ -1545,7 +1545,6 @@ function handleAdd() {
         }
       }
 
-      console.log('[merge] pre-build merged_hire:', merged_hire, 'p6_offer:', merged_mc && merged_mc[0] && merged_mc[0].p6_offer, 'pv.hire_offer:', pv.hire_offer);
       vessels[existIdx] = {
         ...existing,
         ...pv,
@@ -1555,13 +1554,22 @@ function handleAdd() {
         bb_offer:         merged_bb,
         offer_updated_at: merged_offer_at,
         bid_updated_at:   merged_bid_at,
-        // Non-rate fields
+        // Position/ETA — keep existing if new parse has nothing
+        eta_ecsa:         pv.eta_ecsa         || existing.eta_ecsa,
+        eta_ecsa_end:     pv.eta_ecsa_end     ?? existing.eta_ecsa_end,
+        eta_type:         pv.eta_type         || existing.eta_type,
+        open_date:        pv.open_date        || existing.open_date,
+        current_position: pv.current_position || existing.current_position,
+        delivery_basis:   pv.delivery_basis   || existing.delivery_basis,
+        dwt:              pv.dwt              || existing.dwt,
+        build_year:       pv.build_year       || existing.build_year,
+        scrubber:         pv.scrubber         ?? existing.scrubber,
+        // Text fields
         owner:  pv.owner  || existing.owner,
         notes:  pv.notes  || existing.notes,
         status: pv.status !== 'OPEN' ? pv.status : existing.status,
         last_updated: now,
       };
-      console.log('[merge] post-assign hire_offer:', vessels[existIdx].hire_offer, 'p6_offer:', vessels[existIdx].market_colour && vessels[existIdx].market_colour[0] && vessels[existIdx].market_colour[0].p6_offer);
     } else {
       // New vessel — stamp timestamps and sync top-level fields
       const mc = pv.market_colour && pv.market_colour[0];
