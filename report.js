@@ -93,8 +93,14 @@ function renderReport() {
   const windows = getEtaWindows(mode);
   const container = document.getElementById('reportContent');
 
-  // Filter to only OPEN/ON SUBS vessels
-  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name));
+  // Filter to only OPEN vessels that are not gone quiet (no update in 96h+)
+  const eligible = vessels.filter(v => {
+    if (v.status !== 'OPEN') return false;
+    if (reportExcluded.has(v.vessel_name)) return false;
+    const h = hoursAgo(v.last_updated);
+    if (h !== null && h > 96) return false; // gone quiet — exclude from report
+    return true;
+  });
 
   renderP6IndexSidebar(eligible);
 
@@ -370,7 +376,13 @@ function copyWindowReport(winLabel, mode) {
 
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
   const showType = document.getElementById('reportType').value;
-  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name));
+  const eligible = vessels.filter(v => {
+    if (v.status !== 'OPEN') return false;
+    if (reportExcluded.has(v.vessel_name)) return false;
+    const h = hoursAgo(v.last_updated);
+    if (h !== null && h > 96) return false;
+    return true;
+  });
   const inWindow = eligible.filter(v => {
     if (!v.eta_ecsa) return false;
     const eta = new Date(v.eta_ecsa);
@@ -427,7 +439,13 @@ function copyFullReport() {
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
   const showType = document.getElementById('reportType').value;
   const windows = getEtaWindows(mode);
-  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name));
+  const eligible = vessels.filter(v => {
+    if (v.status !== 'OPEN') return false;
+    if (reportExcluded.has(v.vessel_name)) return false;
+    const h = hoursAgo(v.last_updated);
+    if (h !== null && h > 96) return false;
+    return true;
+  });
 
   let text = `*Tonnage Report — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}*\n`;
 
