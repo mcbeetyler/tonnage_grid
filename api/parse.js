@@ -75,8 +75,11 @@ export default async function handler(req, res) {
     }
 
     const data = await response.json();
-    const raw = data.content.find(b => b.type === 'text')?.text;
+    let raw = data.content.find(b => b.type === 'text')?.text;
     if (!raw) throw new Error('No response from model');
+
+    // Strip markdown code fences if model wraps response despite instructions
+    raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
 
     const parsed = JSON.parse(raw);
     const vessels = Array.isArray(parsed) ? parsed : [parsed];
