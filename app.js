@@ -1411,9 +1411,13 @@ async function handleParse() {
   try {
     const parsed = await parseWithAPI(raw);
     pendingParsed = parsed;
-    const summary = parsed.map(v =>
-      `${v.vessel_name || '?'} (${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '?'}/${v.build_year || '?'}) ETA: ${fmtDate(v.eta_ecsa)} ${v.eta_type === 'ONW' ? 'ONW' : ''} [${v.status}]`
-    ).join('\n');
+    const summary = parsed.map(v => {
+      const mc = v.market_colour && v.market_colour[0];
+      const rateInfo = mc
+        ? ` | hire_offer:${mc.offer_usd ?? '—'} p6_offer:${mc.p6_offer ?? '—'} hire_bid:${mc.bid_usd ?? '—'} p6_bid:${mc.p6_bid ?? '—'}`
+        : ' | no rates';
+      return `${v.vessel_name || '?'} (${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '?'}/${v.build_year || '?'}) ETA: ${fmtDate(v.eta_ecsa)} [${v.status}]${rateInfo}`;
+    }).join('\n');
     preview.textContent = `AI parsed ${parsed.length} vessel(s):\n${summary}`;
     preview.className = 'preview-box has-content';
     btnAdd.disabled = false;
