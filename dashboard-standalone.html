@@ -311,6 +311,11 @@
   .report-window-header{display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:10px 14px;background:var(--bg3);border-radius:var(--radius);border-left:4px solid var(--accent)}
   .report-window-title{font-size:13px;font-weight:700;color:var(--text-bright)}
   .report-window-meta{font-size:11px;color:var(--text-dim)}
+  .report-window-medians{display:inline-flex;gap:6px;flex-wrap:wrap}
+  .med-chip{font-size:10px;font-weight:600;padding:3px 8px;border-radius:10px;letter-spacing:.2px;font-family:var(--mono);white-space:nowrap}
+  .med-chip.med-bid{background:rgba(46,160,67,.15);color:var(--green)}
+  .med-chip.med-offer{background:rgba(248,81,73,.15);color:var(--red)}
+  .med-chip.med-fix{background:rgba(140,140,140,.18);color:var(--text-bright)}
   .report-window-body{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
   .report-window-left{min-width:0}
   .report-window-right{min-width:0}
@@ -6387,6 +6392,13 @@ function fmtDateReport(iso) {
   return `${parseInt(d, 10)}-${months[parseInt(m, 10)]}`;
 }
 
+function reportMedian(arr) {
+  const nums = arr.filter(n => n != null && !isNaN(n)).sort((a, b) => a - b);
+  if (nums.length === 0) return null;
+  const mid = Math.floor(nums.length / 2);
+  return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
+}
+
 function renderReport() {
   const mode = document.getElementById('reportMonth').value;
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
@@ -6433,10 +6445,31 @@ function renderReport() {
 
     if (withOffer.length === 0 && withBid.length === 0 && fixedInWindow.length === 0) continue;
 
+    // Medians: market sides over all OPEN-in-window quotes (not just top-N);
+    // fixture median over vessels fixed in the last 7 days whose ETA is in this window.
+    const medOffer = reportMedian(inWindow.map(v => getP6Values(v).offer));
+    const medBid = reportMedian(inWindow.map(v => getP6Values(v).bid));
+    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+    const fixedLast7 = vessels.filter(v => {
+      if (v.status !== 'FIXED' || v.fixed_price == null) return false;
+      if (reportExcluded.has(v.vessel_name)) return false;
+      if (!v.eta_ecsa || !v.date_fixed) return false;
+      const eta = new Date(v.eta_ecsa);
+      if (eta < win.from || eta > win.to) return false;
+      return new Date(v.date_fixed) >= weekAgo;
+    });
+    const medFix7 = reportMedian(fixedLast7.map(v => v.fixed_price));
+    const fmt$ = n => n == null ? '—' : '$' + Math.round(n).toLocaleString();
+
     html += `<div class="report-window">
       <div class="report-window-header">
         <span class="report-window-title">${win.label}</span>
         <span class="report-window-meta">${inWindow.length} open${fixedInWindow.length ? ' · ' + fixedInWindow.length + ' fixed' : ''}</span>
+        <span class="report-window-medians">
+          <span class="med-chip med-bid" title="Median P6 bid across all open ships in window">bid med ${fmt$(medBid)}</span>
+          <span class="med-chip med-offer" title="Median P6 offer across all open ships in window">offer med ${fmt$(medOffer)}</span>
+          <span class="med-chip med-fix" title="Median fixed price — last 7 days, ETA in window (${fixedLast7.length} ship${fixedLast7.length === 1 ? '' : 's'})">fix 7d med ${fmt$(medFix7)}</span>
+        </span>
         <button class="report-copy-btn" onclick="copyWindowReport('${win.label}', '${mode}')">Copy</button>
       </div>
       <div class="report-window-body">

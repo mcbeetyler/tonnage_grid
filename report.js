@@ -86,6 +86,13 @@ function fmtDateReport(iso) {
   return `${parseInt(d, 10)}-${months[parseInt(m, 10)]}`;
 }
 
+function reportMedian(arr) {
+  const nums = arr.filter(n => n != null && !isNaN(n)).sort((a, b) => a - b);
+  if (nums.length === 0) return null;
+  const mid = Math.floor(nums.length / 2);
+  return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
+}
+
 function renderReport() {
   const mode = document.getElementById('reportMonth').value;
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
@@ -132,10 +139,31 @@ function renderReport() {
 
     if (withOffer.length === 0 && withBid.length === 0 && fixedInWindow.length === 0) continue;
 
+    // Medians: market sides over all OPEN-in-window quotes (not just top-N);
+    // fixture median over vessels fixed in the last 7 days whose ETA is in this window.
+    const medOffer = reportMedian(inWindow.map(v => getP6Values(v).offer));
+    const medBid = reportMedian(inWindow.map(v => getP6Values(v).bid));
+    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+    const fixedLast7 = vessels.filter(v => {
+      if (v.status !== 'FIXED' || v.fixed_price == null) return false;
+      if (reportExcluded.has(v.vessel_name)) return false;
+      if (!v.eta_ecsa || !v.date_fixed) return false;
+      const eta = new Date(v.eta_ecsa);
+      if (eta < win.from || eta > win.to) return false;
+      return new Date(v.date_fixed) >= weekAgo;
+    });
+    const medFix7 = reportMedian(fixedLast7.map(v => v.fixed_price));
+    const fmt$ = n => n == null ? '—' : '$' + Math.round(n).toLocaleString();
+
     html += `<div class="report-window">
       <div class="report-window-header">
         <span class="report-window-title">${win.label}</span>
         <span class="report-window-meta">${inWindow.length} open${fixedInWindow.length ? ' · ' + fixedInWindow.length + ' fixed' : ''}</span>
+        <span class="report-window-medians">
+          <span class="med-chip med-bid" title="Median P6 bid across all open ships in window">bid med ${fmt$(medBid)}</span>
+          <span class="med-chip med-offer" title="Median P6 offer across all open ships in window">offer med ${fmt$(medOffer)}</span>
+          <span class="med-chip med-fix" title="Median fixed price — last 7 days, ETA in window (${fixedLast7.length} ship${fixedLast7.length === 1 ? '' : 's'})">fix 7d med ${fmt$(medFix7)}</span>
+        </span>
         <button class="report-copy-btn" onclick="copyWindowReport('${win.label}', '${mode}')">Copy</button>
       </div>
       <div class="report-window-body">
