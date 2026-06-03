@@ -167,18 +167,19 @@ function collectFixtureEvents() {
     }
 
     // Fallback for vessels with no logged fixture history but a current
-    // FIXED / IN HOUSE state.
+    // FIXED / IN HOUSE state. Price is optional — we still want to count
+    // the fixture for the charterer/owner even if no rate was reported.
     const histHasFix = hist.some(h => h.field === 'fixed_price' || h.field === 'in_house');
     if (!histHasFix) {
-      if (v.status === 'FIXED' && v.fixed_price != null && v.date_fixed) {
+      if (v.status === 'FIXED' && v.date_fixed) {
         events.push({
-          vessel: v, charterer: v.charterer || null, price: v.fixed_price,
+          vessel: v, charterer: v.charterer || null, price: v.fixed_price != null ? v.fixed_price : null,
           date: v.date_fixed + 'T12:00:00', dateOnly: v.date_fixed,
           type: 'fixed_price', fromHistory: false,
         });
       } else if (v.status === 'IN HOUSE' && v.date_fixed) {
         events.push({
-          vessel: v, charterer: v.owner || null, price: v.fixed_price,
+          vessel: v, charterer: v.owner || null, price: v.fixed_price != null ? v.fixed_price : null,
           date: v.date_fixed + 'T12:00:00', dateOnly: v.date_fixed,
           type: 'in_house', fromHistory: false,
         });
@@ -286,16 +287,17 @@ function buildActivityFeed(limit) {
         route: typeof getEffectiveRoute === 'function' ? getEffectiveRoute(v) : null,
       });
     }
-    // Fallback: legacy vessels that were FIXED / IN HOUSE before logging existed
+    // Fallback: legacy vessels that were FIXED / IN HOUSE before logging existed.
+    // Price is optional — unrated fixtures still file under the participant.
     if (hist.length === 0 || !hist.some(h => h.field === 'fixed_price' || h.field === 'in_house')) {
-      if (v.status === 'FIXED' && v.fixed_price != null && v.date_fixed) {
+      if (v.status === 'FIXED' && v.date_fixed) {
         events.push({
           t: v.date_fixed + 'T12:00:00',
           type: 'fixed',
           vessel: v,
           actor: normalizeParty(v.charterer),
           owner: normalizeParty(v.owner),
-          value: v.fixed_price,
+          value: v.fixed_price != null ? v.fixed_price : null,
           delta: null,
           route: typeof getEffectiveRoute === 'function' ? getEffectiveRoute(v) : null,
         });
@@ -306,7 +308,7 @@ function buildActivityFeed(limit) {
           vessel: v,
           actor: normalizeParty(v.owner),
           owner: normalizeParty(v.owner),
-          value: v.fixed_price,
+          value: v.fixed_price != null ? v.fixed_price : null,
           delta: null,
           route: typeof getEffectiveRoute === 'function' ? getEffectiveRoute(v) : null,
         });
@@ -334,7 +336,7 @@ function renderActivityFeed() {
     let actionText = '';
     if (e.type === 'bid')           { actionCls += ' bid';      actionText = `bid ${fmtParty$(e.value)}`; }
     else if (e.type === 'offer')    { actionCls += ' offer';    actionText = `offer ${fmtParty$(e.value)}`; }
-    else if (e.type === 'fixed')    { actionCls += ' fixed';    actionText = `FIXED ${fmtParty$(e.value)}`; }
+    else if (e.type === 'fixed')    { actionCls += ' fixed';    actionText = `FIXED${e.value != null ? ' ' + fmtParty$(e.value) : ''}`; }
     else if (e.type === 'in_house') { actionCls += ' in-house'; actionText = `IN HOUSE${e.value != null ? ' ' + fmtParty$(e.value) : ''}`; }
     else if (e.type === 'relet')    { actionCls += ' relet';    actionText = `RELET to ${e.actor || '?'}`; }
     else if (e.type === 'failed')   { actionCls += ' failed';   actionText = `FAILED${e.value != null ? ' ' + fmtParty$(e.value) : ''}`; }
@@ -511,7 +513,8 @@ function renderDrillList(title, list, mode) {
       stat = lvl != null ? `${mode === 'bidding' ? 'bid' : 'offer'} ${fmtParty$(lvl)}` : '—';
     } else if (mode === 'fixed') {
       const dateFixed = v.date_fixed ? fmtDateReport(v.date_fixed) : '';
-      stat = `${fmtParty$(v.fixed_price)} · fixed ${dateFixed}`;
+      const priceTxt = v.fixed_price != null ? fmtParty$(v.fixed_price) : 'FIXED';
+      stat = `${priceTxt} · ${dateFixed}`;
     }
     html += `<div class="party-drill-row">
       <span class="party-drill-vessel">${v.vessel_name || '?'} <span class="party-drill-specs">${specs}</span></span>

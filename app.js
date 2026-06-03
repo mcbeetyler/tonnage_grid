@@ -1789,13 +1789,24 @@ function cycleStatus(idx) {
   // Prompt for fixed price and charterer when moving to FIXED
   if (next === 'FIXED' && !v.fixed_price) {
     if (!v.date_fixed) v.date_fixed = new Date().toISOString().split('T')[0];
-    const price = prompt(`${v.vessel_name} on subs — enter fixed P6 price:`);
+    const price = prompt(`${v.vessel_name} on subs — enter fixed P6 price (leave blank if unknown):`);
     if (price) {
       const val = parseRate(price, 'tc');
       if (val) v.fixed_price = val;
     }
     const charterer = prompt(`${v.vessel_name} — enter charterer:`);
     if (charterer) v.charterer = charterer.trim();
+
+    // Log to price_history even with no price — keeps the fixture on the
+    // participants tab so unrated rumours still file under the charterer/owner.
+    v.price_history = v.price_history || [];
+    v.price_history.push({
+      t: new Date().toISOString(),
+      field: 'fixed_price',
+      value: v.fixed_price || null,
+      counterparty: v.charterer || null,
+    });
+    if (v.price_history.length > 50) v.price_history = v.price_history.slice(-50);
   }
 
   // Moving to IN HOUSE = disponent owner pulled it to cover their own cargo.
