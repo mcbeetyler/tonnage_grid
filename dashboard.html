@@ -416,6 +416,12 @@
   .party-card-ts{font-size:10px;color:var(--text-dim);font-family:var(--mono)}
   .party-card-stats{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
   .party-chip{font-size:11px;color:var(--text-dim);background:var(--bg3);padding:2px 8px;border-radius:10px}
+  .party-card.operator{border-left:3px solid var(--accent)}
+  .party-card.operator .party-card-stats{margin-top:4px}
+  .party-role-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px}
+  .party-role-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);min-width:62px}
+  .party-role-label.owner{color:rgb(30,135,55)}
+  .party-role-label.charterer{color:rgb(70,110,200)}
   .party-chip strong{color:var(--text-bright);font-weight:700}
   .party-card-drill{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)}
 
@@ -1029,6 +1035,10 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
     <div class="party-section">
       <div class="party-section-title">Recent activity <span class="party-section-hint">last 25 bid / offer / fixture events</span></div>
       <div id="participantsActivity" class="party-activity"></div>
+    </div>
+    <div class="party-section" id="participantsOperatorsSection" style="display:none">
+      <div class="party-section-title">Operators <span class="party-section-hint">accounts active as both owner and charterer · merged view</span></div>
+      <div id="participantsOperators" class="party-column-list"></div>
     </div>
     <div class="party-section">
       <div class="party-section-title">Participants <span class="party-section-hint">sorted by most recent activity · click a card for detail</span></div>

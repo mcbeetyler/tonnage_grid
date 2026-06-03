@@ -235,6 +235,29 @@ function aggregateCharterers() {
 // Sort participants: most recent activity first (gives a "what's hot" view).
 function byRecent(a, b) { return (b.lastActivity || '').localeCompare(a.lastActivity || ''); }
 
+// Build merged "operator" entries for any account appearing in BOTH the
+// owner and charterer aggregates. Returns { operators, ownerNames, chartererNames }
+// — the name sets let renderParticipants filter operators out of the per-role lists.
+function aggregateOperators(owners, charterers) {
+  const ownerByKey = new Map(owners.map(o => [o.name.toUpperCase(), o]));
+  const chartererByKey = new Map(charterers.map(c => [c.name.toUpperCase(), c]));
+  const operators = [];
+  const operatorKeys = new Set();
+  for (const [key, ow] of ownerByKey) {
+    const ch = chartererByKey.get(key);
+    if (!ch) continue;
+    operatorKeys.add(key);
+    operators.push({
+      name: ow.name,
+      owner: ow,
+      charterer: ch,
+      lastActivity: [ow.lastActivity, ch.lastActivity].filter(Boolean).sort().pop() || null,
+      trend: ow.trend === ch.trend ? ow.trend : null,
+    });
+  }
+  return { operators, operatorKeys };
+}
+
 // ─── Recent activity feed ────────────────────────────────────────────────────
 
 function buildActivityFeed(limit) {
@@ -430,6 +453,52 @@ function renderPartyCard(r, type, mkt) {
   </div>`;
 }
 
+function renderOperatorCard(op, mkt) {
+  const expanded = participantsExpanded.has(`operator:${op.name.toUpperCase()}`);
+  const safe = op.name.replace(/'/g, "\\'");
+  const ow = op.owner;
+  const ch = op.charterer;
+
+  const ownerChips = [];
+  ownerChips.push(`<span class="party-chip"><strong>${ow.openCount || 0}</strong> open</span>`);
+  if (ow.fixedCount30) ownerChips.push(`<span class="party-chip"><strong>${ow.fixedCount30}</strong> fix${ow.fixedCount30 === 1 ? '' : 'es'}/30d</span>`);
+  if (ow.offerMedian != null) ownerChips.push(`<span class="party-chip">offer ${fmtParty$(ow.offerMedian)} ${vsMarketChip(ow.offerMedian, mkt.offer)}</span>`);
+  if (ow.fixedMedian != null) ownerChips.push(`<span class="party-chip">fixed @ ${fmtParty$(ow.fixedMedian)}</span>`);
+
+  const chartererChips = [];
+  chartererChips.push(`<span class="party-chip"><strong>${ch.bidCount || 0}</strong> bidding</span>`);
+  if (ch.fixedCount30) chartererChips.push(`<span class="party-chip"><strong>${ch.fixedCount30}</strong> fix${ch.fixedCount30 === 1 ? '' : 'es'}/30d</span>`);
+  if (ch.bidMedian != null) chartererChips.push(`<span class="party-chip">bid ${fmtParty$(ch.bidMedian)} ${vsMarketChip(ch.bidMedian, mkt.bid)}</span>`);
+  if (ch.fixedMedian != null) chartererChips.push(`<span class="party-chip">fixed @ ${fmtParty$(ch.fixedMedian)}</span>`);
+
+  let drill = '';
+  if (expanded) {
+    drill = `<div class="party-card-drill">
+      ${renderOwnerDrill(ow)}
+      ${renderChartererDrill(ch)}
+    </div>`;
+  }
+
+  return `<div class="party-card operator ${expanded ? 'expanded' : ''}" onclick="toggleParticipant('operator','${safe}')">
+    <div class="party-card-head">
+      <span class="party-card-name">${op.name}</span>
+      ${trendArrow(op.trend)}
+      <div style="flex:1"></div>
+      <span class="party-card-ts">${fmtPartyTs(op.lastActivity)}</span>
+      <span class="party-caret">${expanded ? '▾' : '▸'}</span>
+    </div>
+    <div class="party-role-row"><span class="party-role-label owner">as owner</span>${ownerChips.join('')}</div>
+    <div class="party-role-row"><span class="party-role-label charterer">as charterer</span>${chartererChips.join('')}</div>
+    ${drill}
+  </div>`;
+}
+
+function renderOperatorCardList(operators, mkt) {
+  if (operators.length === 0) return '';
+  const sorted = operators.slice().sort(byRecent);
+  return sorted.map(op => renderOperatorCard(op, mkt)).join('');
+}
+
 function renderPartyCardList(rows, type, mkt) {
   if (rows.length === 0) {
     return `<div class="party-empty">No ${type === 'owner' ? 'owners' : 'charterers'} with identifiable names yet.</div>`;
@@ -549,6 +618,21 @@ function renderParticipants() {
   }
 
   if (activityBox) activityBox.innerHTML = renderActivityFeed();
-  ownersBox.innerHTML = renderPartyCardList(aggregateOwners(), 'owner', mkt);
-  chartersBox.innerHTML = renderPartyCardList(aggregateCharterers(), 'charterer', mkt);
+
+  const owners = aggregateOwners();
+  const charterers = aggregateCharterers();
+  const { operators, operatorKeys } = aggregateOperators(owners, charterers);
+
+  // Show / hide the Operators section based on whether any merged accounts exist
+  const operatorsSection = document.getElementById('participantsOperatorsSection');
+  const operatorsBox = document.getElementById('participantsOperators');
+  if (operatorsSection) operatorsSection.style.display = operators.length ? '' : 'none';
+  if (operatorsBox) operatorsBox.innerHTML = renderOperatorCardList(operators, mkt);
+
+  // Filter operators out of the per-role lists so they aren't shown twice
+  const filteredOwners = owners.filter(o => !operatorKeys.has(o.name.toUpperCase()));
+  const filteredCharterers = charterers.filter(c => !operatorKeys.has(c.name.toUpperCase()));
+
+  ownersBox.innerHTML = renderPartyCardList(filteredOwners, 'owner', mkt);
+  chartersBox.innerHTML = renderPartyCardList(filteredCharterers, 'charterer', mkt);
 }
