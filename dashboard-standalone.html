@@ -2761,7 +2761,21 @@ function applyEdit(idx, field, val) {
       v.fixed_price = n;
       break;
     }
-    case 'charterer': v.charterer = val || null; break;
+    case 'charterer': {
+      v.charterer = val || null;
+      // Sync the latest fixture history entry so the participants tab
+      // reflects the corrected charterer instead of the original (wrong) name.
+      if ((v.status === 'FIXED' || v.status === 'IN HOUSE') && v.price_history) {
+        for (let i = v.price_history.length - 1; i >= 0; i--) {
+          const h = v.price_history[i];
+          if (h.field === 'fixed_price' || h.field === 'in_house') {
+            h.counterparty = v.charterer;
+            break;
+          }
+        }
+      }
+      break;
+    }
     case 'date_fixed': {
       if (val.includes('-')) v.date_fixed = val;
       else { const d = parseDate(val); if (d) v.date_fixed = d; }
