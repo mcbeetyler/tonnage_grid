@@ -233,6 +233,10 @@
   .cargo-table tbody tr{transition:background .1s}
   .cargo-table tbody tr:hover{background:var(--bg-hover)}
   .cargo-table tbody td{padding:8px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+  .cargo-notes-cell{cursor:text;color:var(--text-dim);min-width:120px;max-width:260px;white-space:normal;outline:none}
+  .cargo-notes-cell:hover{background:var(--bg-hover)}
+  .cargo-notes-cell:focus{background:var(--bg3);color:var(--text);box-shadow:inset 0 0 0 1px var(--accent)}
+  .cargo-notes-cell:empty::before{content:'+ note';color:var(--text-dim);opacity:.4}
   .badge-fresh{background:var(--green-light);color:var(--green);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
   .badge-fixed{background:var(--amber-light);color:var(--amber);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
   .cargo-paste-area{padding:0 28px;margin-bottom:8px}
@@ -768,7 +772,7 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
     <div class="cargo-table-wrap">
       <table class="cargo-table">
         <thead><tr>
-          <th>Charterer</th><th>Stem</th><th>Cargo</th><th>Route</th><th>Laycan</th><th>Slot</th><th>Size</th><th>Updated</th><th>Status</th><th>Actions</th>
+          <th>Charterer</th><th>Stem</th><th>Cargo</th><th>Route</th><th>Laycan</th><th>Slot</th><th>Size</th><th>Updated</th><th>Status</th><th>Notes</th><th>Actions</th>
         </tr></thead>
         <tbody id="cargoBody"></tbody>
       </table>
@@ -4905,6 +4909,7 @@ function renderCargo() {
     if (c.fixed) statusBadge = '<span class="badge-fixed">FIXED</span>';
     const slotBadge = c.slot ? `<span class="td-laycan" style="background:${slotColor(c.slot)}20;color:${slotColor(c.slot)}">${c.slot}</span>` : '—';
     const idEscaped = c.id.replace(/'/g, "\\'");
+    const notesEsc = (c.notes || '').replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
     return `<tr>
       <td style="font-weight:500">${c.charterer}</td>
       <td style="color:var(--text-dim)">${c.stem}</td>
@@ -4915,9 +4920,19 @@ function renderCargo() {
       <td style="font-family:var(--mono)">${c.size || ''}</td>
       <td style="color:var(--text-dim)">${c.updated || ''}</td>
       <td style="cursor:pointer" onclick="toggleCargoFixed('${idEscaped}')" title="Click to toggle fixed status">${statusBadge || '—'}</td>
+      <td contenteditable="true" class="cargo-notes-cell" onblur="saveCargoNotes('${idEscaped}', this.innerText)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.blur();}" title="Click to edit · Enter to save">${notesEsc}</td>
       <td><button class="btn-remove" onclick="markCargoDeparted('${idEscaped}')" title="Mark as fixed & departed (removes from live list)">✓ Fixed</button></td>
     </tr>`;
   }).join('');
+}
+
+function saveCargoNotes(id, value) {
+  const cargo = cargoHistory.find(c => c.id === id);
+  if (!cargo) return;
+  const newVal = (value || '').trim();
+  if ((cargo.notes || '') === newVal) return;
+  cargo.notes = newVal || null;
+  saveCargo();
 }
 
 function toggleCargoFixed(id) {

@@ -244,6 +244,10 @@
   .cargo-table tbody tr{transition:background .1s}
   .cargo-table tbody tr:hover{background:var(--bg-hover)}
   .cargo-table tbody td{padding:8px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+  .cargo-notes-cell{cursor:text;color:var(--text-dim);min-width:120px;max-width:260px;white-space:normal;outline:none}
+  .cargo-notes-cell:hover{background:var(--bg-hover)}
+  .cargo-notes-cell:focus{background:var(--bg3);color:var(--text);box-shadow:inset 0 0 0 1px var(--accent)}
+  .cargo-notes-cell:empty::before{content:'+ note';color:var(--text-dim);opacity:.4}
   .badge-fresh{background:var(--green-light);color:var(--green);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
   .badge-fixed{background:var(--amber-light);color:var(--amber);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
   .cargo-paste-area{padding:0 28px;margin-bottom:8px}
@@ -795,7 +799,7 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
     <div class="cargo-table-wrap">
       <table class="cargo-table">
         <thead><tr>
-          <th>Charterer</th><th>Stem</th><th>Cargo</th><th>Route</th><th>Laycan</th><th>Slot</th><th>Size</th><th>Updated</th><th>Status</th><th>Actions</th>
+          <th>Charterer</th><th>Stem</th><th>Cargo</th><th>Route</th><th>Laycan</th><th>Slot</th><th>Size</th><th>Updated</th><th>Status</th><th>Notes</th><th>Actions</th>
         </tr></thead>
         <tbody id="cargoBody"></tbody>
       </table>

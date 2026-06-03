@@ -391,6 +391,7 @@ function renderCargo() {
     if (c.fixed) statusBadge = '<span class="badge-fixed">FIXED</span>';
     const slotBadge = c.slot ? `<span class="td-laycan" style="background:${slotColor(c.slot)}20;color:${slotColor(c.slot)}">${c.slot}</span>` : '—';
     const idEscaped = c.id.replace(/'/g, "\\'");
+    const notesEsc = (c.notes || '').replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
     return `<tr>
       <td style="font-weight:500">${c.charterer}</td>
       <td style="color:var(--text-dim)">${c.stem}</td>
@@ -401,9 +402,19 @@ function renderCargo() {
       <td style="font-family:var(--mono)">${c.size || ''}</td>
       <td style="color:var(--text-dim)">${c.updated || ''}</td>
       <td style="cursor:pointer" onclick="toggleCargoFixed('${idEscaped}')" title="Click to toggle fixed status">${statusBadge || '—'}</td>
+      <td contenteditable="true" class="cargo-notes-cell" onblur="saveCargoNotes('${idEscaped}', this.innerText)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.blur();}" title="Click to edit · Enter to save">${notesEsc}</td>
       <td><button class="btn-remove" onclick="markCargoDeparted('${idEscaped}')" title="Mark as fixed & departed (removes from live list)">✓ Fixed</button></td>
     </tr>`;
   }).join('');
+}
+
+function saveCargoNotes(id, value) {
+  const cargo = cargoHistory.find(c => c.id === id);
+  if (!cargo) return;
+  const newVal = (value || '').trim();
+  if ((cargo.notes || '') === newVal) return;
+  cargo.notes = newVal || null;
+  saveCargo();
 }
 
 function toggleCargoFixed(id) {
