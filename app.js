@@ -1345,8 +1345,12 @@ async function handleParse() {
   const btnAdd = document.getElementById('btnAdd');
   const btnParse = document.getElementById('btnParse');
 
+  // CSV/TSV with a header row takes priority over fixture detection — a CSV
+  // can legitimately contain the word FIXED in a status/comments column.
+  const isCSV = looksLikeCSV(raw);
+
   // Check if this looks like fixture reports (contains FXD or FIXED)
-  if (looksLikeFixtures(raw)) {
+  if (!isCSV && looksLikeFixtures(raw)) {
     const results = parseFixtureMessages(raw);
     if (results.length > 0) {
       save();
@@ -1363,7 +1367,7 @@ async function handleParse() {
   }
 
   // If the paste looks like CSV/TSV with a header row, parse + merge directly (no API)
-  if (looksLikeCSV(raw)) {
+  if (isCSV) {
     try {
       const { vessels: parsed, headers, mapping } = parseCSVVessels(raw);
       if (parsed.length === 0) {
