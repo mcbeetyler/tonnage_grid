@@ -474,11 +474,11 @@ function renderOperatorCard(op, mkt) {
   let drill = '';
   if (expanded) {
     drill = `<div class="party-card-drill">
+      <div class="party-operator-divider owner-divider"><span>As Owner</span></div>
       <div class="party-operator-side owner-side">
-        <div class="party-operator-side-label">As Owner</div>
         ${renderOwnerDrill(ow)}
       </div>
-      <div class="party-operator-divider"><span>As Charterer</span></div>
+      <div class="party-operator-divider charterer-divider"><span>As Charterer</span></div>
       <div class="party-operator-side charterer-side">
         ${renderChartererDrill(ch)}
       </div>

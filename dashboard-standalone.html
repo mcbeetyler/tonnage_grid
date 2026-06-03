@@ -406,9 +406,10 @@
   .party-role-label.owner{color:rgb(30,135,55)}
   .party-role-label.charterer{color:rgb(70,110,200)}
   .party-operator-side{padding:4px 0}
-  .party-operator-side-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;color:rgb(30,135,55)}
   .party-operator-divider{position:relative;border-top:1px solid var(--border2);margin:14px 0 6px;text-align:center}
-  .party-operator-divider span{position:absolute;top:-7px;left:50%;transform:translateX(-50%);background:var(--bg2);padding:0 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:rgb(70,110,200)}
+  .party-operator-divider span{position:absolute;top:-7px;left:50%;transform:translateX(-50%);background:var(--bg2);padding:0 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px}
+  .party-operator-divider.owner-divider span{color:rgb(30,135,55)}
+  .party-operator-divider.charterer-divider span{color:rgb(70,110,200)}
   .party-card.operator.expanded{background:var(--bg2)}
   .party-chip strong{color:var(--text-bright);font-weight:700}
   .party-card-drill{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)}
@@ -7887,11 +7888,11 @@ function renderOperatorCard(op, mkt) {
   let drill = '';
   if (expanded) {
     drill = `<div class="party-card-drill">
+      <div class="party-operator-divider owner-divider"><span>As Owner</span></div>
       <div class="party-operator-side owner-side">
-        <div class="party-operator-side-label">As Owner</div>
         ${renderOwnerDrill(ow)}
       </div>
-      <div class="party-operator-divider"><span>As Charterer</span></div>
+      <div class="party-operator-divider charterer-divider"><span>As Charterer</span></div>
       <div class="party-operator-side charterer-side">
         ${renderChartererDrill(ch)}
       </div>
