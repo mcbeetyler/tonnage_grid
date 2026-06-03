@@ -3565,15 +3565,14 @@ function parseCSVVessels(raw) {
 }
 
 // Reconcile CSV upload against the board.
-// - New vessel names → added
+// - New vessel names → added immediately
 // - Existing vessels → LEFT UNTOUCHED (manual edits preserved)
-// - Existing OPEN vessels NOT in the CSV → marked WITHDRAWN (still on board for history,
-//   but filtered out of the active view). FIXED / FAILED / ON SUBS / already-WITHDRAWN
-//   ships are not touched, since the user's internal CSV only tracks the live market.
+// - Existing OPEN vessels NOT in the CSV → returned as withdraw CANDIDATES
+//   (caller must explicitly confirm before applying).
 function mergeCSVVessels(newVessels) {
   const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const csvNames = new Set(newVessels.map(v => norm(v.vessel_name)).filter(Boolean));
-  let added = 0, skipped = 0, withdrawn = 0;
+  let added = 0, skipped = 0;
 
   for (const nv of newVessels) {
     const exists = vessels.some(v => norm(v.vessel_name) === norm(nv.vessel_name));
@@ -3585,16 +3584,49 @@ function mergeCSVVessels(newVessels) {
     }
   }
 
-  const nowIso = new Date().toISOString();
+  const withdrawCandidates = [];
   for (const v of vessels) {
     if (v.status !== 'OPEN') continue;
     if (csvNames.has(norm(v.vessel_name))) continue;
-    v.status = 'WITHDRAWN';
-    v.last_updated = nowIso;
-    withdrawn++;
+    withdrawCandidates.push({ vessel: v, name: v.vessel_name || '(unnamed)' });
   }
 
-  return { added, skipped, withdrawn };
+  return { added, skipped, withdrawCandidates };
+}
+
+// Pending withdrawal queue — populated by a CSV parse, applied by user click.
+let pendingCSVWithdrawals = [];
+
+function applyCSVWithdrawals() {
+  if (!pendingCSVWithdrawals.length) return;
+  const nowIso = new Date().toISOString();
+  let count = 0;
+  for (const c of pendingCSVWithdrawals) {
+    if (c.vessel && c.vessel.status === 'OPEN') {
+      c.vessel.status = 'WITHDRAWN';
+      c.vessel.last_updated = nowIso;
+      count++;
+    }
+  }
+  pendingCSVWithdrawals = [];
+  save();
+  renderTable();
+  updateStats();
+  const preview = document.getElementById('previewBox');
+  preview.textContent = `Confirmed: ${count} vessel(s) marked WITHDRAWN.`;
+  preview.className = 'preview-box has-content';
+}
+
+function cancelCSVWithdrawals() {
+  const n = pendingCSVWithdrawals.length;
+  pendingCSVWithdrawals = [];
+  const preview = document.getElementById('previewBox');
+  preview.textContent = `Withdrawal cancelled — ${n} OPEN vessel(s) left as-is. New additions were kept.`;
+  preview.className = 'preview-box has-content';
+}
+
+function _escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 // ─── Fixture Message Parser ──────────────────────────────────────────────────
@@ -3747,13 +3779,14 @@ async function handleParse() {
   // If the paste looks like CSV/TSV with a header row, parse + merge directly (no API)
   if (isCSV) {
     try {
+      pendingCSVWithdrawals = [];
       const { vessels: parsed, headers, mapping } = parseCSVVessels(raw);
       if (parsed.length === 0) {
         preview.textContent = 'CSV detected but no valid rows parsed.\n\nHeaders seen: ' + headers.join(' | ');
         preview.className = 'preview-box has-error';
         return;
       }
-      const { added, skipped: skippedExisting, withdrawn } = mergeCSVVessels(parsed);
+      const { added, skipped: skippedExisting, withdrawCandidates } = mergeCSVVessels(parsed);
       save();
       renderTable();
       updateStats();
@@ -3769,11 +3802,26 @@ async function handleParse() {
       }
 
       const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-      preview.textContent =
+      const statsLine =
         `CSV parsed: ${parsed.length} row(s) → ${plural(added, 'new vessel added', 'new vessels added')}, ` +
-        `${skippedExisting} already on board (left untouched), ` +
-        `${plural(withdrawn, 'open ship marked WITHDRAWN', 'open ships marked WITHDRAWN')} (no longer in CSV).\n\n` +
-        mapSummary;
+        `${skippedExisting} already on board (left untouched).`;
+
+      let html = `<div style="white-space:pre-wrap">${_escHtml(statsLine + '\n\n' + mapSummary)}</div>`;
+
+      if (withdrawCandidates.length > 0) {
+        pendingCSVWithdrawals = withdrawCandidates;
+        const list = withdrawCandidates.map(c => '• ' + _escHtml(c.name)).join('<br>');
+        html += `
+          <div style="margin-top:10px;padding:8px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;color:#000">
+            <div style="font-weight:bold;margin-bottom:6px">${withdrawCandidates.length} OPEN ship(s) not found in this CSV.</div>
+            <div style="font-size:11px;margin-bottom:8px">Review the list — only confirm if you intended this CSV to be the full open book.</div>
+            <div style="max-height:200px;overflow-y:auto;font-size:11px;background:#fff;padding:6px;border-radius:3px;margin-bottom:8px">${list}</div>
+            <button class="btn-primary" onclick="applyCSVWithdrawals()" style="margin-right:6px">Confirm — mark ${withdrawCandidates.length} WITHDRAWN</button>
+            <button class="btn-secondary" onclick="cancelCSVWithdrawals()">Cancel — keep as OPEN</button>
+          </div>`;
+      }
+
+      preview.innerHTML = html;
       preview.className = 'preview-box has-content';
       document.getElementById('rawInput').value = '';
       pendingParsed = null;
