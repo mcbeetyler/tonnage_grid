@@ -181,6 +181,10 @@
   .bid-remove{background:none;border:1px solid var(--border);color:var(--text-dim);font-size:13px;line-height:1;padding:2px 6px;border-radius:var(--radius-sm);cursor:pointer}
   .bid-remove:hover{border-color:var(--red);color:var(--red);background:var(--red-light)}
   .bids-foot{display:flex;justify-content:flex-end;gap:8px;padding:10px 16px;border-top:1px solid var(--border)}
+  .add-cargo-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .add-cargo-grid label{display:flex;flex-direction:column;gap:3px;font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.3px}
+  .add-cargo-grid input,.add-cargo-grid select{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:7px 9px;font-size:12px;color:var(--text);font-family:inherit;text-transform:none}
+  .add-cargo-grid input:focus,.add-cargo-grid select:focus{outline:none;border-color:var(--accent);background:var(--bg)}
   .bids-save{background:var(--accent);color:#fff;border:none;padding:6px 16px;font-size:12px;font-weight:600;border-radius:var(--radius-sm);cursor:pointer}
   .bids-save:hover{background:var(--accent-hover)}
   .party-activity-action.relet{color:#8A6300}
@@ -789,6 +793,7 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
           <option value="ore">Ore</option>
           <option value="other">Other</option>
         </select>
+        <button class="btn-primary" style="padding:6px 14px;font-size:11px" onclick="openAddCargoModal()">+ Add Cargo</button>
         <div class="spacer"></div>
       </div>
     </div>
@@ -1051,6 +1056,32 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
     <div class="bids-body" id="bidsPopupBody"></div>
     <div class="bids-foot">
       <button class="bids-save" onclick="popupSaveBids()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="bids-overlay" id="addCargoOverlay" onclick="if(event.target===this) closeAddCargoModal()">
+  <div class="bids-box">
+    <div class="bids-head-bar">
+      <div class="bids-title">Add Cargo</div>
+      <button class="bids-close" onclick="closeAddCargoModal()" title="Close">×</button>
+    </div>
+    <div class="bids-body" style="padding:14px 16px">
+      <div class="add-cargo-grid">
+        <label>Charterer<input type="text" id="addCargoCharterer" placeholder="e.g. Cargill" autofocus></label>
+        <label>Stem<select id="addCargoStem"></select></label>
+        <label>Cargo<input type="text" id="addCargoCargo" placeholder="e.g. Grain"></label>
+        <label>Size<input type="text" id="addCargoSize" placeholder="e.g. 60-65k"></label>
+        <label>Load<input type="text" id="addCargoLoad" placeholder="e.g. SANTOS"></label>
+        <label>Discharge<input type="text" id="addCargoDisch" placeholder="e.g. SPORE-JPN"></label>
+        <label>Laycan<input type="text" id="addCargoLaycan" placeholder="e.g. 1-10 Jun"></label>
+        <label style="grid-column:1/-1">Notes<input type="text" id="addCargoNotes" placeholder="optional"></label>
+      </div>
+      <div id="addCargoError" style="color:rgb(178,40,55);font-size:11px;margin-top:8px;display:none"></div>
+    </div>
+    <div class="bids-foot">
+      <button class="btn-secondary" onclick="closeAddCargoModal()" style="padding:6px 14px;font-size:11px">Cancel</button>
+      <button class="bids-save" onclick="submitAddCargo()">Add to book</button>
     </div>
   </div>
 </div>
@@ -4992,6 +5023,72 @@ function saveCargoCharterer(id, value) {
   if ((cargo.charterer || '') === newVal) return;
   cargo.charterer = newVal || null;
   saveCargo();
+}
+
+function openAddCargoModal() {
+  const overlay = document.getElementById('addCargoOverlay');
+  if (!overlay) return;
+  const stemSel = document.getElementById('addCargoStem');
+  if (stemSel && !stemSel.options.length) {
+    stemSel.innerHTML = STEM_ORDER.map(s => `<option value="${s}"${s === 'ECSA Fronthaul' ? ' selected' : ''}>${s}</option>`).join('');
+  }
+  ['addCargoCharterer','addCargoCargo','addCargoSize','addCargoLoad','addCargoDisch','addCargoLaycan','addCargoNotes'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const err = document.getElementById('addCargoError');
+  if (err) { err.textContent = ''; err.style.display = 'none'; }
+  overlay.classList.add('open');
+  setTimeout(() => { const ch = document.getElementById('addCargoCharterer'); if (ch) ch.focus(); }, 50);
+}
+
+function closeAddCargoModal() {
+  const overlay = document.getElementById('addCargoOverlay');
+  if (overlay) overlay.classList.remove('open');
+}
+
+function submitAddCargo() {
+  const get = id => (document.getElementById(id)?.value || '').trim();
+  const charterer = get('addCargoCharterer');
+  if (!charterer) {
+    const err = document.getElementById('addCargoError');
+    if (err) { err.textContent = 'Charterer is required.'; err.style.display = ''; }
+    return;
+  }
+  const stem = get('addCargoStem') || 'ECSA Fronthaul';
+  const cargo = get('addCargoCargo');
+  const size = get('addCargoSize');
+  const load = get('addCargoLoad').toUpperCase();
+  const disch = get('addCargoDisch').toUpperCase();
+  const laycan = get('addCargoLaycan');
+  const notes = get('addCargoNotes');
+
+  const today = new Date().toISOString().split('T')[0];
+  const id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('manual-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8));
+
+  const newCargo = {
+    id, charterer, stem,
+    cargo: cargo || null,
+    size: size || null,
+    load: load || null,
+    disch: disch || null,
+    laycan: laycan || null,
+    slot: parseLaycanSlot(laycan),
+    updated: today,
+    notes: notes || null,
+    fresh: true,
+    fixed: false,
+    first_seen: today,
+    last_seen: today,
+    entered_market: today,
+    manual: true,
+  };
+
+  cargoHistory.push(newCargo);
+  cargoCurrent.push(id);
+  saveCargo();
+  closeAddCargoModal();
+  renderCargo();
 }
 
 function toggleCargoFixed(id) {

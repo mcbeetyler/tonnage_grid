@@ -427,6 +427,78 @@ function saveCargoCharterer(id, value) {
   saveCargo();
 }
 
+// ─── Manual Add Cargo ────────────────────────────────────────────────────────
+
+function openAddCargoModal() {
+  const overlay = document.getElementById('addCargoOverlay');
+  if (!overlay) return;
+  // Populate stem dropdown
+  const stemSel = document.getElementById('addCargoStem');
+  if (stemSel && !stemSel.options.length) {
+    stemSel.innerHTML = STEM_ORDER.map(s => `<option value="${s}"${s === 'ECSA Fronthaul' ? ' selected' : ''}>${s}</option>`).join('');
+  }
+  // Clear previous inputs
+  ['addCargoCharterer','addCargoCargo','addCargoSize','addCargoLoad','addCargoDisch','addCargoLaycan','addCargoNotes'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const err = document.getElementById('addCargoError');
+  if (err) { err.textContent = ''; err.style.display = 'none'; }
+  overlay.classList.add('open');
+  setTimeout(() => { const ch = document.getElementById('addCargoCharterer'); if (ch) ch.focus(); }, 50);
+}
+
+function closeAddCargoModal() {
+  const overlay = document.getElementById('addCargoOverlay');
+  if (overlay) overlay.classList.remove('open');
+}
+
+function submitAddCargo() {
+  const get = id => (document.getElementById(id)?.value || '').trim();
+  const charterer = get('addCargoCharterer');
+  if (!charterer) {
+    const err = document.getElementById('addCargoError');
+    if (err) { err.textContent = 'Charterer is required.'; err.style.display = ''; }
+    return;
+  }
+  const stem = get('addCargoStem') || 'ECSA Fronthaul';
+  const cargo = get('addCargoCargo');
+  const size = get('addCargoSize');
+  const load = get('addCargoLoad').toUpperCase();
+  const disch = get('addCargoDisch').toUpperCase();
+  const laycan = get('addCargoLaycan');
+  const notes = get('addCargoNotes');
+
+  const today = new Date().toISOString().split('T')[0];
+  const id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('manual-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8));
+
+  const newCargo = {
+    id,
+    charterer,
+    stem,
+    cargo: cargo || null,
+    size: size || null,
+    load: load || null,
+    disch: disch || null,
+    laycan: laycan || null,
+    slot: parseLaycanSlot(laycan),
+    updated: today,
+    notes: notes || null,
+    fresh: true,
+    fixed: false,
+    first_seen: today,
+    last_seen: today,
+    entered_market: today,
+    manual: true,
+  };
+
+  cargoHistory.push(newCargo);
+  cargoCurrent.push(id);
+  saveCargo();
+  closeAddCargoModal();
+  renderCargo();
+}
+
 function toggleCargoFixed(id) {
   const cargo = cargoHistory.find(c => c.id === id);
   if (!cargo) return;
