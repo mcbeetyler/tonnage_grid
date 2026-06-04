@@ -269,7 +269,7 @@ function aggregateOpenCargoesByCharterer() {
 function renderCargoesDrillSection(cargoes) {
   if (!cargoes || cargoes.length === 0) return '';
   const sorted = cargoes.slice().sort((a, b) => (a.laycan || '').localeCompare(b.laycan || ''));
-  let html = `<div class="party-drill-section"><div class="party-drill-title">Open cargoes ${sorted.length}</div>`;
+  let html = `<div class="party-cargoes-divider"><span>Open Cargoes · ${sorted.length}</span></div><div class="party-drill-section">`;
   sorted.forEach(c => {
     const route = c.load && c.disch ? `${c.load} → ${c.disch}` : (c.stem || '');
     const laycan = c.laycan || '';

@@ -415,6 +415,10 @@
   .party-operator-divider.owner-divider span{color:rgb(30,135,55)}
   .party-operator-divider.charterer-divider span{color:rgb(70,110,200)}
   .party-card.operator.expanded{background:var(--bg2)}
+  .party-cargoes-divider{position:relative;border-top:1px solid var(--border2);margin:14px 0 10px;text-align:center}
+  .party-cargoes-divider span{position:absolute;top:-7px;left:50%;transform:translateX(-50%);padding:0 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:rgb(180,120,40)}
+  .party-card.expanded .party-cargoes-divider span{background:var(--bg-hover)}
+  .party-card.operator.expanded .party-cargoes-divider span{background:var(--bg2)}
   .party-chip strong{color:var(--text-bright);font-weight:700}
   .party-card-drill{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)}
   .party-caret{color:var(--text-dim);font-size:11px}
@@ -7739,7 +7743,7 @@ function aggregateOpenCargoesByCharterer() {
 function renderCargoesDrillSection(cargoes) {
   if (!cargoes || cargoes.length === 0) return '';
   const sorted = cargoes.slice().sort((a, b) => (a.laycan || '').localeCompare(b.laycan || ''));
-  let html = `<div class="party-drill-section"><div class="party-drill-title">Open cargoes ${sorted.length}</div>`;
+  let html = `<div class="party-cargoes-divider"><span>Open Cargoes · ${sorted.length}</span></div><div class="party-drill-section">`;
   sorted.forEach(c => {
     const route = c.load && c.disch ? `${c.load} → ${c.disch}` : (c.stem || '');
     const laycan = c.laycan || '';
