@@ -392,8 +392,9 @@ function renderCargo() {
     const slotBadge = c.slot ? `<span class="td-laycan" style="background:${slotColor(c.slot)}20;color:${slotColor(c.slot)}">${c.slot}</span>` : '—';
     const idEscaped = c.id.replace(/'/g, "\\'");
     const notesEsc = (c.notes || '').replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+    const chartererEsc = (c.charterer || '').replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
     return `<tr>
-      <td style="font-weight:500">${c.charterer}</td>
+      <td contenteditable="true" class="cargo-charterer-cell" onblur="saveCargoCharterer('${idEscaped}', this.innerText)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.blur();}" title="Click to edit · Enter to save">${chartererEsc}</td>
       <td style="color:var(--text-dim)">${c.stem}</td>
       <td>${c.cargo || ''}</td>
       <td style="color:var(--text-dim)">${route}</td>
@@ -414,6 +415,15 @@ function saveCargoNotes(id, value) {
   const newVal = (value || '').trim();
   if ((cargo.notes || '') === newVal) return;
   cargo.notes = newVal || null;
+  saveCargo();
+}
+
+function saveCargoCharterer(id, value) {
+  const cargo = cargoHistory.find(c => c.id === id);
+  if (!cargo) return;
+  const newVal = (value || '').trim();
+  if ((cargo.charterer || '') === newVal) return;
+  cargo.charterer = newVal || null;
   saveCargo();
 }
 
