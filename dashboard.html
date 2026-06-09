@@ -425,7 +425,13 @@
   .party-card-stats{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
   .party-chip{font-size:11px;color:var(--text-dim);background:var(--bg3);padding:2px 8px;border-radius:10px}
   .party-card.operator{border-left:3px solid var(--accent)}
+  .party-card.owner{border-left:3px solid rgb(30,135,55)}
+  .party-card.charterer{border-left:3px solid rgb(180,120,40)}
   .party-card.operator .party-card-stats{margin-top:4px}
+  .party-role-tag{font-size:9px;font-weight:700;letter-spacing:.6px;padding:2px 7px;border-radius:8px;margin-right:6px;text-transform:uppercase}
+  .party-role-tag.operator{background:rgba(70,110,200,.15);color:rgb(70,110,200)}
+  .party-role-tag.owner{background:rgba(30,135,55,.15);color:rgb(30,135,55)}
+  .party-role-tag.charterer{background:rgba(180,120,40,.15);color:rgb(180,120,40)}
   .party-role-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px}
   .party-role-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);min-width:62px}
   .party-role-label.owner{color:rgb(30,135,55)}
@@ -1070,24 +1076,11 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
       <div id="participantsActivity" class="party-activity"></div>
     </div>
     <div class="party-section" id="participantsOperatorsSection" style="display:none">
-      <div class="party-section-title">Operators & Cargo Demand <span class="party-section-hint">merged accounts on the left · who's holding cargo and bidding on the right</span></div>
+      <div class="party-section-title">Participants & Cargo Demand <span class="party-section-hint">all accounts sorted by most recent activity · cargo demand on the right</span></div>
       <div id="participantsCargoFilter" class="party-cargo-filter"></div>
       <div class="party-operators-layout">
-        <div id="participantsOperators" class="party-column-list"></div>
+        <div id="participantsStream" class="party-column-list"></div>
         <div id="participantsCargoSummary" class="party-cargo-summary"></div>
-      </div>
-    </div>
-    <div class="party-section">
-      <div class="party-section-title">Participants <span class="party-section-hint">sorted by most recent activity · click a card for detail</span></div>
-      <div class="party-columns">
-        <div>
-          <div class="party-section-title" style="margin:0 0 6px;letter-spacing:.4px;font-size:10px">Owners</div>
-          <div id="participantsOwners" class="party-column-list"></div>
-        </div>
-        <div>
-          <div class="party-section-title" style="margin:0 0 6px;letter-spacing:.4px;font-size:10px">Charterers / Operators</div>
-          <div id="participantsCharterers" class="party-column-list"></div>
-        </div>
       </div>
     </div>
   </div>

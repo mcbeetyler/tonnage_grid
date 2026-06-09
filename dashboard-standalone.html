@@ -408,7 +408,13 @@
   .party-card-stats{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
   .party-chip{font-size:11px;color:var(--text-dim);background:var(--bg3);padding:2px 8px;border-radius:10px}
   .party-card.operator{border-left:3px solid var(--accent)}
+  .party-card.owner{border-left:3px solid rgb(30,135,55)}
+  .party-card.charterer{border-left:3px solid rgb(180,120,40)}
   .party-card.operator .party-card-stats{margin-top:4px}
+  .party-role-tag{font-size:9px;font-weight:700;letter-spacing:.6px;padding:2px 7px;border-radius:8px;margin-right:6px;text-transform:uppercase}
+  .party-role-tag.operator{background:rgba(70,110,200,.15);color:rgb(70,110,200)}
+  .party-role-tag.owner{background:rgba(30,135,55,.15);color:rgb(30,135,55)}
+  .party-role-tag.charterer{background:rgba(180,120,40,.15);color:rgb(180,120,40)}
   .party-role-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px}
   .party-role-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);min-width:62px}
   .party-role-label.owner{color:rgb(30,135,55)}
@@ -1042,24 +1048,11 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
       <div id="participantsActivity" class="party-activity"></div>
     </div>
     <div class="party-section" id="participantsOperatorsSection" style="display:none">
-      <div class="party-section-title">Operators & Cargo Demand <span class="party-section-hint">merged accounts on the left · who's holding cargo and bidding on the right</span></div>
+      <div class="party-section-title">Participants & Cargo Demand <span class="party-section-hint">all accounts sorted by most recent activity · cargo demand on the right</span></div>
       <div id="participantsCargoFilter" class="party-cargo-filter"></div>
       <div class="party-operators-layout">
-        <div id="participantsOperators" class="party-column-list"></div>
+        <div id="participantsStream" class="party-column-list"></div>
         <div id="participantsCargoSummary" class="party-cargo-summary"></div>
-      </div>
-    </div>
-    <div class="party-section">
-      <div class="party-section-title">Participants <span class="party-section-hint">sorted by most recent activity · click a card for detail</span></div>
-      <div class="party-columns">
-        <div>
-          <div class="party-section-title" style="margin:0 0 6px;letter-spacing:.4px;font-size:10px">Owners</div>
-          <div id="participantsOwners" class="party-column-list"></div>
-        </div>
-        <div>
-          <div class="party-section-title" style="margin:0 0 6px;letter-spacing:.4px;font-size:10px">Charterers / Operators</div>
-          <div id="participantsCharterers" class="party-column-list"></div>
-        </div>
       </div>
     </div>
   </div>
@@ -7911,12 +7904,18 @@ function renderCargoSummary(rows) {
       }).join('');
 
     const bidLines = r.bidding.slice()
-      .sort((a, b) => (b.bid_updated_at || '').localeCompare(a.bid_updated_at || ''))
+      .sort((a, b) => ((b.bid_updated_at || b.last_updated || '')).localeCompare((a.bid_updated_at || a.last_updated || '')))
       .map(v => {
         const p6 = getP6Values(v);
-        const bidDate = v.bid_updated_at ? fmtDateReport(v.bid_updated_at.slice(0, 10)) : '';
+        const tsRaw = v.bid_updated_at || v.last_updated;
+        const bidDate = tsRaw ? fmtDateReport(tsRaw.slice(0, 10)) : '';
+        const eta = v.eta_ecsa ? 'ETA ' + fmtDateReport(v.eta_ecsa) : '';
         const lvl = p6.bid != null ? fmtParty$(p6.bid) : '';
-        return `<div class="cs-bid">→ ${v.vessel_name || '?'}${lvl ? ' · ' + lvl : ''}${bidDate ? ' · ' + bidDate : ''}</div>`;
+        const parts = [v.vessel_name || '?'];
+        if (lvl) parts.push(lvl);
+        if (eta) parts.push(eta);
+        if (bidDate) parts.push('bid ' + bidDate);
+        return `<div class="cs-bid">→ ${parts.join(' · ')}</div>`;
       }).join('');
 
     return `<div class="party-cs-row">
@@ -8113,8 +8112,9 @@ function renderPartyCard(r, type, mkt, cargoMap) {
     const inner = isOwner ? renderOwnerDrill(r) : renderCargoesDrillSection(cargoes) + renderChartererDrill(r);
     drill = `<div class="party-card-drill">${inner}</div>`;
   }
-  return `<div class="party-card ${expanded ? 'expanded' : ''}" onclick="toggleParticipant('${type}','${safe}')">
+  return `<div class="party-card ${type} ${expanded ? 'expanded' : ''}" onclick="toggleParticipant('${type}','${safe}')">
     <div class="party-card-head">
+      <span class="party-role-tag ${type}">${type === 'owner' ? 'OWNER' : 'CHARTERER'}</span>
       <span class="party-card-name">${r.name}</span>
       ${trendArrow(r.trend)}
       <div style="flex:1"></div>
@@ -8163,6 +8163,7 @@ function renderOperatorCard(op, mkt, cargoMap) {
 
   return `<div class="party-card operator ${expanded ? 'expanded' : ''}" onclick="toggleParticipant('operator','${safe}')">
     <div class="party-card-head">
+      <span class="party-role-tag operator">OPERATOR</span>
       <span class="party-card-name">${op.name}</span>
       ${trendArrow(op.trend)}
       <div style="flex:1"></div>
@@ -8255,7 +8256,8 @@ function renderDrillList(title, list, mode) {
     let stat = '';
     if (mode === 'bidding') {
       const lvl = p6.bid;
-      const bidDate = v.bid_updated_at ? fmtDateReport(v.bid_updated_at.slice(0, 10)) : '';
+      const tsRaw = v.bid_updated_at || v.last_updated;
+      const bidDate = tsRaw ? fmtDateReport(tsRaw.slice(0, 10)) : '';
       stat = lvl != null ? `bid ${fmtParty$(lvl)}${bidDate ? ' · ' + bidDate : ''}` : '—';
     } else if (mode === 'open') {
       const lvl = p6.offer;
@@ -8283,10 +8285,9 @@ function toggleParticipant(type, name) {
 }
 
 function renderParticipants() {
-  const ownersBox = document.getElementById('participantsOwners');
-  const chartersBox = document.getElementById('participantsCharterers');
+  const streamBoxEarly = document.getElementById('participantsStream');
   const activityBox = document.getElementById('participantsActivity');
-  if (!ownersBox || !chartersBox) return;
+  if (!streamBoxEarly) return;
   const mkt = marketMedians(60);
   const marketRef = document.getElementById('participantsMarket');
   if (marketRef) marketRef.innerHTML = `Market median: <strong>offer ${fmtParty$(mkt.offer)}</strong> · <strong>bid ${fmtParty$(mkt.bid)}</strong> · <strong>fixed (30d) ${fmtParty$(mkt.fixed)}</strong>`;
@@ -8323,19 +8324,29 @@ function renderParticipants() {
     return (cargoMap.get(c.name.toUpperCase()) || []).length > 0;
   });
 
-  const operatorsSection = document.getElementById('participantsOperatorsSection');
-  const operatorsBox = document.getElementById('participantsOperators');
-  const cargoSummaryBox = document.getElementById('participantsCargoSummary');
-  const showSection = operators.length || cargoSummaryRows.length || cargoMapAll.size > 0;
-  if (operatorsSection) operatorsSection.style.display = showSection ? '' : 'none';
-  if (operatorsBox) operatorsBox.innerHTML = renderOperatorCardList(operators, mkt, cargoMap);
-  if (cargoSummaryBox) cargoSummaryBox.innerHTML = renderCargoSummary(cargoSummaryRows);
-
   const filteredOwners = owners.filter(o => !operatorKeys.has(o.name.toUpperCase()));
   const filteredCharterers = visibleCharterers.filter(c => !operatorKeys.has(c.name.toUpperCase()));
 
-  ownersBox.innerHTML = renderPartyCardList(filteredOwners, 'owner', mkt);
-  chartersBox.innerHTML = renderPartyCardList(filteredCharterers, 'charterer', mkt, cargoMap);
+  const streamEntries = [];
+  operators.forEach(o => streamEntries.push({ kind: 'operator', row: o, lastActivity: o.lastActivity }));
+  filteredOwners.forEach(o => streamEntries.push({ kind: 'owner', row: o, lastActivity: o.lastActivity }));
+  filteredCharterers.forEach(c => streamEntries.push({ kind: 'charterer', row: c, lastActivity: c.lastActivity }));
+  streamEntries.sort(byRecent);
+
+  const operatorsSection = document.getElementById('participantsOperatorsSection');
+  const streamBox = document.getElementById('participantsStream');
+  const cargoSummaryBox = document.getElementById('participantsCargoSummary');
+  const showSection = streamEntries.length || cargoSummaryRows.length || cargoMapAll.size > 0;
+  if (operatorsSection) operatorsSection.style.display = showSection ? '' : 'none';
+  if (streamBox) {
+    streamBox.innerHTML = streamEntries.length === 0
+      ? `<div class="party-empty">No participants with identifiable names yet.</div>`
+      : streamEntries.map(e => e.kind === 'operator'
+          ? renderOperatorCard(e.row, mkt, cargoMap)
+          : renderPartyCard(e.row, e.kind, mkt, cargoMap)
+        ).join('');
+  }
+  if (cargoSummaryBox) cargoSummaryBox.innerHTML = renderCargoSummary(cargoSummaryRows);
 }
 
 </script>
