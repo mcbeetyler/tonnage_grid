@@ -17,6 +17,43 @@ let activityShowAll = false;
 let ownersShowAll = false;
 let charterersShowAll = false;
 
+// Cargo stem filter applied to Operators + Cargo Demand views.
+// Empty set means "show all stems"; default focuses on ECSA FH.
+let participantCargoFilter = (() => {
+  try {
+    const raw = localStorage.getItem('pt_participant_cargo_filter');
+    if (raw) return new Set(JSON.parse(raw));
+  } catch (e) {}
+  return new Set(['ECSA Fronthaul']);
+})();
+
+function _persistParticipantCargoFilter() {
+  try { localStorage.setItem('pt_participant_cargo_filter', JSON.stringify([...participantCargoFilter])); } catch (e) {}
+}
+
+function toggleParticipantCargoStem(stem) {
+  if (participantCargoFilter.has(stem)) participantCargoFilter.delete(stem);
+  else participantCargoFilter.add(stem);
+  _persistParticipantCargoFilter();
+  renderParticipants();
+}
+
+function setParticipantCargoStemAll() {
+  participantCargoFilter.clear();
+  _persistParticipantCargoFilter();
+  renderParticipants();
+}
+
+function filterCargoMap(cargoMap, stems) {
+  if (!stems || stems.size === 0) return cargoMap;
+  const filtered = new Map();
+  for (const [key, cargoes] of cargoMap) {
+    const kept = cargoes.filter(c => stems.has(c.stem));
+    if (kept.length) filtered.set(key, kept);
+  }
+  return filtered;
+}
+
 const ACTIVITY_DEFAULT = 10;
 const PARTY_DEFAULT = 15;
 
@@ -739,21 +776,48 @@ function renderParticipants() {
 
   const owners = aggregateOwners();
   const charterers = aggregateCharterers();
-  const cargoMap = aggregateOpenCargoesByCharterer();
+  const cargoMapAll = aggregateOpenCargoesByCharterer();
+  const cargoMap = filterCargoMap(cargoMapAll, participantCargoFilter);
   const { operators, operatorKeys } = aggregateOperators(owners, charterers);
   const cargoSummaryRows = buildCargoSummaryRows(cargoMap, charterers, operators);
 
-  // Show / hide the Operators section based on whether any merged accounts or cargo data exist
+  // Build the stem filter pill bar from stems present in the (unfiltered) data
+  const filterBar = document.getElementById('participantsCargoFilter');
+  if (filterBar) {
+    const stems = new Set();
+    for (const cargoes of cargoMapAll.values()) cargoes.forEach(c => { if (c.stem) stems.add(c.stem); });
+    const stemOrder = (typeof STEM_ORDER !== 'undefined' ? STEM_ORDER : []).filter(s => stems.has(s));
+    [...stems].sort().forEach(s => { if (!stemOrder.includes(s)) stemOrder.push(s); });
+    if (stemOrder.length === 0) {
+      filterBar.innerHTML = '';
+    } else {
+      const allOn = participantCargoFilter.size === 0;
+      filterBar.innerHTML =
+        `<span class="filter-label" style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.4px;margin-right:4px">Cargo stems</span>` +
+        `<button class="filter-pill ${allOn ? 'active' : ''}" onclick="setParticipantCargoStemAll()">All</button>` +
+        stemOrder.map(s => `<button class="filter-pill ${participantCargoFilter.has(s) ? 'active' : ''}" onclick="toggleParticipantCargoStem('${s.replace(/'/g, "\\'")}')">${s}</button>`).join('');
+    }
+  }
+
+  // Drop cargo-only charterers whose only signal was a now-filtered-out cargo.
+  const visibleCharterers = charterers.filter(c => {
+    const hasVesselActivity = c.bidCount > 0 || (c.fixedEvents && c.fixedEvents.length > 0);
+    if (hasVesselActivity) return true;
+    return (cargoMap.get(c.name.toUpperCase()) || []).length > 0;
+  });
+
+  // Show / hide the Operators section based on operators OR filtered cargo data
   const operatorsSection = document.getElementById('participantsOperatorsSection');
   const operatorsBox = document.getElementById('participantsOperators');
   const cargoSummaryBox = document.getElementById('participantsCargoSummary');
-  if (operatorsSection) operatorsSection.style.display = (operators.length || cargoSummaryRows.length) ? '' : 'none';
+  const showSection = operators.length || cargoSummaryRows.length || cargoMapAll.size > 0;
+  if (operatorsSection) operatorsSection.style.display = showSection ? '' : 'none';
   if (operatorsBox) operatorsBox.innerHTML = renderOperatorCardList(operators, mkt, cargoMap);
   if (cargoSummaryBox) cargoSummaryBox.innerHTML = renderCargoSummary(cargoSummaryRows);
 
   // Filter operators out of the per-role lists so they aren't shown twice
   const filteredOwners = owners.filter(o => !operatorKeys.has(o.name.toUpperCase()));
-  const filteredCharterers = charterers.filter(c => !operatorKeys.has(c.name.toUpperCase()));
+  const filteredCharterers = visibleCharterers.filter(c => !operatorKeys.has(c.name.toUpperCase()));
 
   ownersBox.innerHTML = renderPartyCardList(filteredOwners, 'owner', mkt);
   chartersBox.innerHTML = renderPartyCardList(filteredCharterers, 'charterer', mkt, cargoMap);
