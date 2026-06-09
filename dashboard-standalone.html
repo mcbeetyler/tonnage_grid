@@ -138,6 +138,9 @@
   .status-IN_HOUSE{background:#F2E6FF;color:#6B2DBC}
   .status-FAILED{background:var(--red-light);color:var(--red)}
   .status-WITHDRAWN{background:var(--bg3);color:var(--text-dim)}
+  .status-select{font-size:11px;padding:4px 22px 4px 10px;border-radius:4px;font-weight:600;cursor:pointer;border:none;appearance:none;-webkit-appearance:none;-moz-appearance:none;background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10"><path fill="currentColor" d="M1 3l4 4 4-4z"/></svg>');background-repeat:no-repeat;background-position:right 6px center;background-size:8px;font-family:inherit}
+  .status-select:focus{outline:1px solid var(--accent);outline-offset:1px}
+  .status-select:hover{opacity:.85}
 
   .scrubber-yes{color:var(--green);font-weight:600}
   .scrubber-unk{color:var(--border2)}
@@ -4146,11 +4149,19 @@ function getSortValue(v, key) {
 
 // ─── Status & Actions ────────────────────────────────────────────────────────
 
+const VESSEL_STATUSES = ['OPEN', 'FIXED', 'IN HOUSE', 'FAILED', 'WITHDRAWN'];
+
 function cycleStatus(idx) {
-  const states = ['OPEN', 'FIXED', 'IN HOUSE', 'FAILED', 'WITHDRAWN'];
   const cur = vessels[idx].status || 'OPEN';
-  const next = states[(states.indexOf(cur) + 1) % states.length];
+  const next = VESSEL_STATUSES[(VESSEL_STATUSES.indexOf(cur) + 1) % VESSEL_STATUSES.length];
+  setVesselStatus(idx, next);
+}
+
+function setVesselStatus(idx, next) {
   const v = vessels[idx];
+  if (!v) return;
+  if (!VESSEL_STATUSES.includes(next)) return;
+  if (v.status === next) return;
   v.status = next;
   touchVessel(idx);
 
@@ -4447,7 +4458,11 @@ function renderTable() {
       case 'date_fixed': return `<td class="td-date editable" onclick="startEdit(this,${gi},'date_fixed',true)">${v.date_fixed ? fmtDate(v.date_fixed) : '—'}</td>`;
       case 'last_updated': return `<td class="td-source">${fmtTimestamp(v.last_updated)}</td>`;
       case 'notes': return `<td class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>`;
-      case 'status': return `<td><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>`;
+      case 'status': {
+        const cur = v.status || 'OPEN';
+        const opts = VESSEL_STATUSES.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}</option>`).join('');
+        return `<td><select class="status-select status-${statusCls}" onclick="event.stopPropagation()" onchange="setVesselStatus(${gi}, this.value)">${opts}</select></td>`;
+      }
       case 'actions': {
         const onSubs = v.status === 'FIXED' || v.status === 'IN HOUSE';
         const reletBtn = onSubs ? `<button class="btn-relet" onclick="reletVessel(${gi})" title="Bring back to market as relet">↺</button>` : '';

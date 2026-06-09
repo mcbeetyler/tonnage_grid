@@ -1792,11 +1792,21 @@ function getSortValue(v, key) {
 
 // ─── Status & Actions ────────────────────────────────────────────────────────
 
+const VESSEL_STATUSES = ['OPEN', 'FIXED', 'IN HOUSE', 'FAILED', 'WITHDRAWN'];
+
+// Backward-compat: cycleStatus still exists for any code that calls it,
+// but the UI now picks an exact target via setVesselStatus().
 function cycleStatus(idx) {
-  const states = ['OPEN', 'FIXED', 'IN HOUSE', 'FAILED', 'WITHDRAWN'];
   const cur = vessels[idx].status || 'OPEN';
-  const next = states[(states.indexOf(cur) + 1) % states.length];
+  const next = VESSEL_STATUSES[(VESSEL_STATUSES.indexOf(cur) + 1) % VESSEL_STATUSES.length];
+  setVesselStatus(idx, next);
+}
+
+function setVesselStatus(idx, next) {
   const v = vessels[idx];
+  if (!v) return;
+  if (!VESSEL_STATUSES.includes(next)) return;
+  if (v.status === next) return;
   v.status = next;
   touchVessel(idx);
 
@@ -2166,7 +2176,11 @@ function renderTable() {
       case 'date_fixed': return `<td class="td-date editable" onclick="startEdit(this,${gi},'date_fixed',true)">${v.date_fixed ? fmtDate(v.date_fixed) : '—'}</td>`;
       case 'last_updated': return `<td class="td-source">${fmtTimestamp(v.last_updated)}</td>`;
       case 'notes': return `<td class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>`;
-      case 'status': return `<td><span class="status-badge status-${statusCls}" onclick="cycleStatus(${gi})">${v.status || 'OPEN'}</span></td>`;
+      case 'status': {
+        const cur = v.status || 'OPEN';
+        const opts = VESSEL_STATUSES.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}</option>`).join('');
+        return `<td><select class="status-select status-${statusCls}" onclick="event.stopPropagation()" onchange="setVesselStatus(${gi}, this.value)">${opts}</select></td>`;
+      }
       case 'actions': {
         const onSubs = v.status === 'FIXED' || v.status === 'IN HOUSE';
         const reletBtn = onSubs
