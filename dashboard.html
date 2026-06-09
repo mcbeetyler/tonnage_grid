@@ -440,6 +440,18 @@
   .party-cargoes-divider span{position:absolute;top:-7px;left:50%;transform:translateX(-50%);padding:0 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:rgb(180,120,40)}
   .party-card.expanded .party-cargoes-divider span{background:var(--bg-hover)}
   .party-card.operator.expanded .party-cargoes-divider span{background:var(--bg2)}
+  .party-operators-layout{display:grid;grid-template-columns:2fr 1fr;gap:14px;align-items:start}
+  @media (max-width: 1000px){ .party-operators-layout{grid-template-columns:1fr} }
+  .party-cargo-summary{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:8px;max-height:560px;overflow-y:auto}
+  .party-cs-row{padding:8px 10px;border-bottom:1px solid var(--border);font-size:11px}
+  .party-cs-row:last-child{border-bottom:none}
+  .cs-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+  .cs-name{font-weight:700;color:var(--text-bright);font-size:12px}
+  .cs-op-tag{font-size:9px;font-weight:700;color:var(--accent);background:rgba(70,110,200,.15);padding:1px 5px;border-radius:8px;letter-spacing:.4px}
+  .cs-counts{font-size:10px;color:var(--text-dim);font-family:var(--mono)}
+  .cs-cargo{color:rgb(180,120,40);margin-left:6px;font-family:var(--mono);font-size:10.5px}
+  .cs-bid{color:var(--text-dim);margin-left:6px;font-family:var(--mono);font-size:10.5px}
+  .cs-no-bids{color:var(--text-dim);font-style:italic;margin-left:6px;font-size:10px;opacity:.6}
   .party-chip strong{color:var(--text-bright);font-weight:700}
   .party-card-drill{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)}
 
@@ -1056,8 +1068,11 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
       <div id="participantsActivity" class="party-activity"></div>
     </div>
     <div class="party-section" id="participantsOperatorsSection" style="display:none">
-      <div class="party-section-title">Operators <span class="party-section-hint">accounts active as both owner and charterer · merged view</span></div>
-      <div id="participantsOperators" class="party-column-list"></div>
+      <div class="party-section-title">Operators & Cargo Demand <span class="party-section-hint">merged accounts on the left · who's holding cargo and bidding on the right</span></div>
+      <div class="party-operators-layout">
+        <div id="participantsOperators" class="party-column-list"></div>
+        <div id="participantsCargoSummary" class="party-cargo-summary"></div>
+      </div>
     </div>
     <div class="party-section">
       <div class="party-section-title">Participants <span class="party-section-hint">sorted by most recent activity · click a card for detail</span></div>

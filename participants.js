@@ -266,6 +266,53 @@ function aggregateOpenCargoesByCharterer() {
   return map;
 }
 
+// Build summary rows pairing each cargo-holder with the ships they're bidding on.
+function buildCargoSummaryRows(cargoMap, charterers, operators) {
+  const lookup = new Map();
+  charterers.forEach(c => lookup.set(c.name.toUpperCase(), { name: c.name, bidding: c.bidding, isOperator: false }));
+  operators.forEach(o => lookup.set(o.name.toUpperCase(), { name: o.name, bidding: o.charterer.bidding, isOperator: true }));
+  const rows = [];
+  for (const [key, cargoes] of cargoMap) {
+    const info = lookup.get(key) || { name: cargoes[0].charterer || key, bidding: [], isOperator: false };
+    rows.push({ name: info.name, cargoes, bidding: info.bidding, isOperator: info.isOperator });
+  }
+  rows.sort((a, b) => (b.cargoes.length - a.cargoes.length) || (b.bidding.length - a.bidding.length));
+  return rows;
+}
+
+function renderCargoSummary(rows) {
+  if (rows.length === 0) {
+    return `<div class="party-empty" style="padding:14px">No charterers with active cargoes yet.</div>`;
+  }
+  return rows.map(r => {
+    const cargoLines = r.cargoes.slice()
+      .sort((a, b) => (a.laycan || '').localeCompare(b.laycan || ''))
+      .map(c => {
+        const size = c.size ? ' · ' + c.size : '';
+        const route = c.load && c.disch ? ` (${c.load}→${c.disch})` : '';
+        return `<div class="cs-cargo">${c.stem || '?'} · ${c.laycan || '?'}${size}${route}</div>`;
+      }).join('');
+
+    const bidLines = r.bidding.slice()
+      .sort((a, b) => (b.bid_updated_at || '').localeCompare(a.bid_updated_at || ''))
+      .map(v => {
+        const p6 = getP6Values(v);
+        const bidDate = v.bid_updated_at ? fmtDateReport(v.bid_updated_at.slice(0, 10)) : '';
+        const lvl = p6.bid != null ? fmtParty$(p6.bid) : '';
+        return `<div class="cs-bid">→ ${v.vessel_name || '?'}${lvl ? ' · ' + lvl : ''}${bidDate ? ' · ' + bidDate : ''}</div>`;
+      }).join('');
+
+    return `<div class="party-cs-row">
+      <div class="cs-head">
+        <span class="cs-name">${r.name}${r.isOperator ? ' <span class="cs-op-tag">OP</span>' : ''}</span>
+        <span class="cs-counts">${r.cargoes.length} cargo${r.cargoes.length === 1 ? '' : 'es'}${r.bidding.length ? ' · ' + r.bidding.length + ' bid' + (r.bidding.length === 1 ? '' : 's') : ''}</span>
+      </div>
+      ${cargoLines}
+      ${bidLines || (r.bidding.length === 0 ? '<div class="cs-no-bids">no bids yet</div>' : '')}
+    </div>`;
+  }).join('');
+}
+
 function renderCargoesDrillSection(cargoes) {
   if (!cargoes || cargoes.length === 0) return '';
   const sorted = cargoes.slice().sort((a, b) => (a.laycan || '').localeCompare(b.laycan || ''));
@@ -494,7 +541,7 @@ function renderPartyCard(r, type, mkt, cargoMap) {
   if (expanded) {
     const inner = isOwner
       ? renderOwnerDrill(r)
-      : renderChartererDrill(r) + renderCargoesDrillSection(cargoes);
+      : renderCargoesDrillSection(cargoes) + renderChartererDrill(r);
     drill = `<div class="party-card-drill">${inner}</div>`;
   }
 
@@ -540,8 +587,8 @@ function renderOperatorCard(op, mkt, cargoMap) {
       </div>
       <div class="party-operator-divider charterer-divider"><span>As Charterer</span></div>
       <div class="party-operator-side charterer-side">
-        ${renderChartererDrill(ch)}
         ${renderCargoesDrillSection(cargoes)}
+        ${renderChartererDrill(ch)}
       </div>
     </div>`;
   }
@@ -644,9 +691,13 @@ function renderDrillList(title, list, mode) {
     const eta = v.eta_ecsa ? fmtDateReport(v.eta_ecsa) : '';
     const p6 = getP6Values(v);
     let stat = '';
-    if (mode === 'open' || mode === 'bidding') {
-      const lvl = mode === 'bidding' ? p6.bid : p6.offer;
-      stat = lvl != null ? `${mode === 'bidding' ? 'bid' : 'offer'} ${fmtParty$(lvl)}` : '—';
+    if (mode === 'bidding') {
+      const lvl = p6.bid;
+      const bidDate = v.bid_updated_at ? fmtDateReport(v.bid_updated_at.slice(0, 10)) : '';
+      stat = lvl != null ? `bid ${fmtParty$(lvl)}${bidDate ? ' · ' + bidDate : ''}` : '—';
+    } else if (mode === 'open') {
+      const lvl = p6.offer;
+      stat = lvl != null ? `offer ${fmtParty$(lvl)}` : '—';
     } else if (mode === 'fixed') {
       const dateFixed = v.date_fixed ? fmtDateReport(v.date_fixed) : '';
       const priceTxt = v.fixed_price != null ? fmtParty$(v.fixed_price) : 'FIXED';
@@ -690,12 +741,15 @@ function renderParticipants() {
   const charterers = aggregateCharterers();
   const cargoMap = aggregateOpenCargoesByCharterer();
   const { operators, operatorKeys } = aggregateOperators(owners, charterers);
+  const cargoSummaryRows = buildCargoSummaryRows(cargoMap, charterers, operators);
 
-  // Show / hide the Operators section based on whether any merged accounts exist
+  // Show / hide the Operators section based on whether any merged accounts or cargo data exist
   const operatorsSection = document.getElementById('participantsOperatorsSection');
   const operatorsBox = document.getElementById('participantsOperators');
-  if (operatorsSection) operatorsSection.style.display = operators.length ? '' : 'none';
+  const cargoSummaryBox = document.getElementById('participantsCargoSummary');
+  if (operatorsSection) operatorsSection.style.display = (operators.length || cargoSummaryRows.length) ? '' : 'none';
   if (operatorsBox) operatorsBox.innerHTML = renderOperatorCardList(operators, mkt, cargoMap);
+  if (cargoSummaryBox) cargoSummaryBox.innerHTML = renderCargoSummary(cargoSummaryRows);
 
   // Filter operators out of the per-role lists so they aren't shown twice
   const filteredOwners = owners.filter(o => !operatorKeys.has(o.name.toUpperCase()));

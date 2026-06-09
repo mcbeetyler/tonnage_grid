@@ -423,6 +423,18 @@
   .party-cargoes-divider span{position:absolute;top:-7px;left:50%;transform:translateX(-50%);padding:0 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:rgb(180,120,40)}
   .party-card.expanded .party-cargoes-divider span{background:var(--bg-hover)}
   .party-card.operator.expanded .party-cargoes-divider span{background:var(--bg2)}
+  .party-operators-layout{display:grid;grid-template-columns:2fr 1fr;gap:14px;align-items:start}
+  @media (max-width: 1000px){ .party-operators-layout{grid-template-columns:1fr} }
+  .party-cargo-summary{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:8px;max-height:560px;overflow-y:auto}
+  .party-cs-row{padding:8px 10px;border-bottom:1px solid var(--border);font-size:11px}
+  .party-cs-row:last-child{border-bottom:none}
+  .cs-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+  .cs-name{font-weight:700;color:var(--text-bright);font-size:12px}
+  .cs-op-tag{font-size:9px;font-weight:700;color:var(--accent);background:rgba(70,110,200,.15);padding:1px 5px;border-radius:8px;letter-spacing:.4px}
+  .cs-counts{font-size:10px;color:var(--text-dim);font-family:var(--mono)}
+  .cs-cargo{color:rgb(180,120,40);margin-left:6px;font-family:var(--mono);font-size:10.5px}
+  .cs-bid{color:var(--text-dim);margin-left:6px;font-family:var(--mono);font-size:10.5px}
+  .cs-no-bids{color:var(--text-dim);font-style:italic;margin-left:6px;font-size:10px;opacity:.6}
   .party-chip strong{color:var(--text-bright);font-weight:700}
   .party-card-drill{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)}
   .party-caret{color:var(--text-dim);font-size:11px}
@@ -1028,8 +1040,11 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
       <div id="participantsActivity" class="party-activity"></div>
     </div>
     <div class="party-section" id="participantsOperatorsSection" style="display:none">
-      <div class="party-section-title">Operators <span class="party-section-hint">accounts active as both owner and charterer · merged view</span></div>
-      <div id="participantsOperators" class="party-column-list"></div>
+      <div class="party-section-title">Operators & Cargo Demand <span class="party-section-hint">merged accounts on the left · who's holding cargo and bidding on the right</span></div>
+      <div class="party-operators-layout">
+        <div id="participantsOperators" class="party-column-list"></div>
+        <div id="participantsCargoSummary" class="party-cargo-summary"></div>
+      </div>
     </div>
     <div class="party-section">
       <div class="party-section-title">Participants <span class="party-section-hint">sorted by most recent activity · click a card for detail</span></div>
@@ -7837,6 +7852,53 @@ function aggregateOpenCargoesByCharterer() {
   return map;
 }
 
+// Build summary rows pairing each cargo-holder with the ships they're bidding on.
+function buildCargoSummaryRows(cargoMap, charterers, operators) {
+  const lookup = new Map();
+  charterers.forEach(c => lookup.set(c.name.toUpperCase(), { name: c.name, bidding: c.bidding, isOperator: false }));
+  operators.forEach(o => lookup.set(o.name.toUpperCase(), { name: o.name, bidding: o.charterer.bidding, isOperator: true }));
+  const rows = [];
+  for (const [key, cargoes] of cargoMap) {
+    const info = lookup.get(key) || { name: cargoes[0].charterer || key, bidding: [], isOperator: false };
+    rows.push({ name: info.name, cargoes, bidding: info.bidding, isOperator: info.isOperator });
+  }
+  rows.sort((a, b) => (b.cargoes.length - a.cargoes.length) || (b.bidding.length - a.bidding.length));
+  return rows;
+}
+
+function renderCargoSummary(rows) {
+  if (rows.length === 0) {
+    return `<div class="party-empty" style="padding:14px">No charterers with active cargoes yet.</div>`;
+  }
+  return rows.map(r => {
+    const cargoLines = r.cargoes.slice()
+      .sort((a, b) => (a.laycan || '').localeCompare(b.laycan || ''))
+      .map(c => {
+        const size = c.size ? ' · ' + c.size : '';
+        const route = c.load && c.disch ? ` (${c.load}→${c.disch})` : '';
+        return `<div class="cs-cargo">${c.stem || '?'} · ${c.laycan || '?'}${size}${route}</div>`;
+      }).join('');
+
+    const bidLines = r.bidding.slice()
+      .sort((a, b) => (b.bid_updated_at || '').localeCompare(a.bid_updated_at || ''))
+      .map(v => {
+        const p6 = getP6Values(v);
+        const bidDate = v.bid_updated_at ? fmtDateReport(v.bid_updated_at.slice(0, 10)) : '';
+        const lvl = p6.bid != null ? fmtParty$(p6.bid) : '';
+        return `<div class="cs-bid">→ ${v.vessel_name || '?'}${lvl ? ' · ' + lvl : ''}${bidDate ? ' · ' + bidDate : ''}</div>`;
+      }).join('');
+
+    return `<div class="party-cs-row">
+      <div class="cs-head">
+        <span class="cs-name">${r.name}${r.isOperator ? ' <span class="cs-op-tag">OP</span>' : ''}</span>
+        <span class="cs-counts">${r.cargoes.length} cargo${r.cargoes.length === 1 ? '' : 'es'}${r.bidding.length ? ' · ' + r.bidding.length + ' bid' + (r.bidding.length === 1 ? '' : 's') : ''}</span>
+      </div>
+      ${cargoLines}
+      ${bidLines || (r.bidding.length === 0 ? '<div class="cs-no-bids">no bids yet</div>' : '')}
+    </div>`;
+  }).join('');
+}
+
 function renderCargoesDrillSection(cargoes) {
   if (!cargoes || cargoes.length === 0) return '';
   const sorted = cargoes.slice().sort((a, b) => (a.laycan || '').localeCompare(b.laycan || ''));
@@ -8017,7 +8079,7 @@ function renderPartyCard(r, type, mkt, cargoMap) {
   if (r.fixedMedian != null) stats.push(`<span class="party-chip">fixed @ ${fmtParty$(r.fixedMedian)}</span>`);
   let drill = '';
   if (expanded) {
-    const inner = isOwner ? renderOwnerDrill(r) : renderChartererDrill(r) + renderCargoesDrillSection(cargoes);
+    const inner = isOwner ? renderOwnerDrill(r) : renderCargoesDrillSection(cargoes) + renderChartererDrill(r);
     drill = `<div class="party-card-drill">${inner}</div>`;
   }
   return `<div class="party-card ${expanded ? 'expanded' : ''}" onclick="toggleParticipant('${type}','${safe}')">
@@ -8062,8 +8124,8 @@ function renderOperatorCard(op, mkt, cargoMap) {
       </div>
       <div class="party-operator-divider charterer-divider"><span>As Charterer</span></div>
       <div class="party-operator-side charterer-side">
-        ${renderChartererDrill(ch)}
         ${renderCargoesDrillSection(cargoes)}
+        ${renderChartererDrill(ch)}
       </div>
     </div>`;
   }
@@ -8160,9 +8222,13 @@ function renderDrillList(title, list, mode) {
     const eta = v.eta_ecsa ? fmtDateReport(v.eta_ecsa) : '';
     const p6 = getP6Values(v);
     let stat = '';
-    if (mode === 'open' || mode === 'bidding') {
-      const lvl = mode === 'bidding' ? p6.bid : p6.offer;
-      stat = lvl != null ? `${mode === 'bidding' ? 'bid' : 'offer'} ${fmtParty$(lvl)}` : '—';
+    if (mode === 'bidding') {
+      const lvl = p6.bid;
+      const bidDate = v.bid_updated_at ? fmtDateReport(v.bid_updated_at.slice(0, 10)) : '';
+      stat = lvl != null ? `bid ${fmtParty$(lvl)}${bidDate ? ' · ' + bidDate : ''}` : '—';
+    } else if (mode === 'open') {
+      const lvl = p6.offer;
+      stat = lvl != null ? `offer ${fmtParty$(lvl)}` : '—';
     } else if (mode === 'fixed') {
       const dateFixed = v.date_fixed ? fmtDateReport(v.date_fixed) : '';
       const priceTxt = v.fixed_price != null ? fmtParty$(v.fixed_price) : 'FIXED';
@@ -8199,12 +8265,15 @@ function renderParticipants() {
   const charterers = aggregateCharterers();
   const cargoMap = aggregateOpenCargoesByCharterer();
   const { operators, operatorKeys } = aggregateOperators(owners, charterers);
+  const cargoSummaryRows = buildCargoSummaryRows(cargoMap, charterers, operators);
 
-  // Show / hide the Operators section based on whether any merged accounts exist
+  // Show / hide the Operators section based on whether any merged accounts or cargo data exist
   const operatorsSection = document.getElementById('participantsOperatorsSection');
   const operatorsBox = document.getElementById('participantsOperators');
-  if (operatorsSection) operatorsSection.style.display = operators.length ? '' : 'none';
+  const cargoSummaryBox = document.getElementById('participantsCargoSummary');
+  if (operatorsSection) operatorsSection.style.display = (operators.length || cargoSummaryRows.length) ? '' : 'none';
   if (operatorsBox) operatorsBox.innerHTML = renderOperatorCardList(operators, mkt, cargoMap);
+  if (cargoSummaryBox) cargoSummaryBox.innerHTML = renderCargoSummary(cargoSummaryRows);
 
   // Filter operators out of the per-role lists so they aren't shown twice
   const filteredOwners = owners.filter(o => !operatorKeys.has(o.name.toUpperCase()));
