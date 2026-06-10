@@ -1796,7 +1796,7 @@ const VESSEL_STATUSES = ['OPEN', 'FIXED', 'IN HOUSE', 'FAILED', 'WITHDRAWN'];
 
 // Routes vessels can be marketed on. ECSA FH is the desk's primary book; the
 // Reports tab filters to ECSA FH only. Add to this list to extend the dropdown.
-const VESSEL_ROUTES = ['ECSA FH', 'NCSA FH', 'USG FH', 'USEC FH', 'WAFR FH', 'TA', 'ECSA TA', 'SAFR', 'Coastal', 'Pacific', 'India'];
+const VESSEL_ROUTES = ['ECSA FH', 'NCSA FH', 'USG FH', 'USEC FH', 'WAFR FH', 'TA', 'ECSA TA', 'SAFR', 'Coastal', 'Pacific', 'India', 'Period'];
 
 function setVesselRoute(idx, route) {
   const v = vessels[idx];
