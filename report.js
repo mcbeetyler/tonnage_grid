@@ -100,8 +100,11 @@ function renderReport() {
   const windows = getEtaWindows(mode);
   const container = document.getElementById('reportContent');
 
+  // Reports tab is ECSA FH-only. Anything routed elsewhere on the grid is dropped.
+  const isEcsaFh = v => (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH';
+
   // Filter to only OPEN vessels (includes gone-quiet — they render greyed out)
-  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name));
+  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name) && isEcsaFh(v));
 
   renderP6IndexSidebar(eligible);
 
@@ -120,6 +123,7 @@ function renderReport() {
       if (v.status !== 'FIXED') return false;
       if (reportExcluded.has(v.vessel_name)) return false;
       if (!v.eta_ecsa) return false;
+      if (!isEcsaFh(v)) return false;
       const eta = new Date(v.eta_ecsa);
       return eta >= win.from && eta <= win.to;
     }).sort((a, b) => (b.date_fixed || '').localeCompare(a.date_fixed || ''))
@@ -400,9 +404,11 @@ function fixtureToWhatsApp(v) {
 }
 
 // Shared helper: collect top-N FIXED vessels in a given window, respecting exclusions.
+// ECSA FH only — matches the Reports tab's primary filter.
 function fixedVesselsInWindow(win, topN) {
   return vessels
     .filter(v => v.status === 'FIXED' && !reportExcluded.has(v.vessel_name) && v.eta_ecsa)
+    .filter(v => (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH')
     .filter(v => {
       const eta = new Date(v.eta_ecsa);
       return eta >= win.from && eta <= win.to;
@@ -418,7 +424,7 @@ function copyWindowReport(winLabel, mode) {
 
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
   const showType = document.getElementById('reportType').value;
-  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name));
+  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name) && (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH');
   const inWindow = eligible.filter(v => {
     if (!v.eta_ecsa) return false;
     const eta = new Date(v.eta_ecsa);
@@ -475,7 +481,7 @@ function copyFullReport() {
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
   const showType = document.getElementById('reportType').value;
   const windows = getEtaWindows(mode);
-  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name));
+  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name) && (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH');
 
   let text = `*Tonnage Report — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}*\n`;
 

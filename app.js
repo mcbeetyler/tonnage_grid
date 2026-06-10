@@ -1794,6 +1794,19 @@ function getSortValue(v, key) {
 
 const VESSEL_STATUSES = ['OPEN', 'FIXED', 'IN HOUSE', 'FAILED', 'WITHDRAWN'];
 
+// Routes vessels can be marketed on. ECSA FH is the desk's primary book; the
+// Reports tab filters to ECSA FH only. Add to this list to extend the dropdown.
+const VESSEL_ROUTES = ['ECSA FH', 'NCSA FH', 'USG FH', 'USEC FH', 'WAFR FH', 'TA', 'ECSA TA', 'SAFR', 'Coastal', 'Pacific', 'India'];
+
+function setVesselRoute(idx, route) {
+  const v = vessels[idx];
+  if (!v) return;
+  v.route = route ? route.toUpperCase() : null;
+  touchVessel(idx);
+  save();
+  renderTable();
+}
+
 // Backward-compat: cycleStatus still exists for any code that calls it,
 // but the UI now picks an exact target via setVesselStatus().
 function cycleStatus(idx) {
@@ -2157,9 +2170,11 @@ function renderTable() {
         return `<td class="td-owner editable" onclick="openBidsPopup(${gi})" title="${tooltip.replace(/"/g,'&quot;')}">${v.bidding_charterer || '—'}${extra}</td>`;
       }
       case 'route': {
-        const eff = getEffectiveRoute(v);
-        const isOverride = !!v.route;
-        return `<td class="td-port editable" onclick="startEdit(this,${gi},'route',false)" title="Effective route (override of quoted route if set)"><span${isOverride ? ' style="font-weight:600"' : ''}>${eff}</span></td>`;
+        const eff = (getEffectiveRoute(v) || 'ECSA FH').toUpperCase();
+        const upperList = VESSEL_ROUTES.map(r => r.toUpperCase());
+        if (!upperList.includes(eff)) upperList.unshift(eff);
+        const opts = upperList.map(r => `<option value="${r}"${r === eff ? ' selected' : ''}>${r}</option>`).join('');
+        return `<td class="td-port"><select class="route-select" onclick="event.stopPropagation()" onchange="setVesselRoute(${gi}, this.value)" title="Route — Reports tab only includes ECSA FH">${opts}</select></td>`;
       }
       case 'p6_offer': {
         const offerStale = stalenessTag(v.offer_updated_at, 'Offer');
