@@ -299,6 +299,15 @@ function renderReportCard(v, rank, type) {
 
   // Build compact detail chips
   const chips = [];
+  if (type === 'bid') {
+    const bids = (typeof getAllBids === 'function') ? getAllBids(v) : [];
+    if (bids.length > 1) {
+      const lead = bids.slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0))[0];
+      chips.push(`<span class="report-bidder">${lead.charterer || '?'} +${bids.length - 1}</span>`);
+    } else if (v.bidding_charterer) {
+      chips.push(`<span class="report-bidder">${v.bidding_charterer}</span>`);
+    }
+  }
   if (delivery) chips.push(delivery);
   if (etaStr) chips.push('ETA ' + etaStr + etaType);
   if (hire) chips.push('Hire ' + hire);
@@ -357,6 +366,15 @@ function vesselToWhatsApp(v, type) {
 
   const parts = [];
   if (val != null) parts.push(`P6: $${val.toLocaleString()}`);
+  if (type === 'bid') {
+    const bids = (typeof getAllBids === 'function') ? getAllBids(v) : [];
+    if (bids.length > 1) {
+      const lead = bids.slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0))[0];
+      parts.push(`from ${lead.charterer || '?'} (+${bids.length - 1} more)`);
+    } else if (v.bidding_charterer) {
+      parts.push(`from ${v.bidding_charterer}`);
+    }
+  }
   if (v.hire_offer) parts.push(`Hire: $${v.hire_offer.toLocaleString()}`);
   if (v.bb_offer) parts.push(`BB: $${v.bb_offer.toLocaleString()}`);
 
