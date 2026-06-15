@@ -169,6 +169,168 @@ function getP6Values(v) {
   return { bid: mc ? mc.p6_bid : null, offer: mc ? mc.p6_offer : null };
 }
 
+// ─── Offer/Bid History ───────────────────────────────────────────────────────
+// Seed a single history entry from a vessel's current snapshot — used to
+// retrofit vessels that existed before history tracking shipped.
+function backfillHistory(arr) {
+  for (const v of arr) {
+    const mc = v.market_colour && v.market_colour[0];
+    if (!mc) continue;
+    if (!Array.isArray(v.offer_history) && (mc.offer_usd != null || mc.p6_offer != null)) {
+      v.offer_history = [{
+        ts: v.offer_updated_at || v.last_updated || new Date().toISOString(),
+        offer_usd: mc.offer_usd ?? null,
+        p6_offer: mc.p6_offer ?? null,
+        bb_usd: mc.bb_usd ?? null,
+      }];
+    }
+    if (!Array.isArray(v.bid_history) && (mc.bid_usd != null || mc.p6_bid != null)) {
+      v.bid_history = [{
+        ts: v.bid_updated_at || v.last_updated || new Date().toISOString(),
+        bid_usd: mc.bid_usd ?? null,
+        p6_bid: mc.p6_bid ?? null,
+      }];
+    }
+  }
+}
+
+function histVal(entry, kind) {
+  return kind === 'offer'
+    ? (entry.p6_offer ?? entry.offer_usd ?? null)
+    : (entry.p6_bid ?? entry.bid_usd ?? null);
+}
+
+function formatHistoryTooltip(history, kind) {
+  if (!Array.isArray(history) || history.length === 0) return '';
+  const label = kind === 'offer' ? 'Offer' : 'Bid';
+  const sorted = [...history].sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+  const lines = sorted.slice(0, 8).map(e => {
+    const v = histVal(e, kind);
+    return `${fmtTimestamp(e.ts)}   ${v != null ? fmtNum(v) : '—'}`;
+  });
+  const more = sorted.length > 8 ? `\n… +${sorted.length - 8} more` : '';
+  return `${label} history (newest first):\n${lines.join('\n')}${more}`;
+}
+
+function renderHistoryChart(offerHist, bidHist) {
+  const w = 660, h = 220, pad = { l: 56, r: 14, t: 16, b: 30 };
+  const points = [
+    ...(offerHist || []).map(e => ({ ts: e.ts, v: histVal(e, 'offer'), kind: 'offer' })),
+    ...(bidHist  || []).map(e => ({ ts: e.ts, v: histVal(e, 'bid'),   kind: 'bid'   })),
+  ].filter(p => p.v != null && p.ts);
+  if (points.length === 0) return '<div style="color:var(--text-dim);text-align:center;padding:40px;font-size:13px">No quoted values yet</div>';
+  const times = points.map(p => new Date(p.ts).getTime());
+  const vals  = points.map(p => p.v);
+  let minT = Math.min(...times), maxT = Math.max(...times);
+  if (minT === maxT) { minT -= 36e5; maxT += 36e5; } // pad single-point timeline by ±1h
+  const minV = Math.min(...vals), maxV = Math.max(...vals);
+  const vPad = (maxV - minV) * 0.1 || Math.max(500, maxV * 0.05);
+  const lo = minV - vPad, hi = maxV + vPad;
+  const xOf = t => pad.l + ((t - minT) / (maxT - minT)) * (w - pad.l - pad.r);
+  const yOf = v => pad.t + (1 - (v - lo) / (hi - lo)) * (h - pad.t - pad.b);
+
+  const buildLine = arr => (arr || [])
+    .filter(e => histVal(e, arr === offerHist ? 'offer' : 'bid') != null)
+    .sort((a, b) => (a.ts || '').localeCompare(b.ts || ''))
+    .map(e => `${xOf(new Date(e.ts).getTime()).toFixed(1)},${yOf(histVal(e, arr === offerHist ? 'offer' : 'bid')).toFixed(1)}`)
+    .join(' ');
+  const buildDots = (arr, kind, fill) => (arr || [])
+    .filter(e => histVal(e, kind) != null)
+    .map(e => `<circle cx="${xOf(new Date(e.ts).getTime()).toFixed(1)}" cy="${yOf(histVal(e, kind)).toFixed(1)}" r="2.8" fill="${fill}"/>`).join('');
+
+  const yTicks = [lo, (lo + hi) / 2, hi];
+  const yTickHtml = yTicks.map(v => `
+    <line x1="${pad.l}" y1="${yOf(v).toFixed(1)}" x2="${w - pad.r}" y2="${yOf(v).toFixed(1)}" stroke="var(--bg3)" stroke-width="1"/>
+    <text x="${pad.l - 6}" y="${(yOf(v) + 3).toFixed(1)}" font-size="10" fill="var(--text-dim)" text-anchor="end" font-family="var(--mono)">${fmtNum(Math.round(v))}</text>
+  `).join('');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const tFmt = t => { const d = new Date(t); return `${d.getDate()} ${months[d.getMonth()]}`; };
+
+  return `<div class="history-chart"><svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="max-width:100%;height:auto;display:block">
+    ${yTickHtml}
+    ${buildLine(offerHist) ? `<polyline fill="none" stroke="var(--red)"   stroke-width="1.8" points="${buildLine(offerHist)}"/>` : ''}
+    ${buildLine(bidHist)   ? `<polyline fill="none" stroke="var(--green)" stroke-width="1.8" points="${buildLine(bidHist)}"/>`   : ''}
+    ${buildDots(offerHist, 'offer', 'var(--red)')}
+    ${buildDots(bidHist,   'bid',   'var(--green)')}
+    <text x="${pad.l}"   y="${h - 10}" font-size="10" fill="var(--text-dim)" font-family="var(--mono)">${tFmt(minT)}</text>
+    <text x="${w - pad.r}" y="${h - 10}" font-size="10" fill="var(--text-dim)" font-family="var(--mono)" text-anchor="end">${tFmt(maxT)}</text>
+  </svg>
+  <div style="display:flex;gap:18px;font-size:11px;color:var(--text-dim);margin-top:6px;justify-content:center">
+    <span><span style="display:inline-block;width:14px;height:2px;background:var(--red);vertical-align:middle;margin-right:5px"></span>Offer</span>
+    <span><span style="display:inline-block;width:14px;height:2px;background:var(--green);vertical-align:middle;margin-right:5px"></span>Bid</span>
+  </div>
+  </div>`;
+}
+
+function openHistoryModal(globalIdx) {
+  const v = vessels[globalIdx];
+  if (!v) return;
+  const modal = document.getElementById('historyModal');
+  const body  = document.getElementById('historyModalContent');
+  if (!modal || !body) return;
+
+  const offerHist = v.offer_history || [];
+  const bidHist   = v.bid_history   || [];
+  const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) + 'K' : '?'}/${v.build_year || '?'}`;
+
+  const allRows = [
+    ...offerHist.map(e => ({ ts: e.ts, type: 'Offer', p6: e.p6_offer, raw: e.offer_usd, bb: e.bb_usd })),
+    ...bidHist.map(e   => ({ ts: e.ts, type: 'Bid',   p6: e.p6_bid,   raw: e.bid_usd,   bb: null })),
+  ].sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+
+  const rowsHtml = allRows.length === 0
+    ? '<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-dim)">No history yet</td></tr>'
+    : allRows.map(r => `
+      <tr>
+        <td>${fmtTimestamp(r.ts)}</td>
+        <td><span class="history-pill ${r.type === 'Offer' ? 'pill-offer' : 'pill-bid'}">${r.type}</span></td>
+        <td style="text-align:right">${r.p6 != null ? fmtNum(r.p6) : '—'}</td>
+        <td style="text-align:right">${r.raw != null ? '$' + fmtNum(r.raw) : '—'}</td>
+        <td style="text-align:right">${r.bb != null ? '$' + fmtNum(r.bb) : ''}</td>
+      </tr>`).join('');
+
+  body.innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:2px">
+      <h2 style="margin:0;font-size:18px">${v.vessel_name || '?'}</h2>
+      <span style="color:var(--text-dim);font-size:13px;font-family:var(--mono)">${specs}</span>
+      <span style="color:var(--text-dim);font-size:13px">${v.owner || ''}</span>
+    </div>
+    <div style="color:var(--text-dim);font-size:12px;margin-bottom:12px">
+      ${offerHist.length} offer update${offerHist.length === 1 ? '' : 's'} · ${bidHist.length} bid update${bidHist.length === 1 ? '' : 's'}
+    </div>
+    ${renderHistoryChart(offerHist, bidHist)}
+    <table class="history-table" style="margin-top:14px;width:100%">
+      <thead><tr><th>When</th><th>Type</th><th style="text-align:right">P6</th><th style="text-align:right">Raw</th><th style="text-align:right">BB</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+  modal.style.display = 'flex';
+}
+
+function closeHistoryModal() {
+  const modal = document.getElementById('historyModal');
+  if (modal) modal.style.display = 'none';
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeHistoryModal();
+});
+
+function renderSparkline(history, kind) {
+  if (!Array.isArray(history) || history.length < 2) return '';
+  const sorted = [...history].sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
+  const vals = sorted.map(e => histVal(e, kind)).filter(v => v != null);
+  if (vals.length < 2) return '';
+  const w = 38, h = 10;
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = max - min || 1;
+  const dx = vals.length > 1 ? w / (vals.length - 1) : 0;
+  const points = vals.map((v, i) => `${(i * dx).toFixed(1)},${(h - ((v - min) / range) * (h - 1) - 0.5).toFixed(1)}`).join(' ');
+  const first = vals[0], last = vals[vals.length - 1];
+  let color = 'var(--text-dim)';
+  if (last > first) color = kind === 'offer' ? 'var(--red)' : 'var(--green)';
+  else if (last < first) color = kind === 'offer' ? 'var(--green)' : 'var(--red)';
+  return `<svg class="sparkline" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline fill="none" stroke="${color}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" points="${points}"/></svg>`;
+}
+
 // ─── Multiple bidders ────────────────────────────────────────────────────────
 // v.bids = [{ charterer, p6_bid, t }] — canonical source when present.
 // Legacy single-bid data (v.market_colour[0].p6_bid + v.bidding_charterer)
@@ -1580,6 +1742,8 @@ function handleAdd() {
       let merged_bb        = existing.bb_offer;
       let merged_offer_at  = existing.offer_updated_at;
       let merged_bid_at    = existing.bid_updated_at;
+      let merged_offer_hist = Array.isArray(existing.offer_history) ? [...existing.offer_history] : [];
+      let merged_bid_hist   = Array.isArray(existing.bid_history)   ? [...existing.bid_history]   : [];
 
       if (inMC) {
         const hasNewOffer = inMC.offer_usd != null || inMC.p6_offer != null;
@@ -1587,8 +1751,14 @@ function handleAdd() {
 
         if (!exMC) {
           merged_mc = pv.market_colour;
-          if (hasNewOffer) merged_offer_at = now;
-          if (hasNewBid)   merged_bid_at   = now;
+          if (hasNewOffer) {
+            merged_offer_at = now;
+            merged_offer_hist.push({ ts: now, offer_usd: inMC.offer_usd ?? null, p6_offer: inMC.p6_offer ?? null, bb_usd: inMC.bb_usd ?? null });
+          }
+          if (hasNewBid) {
+            merged_bid_at = now;
+            merged_bid_hist.push({ ts: now, bid_usd: inMC.bid_usd ?? null, p6_bid: inMC.p6_bid ?? null });
+          }
         } else {
           const newMC = { ...exMC };
           if (hasNewOffer) {
@@ -1596,10 +1766,13 @@ function handleAdd() {
             if (inMC.p6_offer  != null)   newMC.p6_offer  = inMC.p6_offer;
             if (inMC.bb_usd    != null) { newMC.bb_usd    = inMC.bb_usd;   merged_bb   = inMC.bb_usd; }
             merged_offer_at = now;
+            merged_offer_hist.push({ ts: now, offer_usd: inMC.offer_usd ?? newMC.offer_usd ?? null, p6_offer: inMC.p6_offer ?? newMC.p6_offer ?? null, bb_usd: inMC.bb_usd ?? newMC.bb_usd ?? null });
           }
           if (hasNewBid) {
             const newBid = inMC.p6_bid ?? inMC.bid_usd ?? 0;
             const oldBid = exMC.p6_bid ?? exMC.bid_usd ?? 0;
+            // Record every bid received, even if not the highest (we want full trend history)
+            merged_bid_hist.push({ ts: now, bid_usd: inMC.bid_usd ?? null, p6_bid: inMC.p6_bid ?? null });
             if (newBid >= oldBid || hasNewOffer) {
               if (inMC.bid_usd != null) newMC.bid_usd = inMC.bid_usd;
               if (inMC.p6_bid  != null) newMC.p6_bid  = inMC.p6_bid;
@@ -1620,6 +1793,8 @@ function handleAdd() {
         bb_offer:         merged_bb,
         offer_updated_at: merged_offer_at,
         bid_updated_at:   merged_bid_at,
+        offer_history:    merged_offer_hist,
+        bid_history:      merged_bid_hist,
         // Position/ETA — keep existing if new parse has nothing
         eta_ecsa:         pv.eta_ecsa         || existing.eta_ecsa,
         eta_ecsa_end:     pv.eta_ecsa_end     ?? existing.eta_ecsa_end,
@@ -1640,8 +1815,14 @@ function handleAdd() {
       // New vessel — stamp timestamps and sync top-level fields
       const mc = pv.market_colour && pv.market_colour[0];
       if (mc) {
-        if (mc.offer_usd != null || mc.p6_offer != null) pv.offer_updated_at = now;
-        if (mc.bid_usd  != null || mc.p6_bid   != null) pv.bid_updated_at   = now;
+        if (mc.offer_usd != null || mc.p6_offer != null) {
+          pv.offer_updated_at = now;
+          pv.offer_history = [{ ts: now, offer_usd: mc.offer_usd ?? null, p6_offer: mc.p6_offer ?? null, bb_usd: mc.bb_usd ?? null }];
+        }
+        if (mc.bid_usd != null || mc.p6_bid != null) {
+          pv.bid_updated_at = now;
+          pv.bid_history = [{ ts: now, bid_usd: mc.bid_usd ?? null, p6_bid: mc.p6_bid ?? null }];
+        }
         if (mc.offer_usd != null && !pv.hire_offer) pv.hire_offer = mc.offer_usd;
         if (mc.bb_usd   != null && !pv.bb_offer)   pv.bb_offer   = mc.bb_usd;
       }
@@ -2138,7 +2319,11 @@ function renderTable() {
         const quietH = hoursAgo(v.last_updated);
         const quietBadge = v.status === 'OPEN' && quietH !== null && quietH > 96
           ? `<span class="quiet-badge" title="No update in ${Math.floor(quietH/24)}d — may have gone quiet">?</span>` : '';
-        return `<td class="td-vessel editable" onclick="startEdit(this,${gi},'vessel_name',true)">${v.vessel_name || '—'}${warnDot}${quietBadge}</td>`;
+        const histCount = (v.offer_history?.length || 0) + (v.bid_history?.length || 0);
+        const histChip = histCount > 0
+          ? `<span class="history-chip" title="View ${histCount} rate update${histCount===1?'':'s'} over time" onclick="event.stopPropagation();openHistoryModal(${gi})">↗</span>`
+          : '';
+        return `<td class="td-vessel editable" onclick="startEdit(this,${gi},'vessel_name',true)">${v.vessel_name || '—'}${warnDot}${quietBadge}${histChip}</td>`;
       }
       case 'owner': return `<td class="td-owner editable" onclick="startEdit(this,${gi},'owner',false)">${v.owner || '—'}</td>`;
       case 'dwt': return `<td class="td-specs editable" onclick="startEdit(this,${gi},'dwt',true)">${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '—'}</td>`;
@@ -2152,13 +2337,16 @@ function renderTable() {
       case 'p6_bid': {
         const all = getAllBids(v);
         const extra = all.length > 1 ? ` <span class="bid-extra-chip" title="${all.length} bidders — click to manage">+${all.length - 1}</span>` : '';
-        const tooltip = all.length > 1
+        const bidderTip = all.length > 1
           ? all.slice().sort((a, b) => (b.p6_bid || 0) - (a.p6_bid || 0))
               .map(b => `${b.charterer || '?'} ${fmtNum(b.p6_bid)}`).join(' · ')
           : 'Click to manage bidders';
+        const histTip = formatHistoryTooltip(v.bid_history, 'bid');
+        const tooltip = histTip ? `${bidderTip}\n\n${histTip}` : bidderTip;
         const bidStale = stalenessTag(v.bid_updated_at, 'Bid');
         const bidCls = bidStale ? ' stale' : '';
-        return `<td class="td-p6 editable${bidCls}" onclick="openBidsPopup(${gi})" title="${tooltip.replace(/"/g,'&quot;')}"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span>${extra}${bidStale}</td>`;
+        const spark = renderSparkline(v.bid_history, 'bid');
+        return `<td class="td-p6 editable${bidCls}" onclick="openBidsPopup(${gi})" title="${tooltip.replace(/"/g,'&quot;')}"><span class="bid">${p6.bid ? fmtNum(p6.bid) : '—'}</span>${extra}${spark}${bidStale}</td>`;
       }
       case 'bidding_charterer': {
         const all = getAllBids(v);
@@ -2179,7 +2367,10 @@ function renderTable() {
       case 'p6_offer': {
         const offerStale = stalenessTag(v.offer_updated_at, 'Offer');
         const offerCls = offerStale ? ' stale' : '';
-        return `<td class="td-p6 editable${offerCls}" onclick="startEdit(this,${gi},'p6_offer',true)"><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span>${offerStale}</td>`;
+        const histTip = formatHistoryTooltip(v.offer_history, 'offer');
+        const tipAttr = histTip ? ` title="${histTip.replace(/"/g,'&quot;')}"` : '';
+        const spark = renderSparkline(v.offer_history, 'offer');
+        return `<td class="td-p6 editable${offerCls}" onclick="startEdit(this,${gi},'p6_offer',true)"${tipAttr}><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span>${spark}${offerStale}</td>`;
       }
       case 'spread': {
         if (spread == null) return `<td>—</td>`;
@@ -2211,7 +2402,12 @@ function renderTable() {
       case 'yard': return `<td class="td-source editable" onclick="startEdit(this,${gi},'yard',false)">${v.yard || '—'}</td>`;
       case 'origin': return `<td class="td-source editable" onclick="startEdit(this,${gi},'origin',false)">${v.origin || '—'}</td>`;
       case 'laycan_date': return `<td class="td-date editable" onclick="startEdit(this,${gi},'laycan_date',false)">${v.laycan_date || '—'}</td>`;
-      case 'hire_offer': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'hire_offer',true)"><span class="offer">${v.hire_offer ? '$' + fmtNum(v.hire_offer) : '—'}</span></td>`;
+      case 'hire_offer': {
+        const histTip = formatHistoryTooltip(v.offer_history, 'offer');
+        const tipAttr = histTip ? ` title="${histTip.replace(/"/g,'&quot;')}"` : '';
+        const spark = renderSparkline(v.offer_history, 'offer');
+        return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'hire_offer',true)"${tipAttr}><span class="offer">${v.hire_offer ? '$' + fmtNum(v.hire_offer) : '—'}</span>${spark}</td>`;
+      }
       case 'bb_offer': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'bb_offer',true)">${v.bb_offer ? '$' + fmtNum(v.bb_offer) : '—'}</td>`;
       case 'bki_eqvt': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'bki_eqvt',true)">${v.bki_eqvt ? '$' + fmtNum(v.bki_eqvt) : '—'}</td>`;
       case 'rate_pmt': return `<td class="td-p6 editable" onclick="startEdit(this,${gi},'rate_pmt',true)">${v.rate_pmt ? '$' + v.rate_pmt.toFixed(2) : '—'}</td>`;
@@ -2350,6 +2546,8 @@ async function init() {
   } catch (e) {
     updateSyncBadge('error', e.message || 'Offline');
   }
+  // Seed offer/bid history for vessels that pre-date history tracking
+  backfillHistory(vessels);
   // Restore persisted filter toggle states
   const p6Btn = document.getElementById('p6OfferToggle');
   if (p6Btn && p6OfferOnly) p6Btn.classList.add('active');
