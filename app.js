@@ -373,6 +373,11 @@ function setVesselBids(idx, bids) {
   // Log price-history entry if best bid value changed
   if (newBestBid != null && newBestBid !== beforeBid) {
     logPriceChange(v, 'p6_bid', newBestBid, newBestBidder);
+    // Trend tracking — sparkline / modal chart
+    const now = new Date().toISOString();
+    v.bid_history = v.bid_history || [];
+    v.bid_history.push({ ts: now, p6_bid: newBestBid, bid_usd: v.market_colour?.[0]?.bid_usd ?? null });
+    v.bid_updated_at = now;
   }
   touchVessel(idx);
   save();
@@ -446,7 +451,13 @@ function applyEdit(idx, field, val) {
   const v = vessels[idx];
   if (!v) return;
   const isPriceChange = ['p6_bid','p6_offer','fixed_price'].includes(field);
+  const isOfferRelated = ['p6_offer','hire_offer','bb_offer'].includes(field);
+  const isBidRelated   = field === 'p6_bid';
   const beforePrice = isPriceChange ? currentPriceFor(v, field) : null;
+  const beforeOfferSnap = isOfferRelated
+    ? { p6: v.market_colour?.[0]?.p6_offer ?? null, raw: v.hire_offer ?? null, bb: v.bb_offer ?? null } : null;
+  const beforeBidSnap = isBidRelated
+    ? { p6: v.market_colour?.[0]?.p6_bid ?? null, raw: v.market_colour?.[0]?.bid_usd ?? null } : null;
   if (isPriceChange) touchVessel(idx);
 
   switch (field) {
@@ -564,6 +575,29 @@ function applyEdit(idx, field, val) {
     if (after != null && after !== beforePrice) {
       const cp = field === 'p6_bid' ? v.bidding_charterer : v.charterer;
       logPriceChange(v, field, after, cp);
+    }
+  }
+
+  // Trend tracking: push to offer_history / bid_history when an inline edit
+  // actually changes a rate value (so the sparkline / modal chart pick it up).
+  const now = new Date().toISOString();
+  if (beforeOfferSnap) {
+    const afterP6  = v.market_colour?.[0]?.p6_offer ?? null;
+    const afterRaw = v.hire_offer ?? null;
+    const afterBb  = v.bb_offer ?? null;
+    if (afterP6 !== beforeOfferSnap.p6 || afterRaw !== beforeOfferSnap.raw || afterBb !== beforeOfferSnap.bb) {
+      v.offer_history = v.offer_history || [];
+      v.offer_history.push({ ts: now, p6_offer: afterP6, offer_usd: afterRaw, bb_usd: afterBb });
+      v.offer_updated_at = now;
+    }
+  }
+  if (beforeBidSnap) {
+    const afterP6  = v.market_colour?.[0]?.p6_bid ?? null;
+    const afterRaw = v.market_colour?.[0]?.bid_usd ?? null;
+    if (afterP6 !== beforeBidSnap.p6 || afterRaw !== beforeBidSnap.raw) {
+      v.bid_history = v.bid_history || [];
+      v.bid_history.push({ ts: now, p6_bid: afterP6, bid_usd: afterRaw });
+      v.bid_updated_at = now;
     }
   }
 
