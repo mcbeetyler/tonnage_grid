@@ -167,16 +167,22 @@ const MONTH_FULL = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oc
 function parseLaycanSlot(laycan) {
   if (!laycan) return null;
   const lc = laycan.toLowerCase().replace(/\s+/g, '');
-  // Extract leading number
-  const dayMatch = lc.match(/^(\d{1,2})/);
-  if (!dayMatch) return null;
-  const day = parseInt(dayMatch[1], 10);
-  // Find month
-  const monthMatch = lc.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
-  if (!monthMatch) return null;
-  const monthIdx = MONTH_NAMES.indexOf(monthMatch[1]) + 1;
-  const half = day <= 15 ? 'FH' : 'LH';
-  return `${MONTH_FULL[monthIdx]} ${half}`;
+  // Find the first day-month pair anywhere in the string. Handles inputs like
+  // "1jul onw", "15-30jul", and also "june dates or 1-10jul" (where the leading
+  // word is a bare month with no day, so we scan past it).
+  const pairMatch = lc.match(/(\d{1,2})[^a-z]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
+  if (pairMatch) {
+    const day = parseInt(pairMatch[1], 10);
+    const monthIdx = MONTH_NAMES.indexOf(pairMatch[2]) + 1;
+    return `${MONTH_FULL[monthIdx]} ${day <= 15 ? 'FH' : 'LH'}`;
+  }
+  // Fall back to a bare month (no day given): assume FH of that month.
+  const monthOnly = lc.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
+  if (monthOnly) {
+    const monthIdx = MONTH_NAMES.indexOf(monthOnly[1]) + 1;
+    return `${MONTH_FULL[monthIdx]} FH`;
+  }
+  return null;
 }
 
 function slotSortKey(slot) {
@@ -660,46 +666,20 @@ RULES:
 Return ONLY a JSON array of cargo objects. No markdown, no explanation. Start with [ and end with ].`;
 
 async function parseCargoWithAI(text) {
-  const apiKey = localStorage.getItem('pt_api_key') || '';
-  if (!apiKey) throw new Error('No API key set');
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const resp = await fetch('/api/parse-cargo', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5',
-      max_tokens: 8192,
-      system: CARGO_SYSTEM_PROMPT,
-      messages: [{
-        role: 'user',
-        content: `Parse this cargo book data into JSON:\n\n${text}`
-      }]
-    })
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
   });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(`API error ${response.status}: ${err.error?.message || response.statusText}`);
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(`Server parse failed (${resp.status}): ${err.error || resp.statusText}`);
   }
 
-  const data = await response.json();
-  const textResp = data.content.find(b => b.type === 'text')?.text;
-  if (!textResp) throw new Error('No response from API');
+  const arr = await resp.json();
 
-  // Extract JSON (handle case where model wraps in markdown)
-  let jsonText = textResp.trim();
-  const mdMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (mdMatch) jsonText = mdMatch[1].trim();
-
-  const parsed = JSON.parse(jsonText);
-  const arr = Array.isArray(parsed) ? parsed : [parsed];
-
-  // Add slot calculation
+  // Add slot calculation + field defaults
   return arr.map(c => ({
     ...c,
     slot: parseLaycanSlot(c.laycan),
@@ -720,10 +700,11 @@ async function parseCargoPaste() {
   const text = document.getElementById('cargoInput').value.trim();
   if (!text) return;
 
-  const useAI = document.getElementById('cargoAIToggle')?.checked;
+  const aiToggle = document.getElementById('cargoAIToggle');
+  const useAI = aiToggle ? aiToggle.checked : true; // default on if toggle missing
   let parsed;
 
-  if (useAI && localStorage.getItem('pt_api_key')) {
+  if (useAI) {
     try {
       parsed = await parseCargoWithAI(text);
     } catch (e) {
