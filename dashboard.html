@@ -165,6 +165,79 @@
   .history-pill{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:600;font-family:var(--sans);letter-spacing:.02em}
   .pill-offer{background:var(--red-light);color:var(--red)}
   .pill-bid{background:var(--green-light);color:var(--green)}
+
+  /* ── Voyage Estimator (scoped under .ve-) ─────────────────────────────── */
+  .ve-wrap{padding:18px 28px 64px;max-width:1280px;margin:0 auto}
+  .ve-top{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+  .ve-title{font-size:18px;font-weight:600;margin:0}
+  .ve-sub{color:var(--text-dim);font-size:12px;font-family:var(--mono)}
+  .ve-mode-toggle{display:inline-flex;border:1px solid var(--border2);border-radius:6px;overflow:hidden}
+  .ve-mode-toggle button{appearance:none;border:0;background:#fff;color:var(--text-dim);padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--sans)}
+  .ve-mode-toggle button.active{background:var(--accent);color:#fff}
+  .ve-mode-toggle button + button{border-left:1px solid var(--border2)}
+
+  .ve-pickers{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+  .ve-picker{display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+  .ve-picker label{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;flex:0 0 auto}
+  .ve-picker select{flex:1;font-family:var(--sans);font-size:12px;padding:5px 7px;border:1px solid var(--border2);border-radius:5px;background:#fff;color:var(--text)}
+  #ve_pickerNote{font-size:11px;color:var(--amber);background:var(--amber-light);border-radius:5px;padding:6px 10px;margin-bottom:10px}
+
+  .ve-grid{display:grid;grid-template-columns:1fr 1fr 360px;gap:16px;align-items:start}
+  @media(max-width:1100px){.ve-grid{grid-template-columns:1fr}}
+
+  .ve-card{background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.03);overflow:hidden}
+  .ve-card h3{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);margin:0;padding:11px 14px 10px;border-bottom:1px solid var(--border);background:var(--bg3)}
+  .ve-card .ve-body{padding:12px 14px}
+
+  .ve-row{display:flex;align-items:center;gap:8px;margin:6px 0}
+  .ve-row label{flex:1;font-size:12.5px;color:var(--text)}
+  .ve-row .hint{display:block;font-size:10.5px;color:var(--text-dim);margin-top:1px}
+  .ve-row input,.ve-row select{flex:0 0 110px;width:110px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;border:1px solid var(--border2);border-radius:5px;padding:5px 8px;font-size:12.5px;background:#fff;color:var(--text)}
+  .ve-row input:focus,.ve-row select:focus{outline:2px solid var(--accent-light);border-color:var(--accent)}
+  .ve-row .unit{flex:0 0 30px;font-size:11px;color:var(--text-dim)}
+
+  .ve-leg-head{display:flex;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin:6px 0 2px;padding-left:2px}
+  .ve-leg-head span:first-child{flex:1}
+  .ve-leg-head span{flex:0 0 74px;text-align:right;padding-right:38px}
+
+  .ve-subhead{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin:14px 0 4px;padding-bottom:5px;border-bottom:1px dashed var(--border)}
+  .ve-subhead:first-child{margin-top:0}
+
+  .ve-result-card{position:sticky;top:18px}
+  .ve-headline{padding:18px 18px 6px;text-align:center;border-bottom:1px solid var(--border)}
+  .ve-headline .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim)}
+  .ve-headline .big{font-size:30px;font-weight:600;letter-spacing:-.02em;font-family:var(--mono);font-variant-numeric:tabular-nums;margin:4px 0 0;color:var(--accent)}
+  .ve-headline .big .cur{font-size:16px;font-weight:500;color:var(--text-dim);vertical-align:6px;margin-right:2px}
+  .ve-headline .big.amber{color:var(--amber)}
+  .ve-headline .alt{font-size:11.5px;color:var(--text-dim);margin-top:3px;font-family:var(--mono)}
+
+  .ve-breakdown{padding:6px 18px 14px}
+  .ve-bd-row{display:flex;justify-content:space-between;padding:5px 0;font-size:12px;border-bottom:1px solid var(--bg3);font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .ve-bd-row:last-child{border-bottom:0}
+  .ve-bd-row .k{color:var(--text-dim);font-family:var(--sans)}
+  .ve-bd-row .v{font-weight:600;color:var(--text)}
+  .ve-bd-row.neg .v{color:var(--red)}
+  .ve-bd-row.total{border-top:2px solid var(--border2);margin-top:4px;padding-top:8px;font-size:13px}
+  .ve-bd-row.total .k{color:var(--text);font-weight:600}
+
+  .ve-copy-btn{display:block;width:calc(100% - 36px);margin:6px 18px 16px;padding:9px;background:var(--text);color:#fff;border:0;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--sans);letter-spacing:.02em}
+  .ve-copy-btn:hover{background:var(--accent)}
+  .ve-copy-btn.done{background:var(--green)}
+
+  .ve-sens{margin-top:16px}
+  .ve-sens-tbl{width:100%;border-collapse:collapse;font-size:11.5px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .ve-sens-tbl th,.ve-sens-tbl td{padding:5px 8px;text-align:right;border-bottom:1px solid var(--bg3)}
+  .ve-sens-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);font-weight:600;font-family:var(--sans)}
+  .ve-sens-tbl th:first-child,.ve-sens-tbl td:first-child{text-align:left;color:var(--text-dim)}
+  .ve-sens-tbl tr.mid td{background:var(--accent-light);font-weight:700}
+  .ve-sens-tbl td.pos{color:var(--green)}
+  .ve-sens-tbl td.neg{color:var(--red)}
+
+  .ve-note{font-size:11px;color:var(--text-dim);margin-top:14px;line-height:1.5}
+  .ve-scrub-seg{display:inline-flex;border:1px solid var(--border2);border-radius:5px;overflow:hidden;flex:0 0 auto}
+  .ve-scrub-seg button{appearance:none;border:0;background:#fff;color:var(--text-dim);padding:5px 9px;font-size:10.5px;font-weight:600;cursor:pointer;font-family:var(--sans)}
+  .ve-scrub-seg button.active{background:var(--amber);color:#fff}
+  .ve-scrub-seg button + button{border-left:1px solid var(--border2)}
   .report-card-stale .report-p6{opacity:.5}
   .report-card-quiet{opacity:.4}
   .report-card-quiet:hover{opacity:.85;transition:opacity .15s}
@@ -597,6 +670,7 @@
   <button class="tab-btn active" onclick="switchTab('tonnage')">Tonnage Board</button>
   <button class="tab-btn" onclick="switchTab('cargo')">Cargo Book</button>
   <button class="tab-btn" onclick="switchTab('voyages')">Voyages</button>
+  <button class="tab-btn" onclick="switchTab('estimator')">Voyage Estimator</button>
   <button class="tab-btn" onclick="switchTab('report')">Report</button>
   <button class="tab-btn" onclick="switchTab('market')">Market</button>
   <button class="tab-btn" onclick="switchTab('participants')">Participants</button>
@@ -1010,6 +1084,175 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
   </div>
 </div><!-- end tab-voyages -->
 
+<div id="tab-estimator" class="tab-panel">
+  <div class="ve-wrap">
+    <header class="ve-top">
+      <div>
+        <h2 class="ve-title">Voyage Estimator — P8 (Santos / Qingdao)</h2>
+        <div class="ve-sub">Baltic P8 · "Tess 82" reference vessel · round-voyage TCE ↔ freight rate</div>
+      </div>
+      <div class="ve-mode-toggle" id="ve_modeToggle">
+        <button data-mode="rate2tce" class="active">Rate → TCE</button>
+        <button data-mode="tce2rate">TCE → Rate</button>
+      </div>
+    </header>
+
+    <div class="ve-pickers">
+      <div class="ve-picker">
+        <label>Vessel</label>
+        <select id="ve_vesselPicker"><option value="">— select vessel —</option></select>
+      </div>
+      <div class="ve-picker">
+        <label>Cargo</label>
+        <select id="ve_cargoPicker"><option value="">— select cargo —</option></select>
+      </div>
+    </div>
+    <div id="ve_pickerNote" style="display:none"></div>
+
+    <div class="ve-grid">
+      <!-- Column 1: Cargo + Commercial -->
+      <section class="ve-card">
+        <h3>Cargo &amp; Commercial</h3>
+        <div class="ve-body">
+          <div class="ve-subhead">Cargo</div>
+          <div class="ve-row">
+            <label>Intake <span class="hint">cargo lifted</span></label>
+            <input id="ve_intake" type="number" step="500">
+            <span class="unit">mt</span>
+          </div>
+
+          <div class="ve-subhead" id="ve_commTermHead">Freight rate (offer)</div>
+          <div class="ve-row" id="ve_rateRow">
+            <label>Rate</label>
+            <input id="ve_rate" type="number" step="0.25">
+            <span class="unit">$/mt</span>
+          </div>
+          <div class="ve-row" id="ve_targetRow" style="display:none">
+            <label>Target TCE <span class="hint">$/day the ship must earn</span></label>
+            <input id="ve_targetTce" type="number" step="250">
+            <span class="unit">$/d</span>
+          </div>
+
+          <div class="ve-subhead">Commission</div>
+          <div class="ve-row">
+            <label>Total commission <span class="hint">addcom + brokerage</span></label>
+            <input id="ve_comm" type="number" step="0.25">
+            <span class="unit">%</span>
+          </div>
+
+          <div class="ve-subhead">Port &amp; canal costs</div>
+          <div class="ve-row"><label>Load port charges</label><input id="ve_loadCost" type="number" step="5000"><span class="unit">$</span></div>
+          <div class="ve-row"><label>Disch port charges</label><input id="ve_dischCost" type="number" step="5000"><span class="unit">$</span></div>
+          <div class="ve-row"><label>Canal / transit dues</label><input id="ve_canalCost" type="number" step="5000"><span class="unit">$</span></div>
+          <div class="ve-row"><label>Other / misc</label><input id="ve_miscCost" type="number" step="2500"><span class="unit">$</span></div>
+        </div>
+      </section>
+
+      <!-- Column 2: Vessel + Legs -->
+      <section class="ve-card">
+        <h3>Vessel &amp; Voyage</h3>
+        <div class="ve-body">
+          <div class="ve-subhead">Distances &amp; speed</div>
+          <div class="ve-leg-head"><span></span><span>Ballast</span><span>Laden</span></div>
+          <div class="ve-row">
+            <label>Distance</label>
+            <input id="ve_ballDist" type="number" step="100" style="flex-basis:74px;width:74px">
+            <input id="ve_ladenDist" type="number" step="100" style="flex-basis:74px;width:74px">
+            <span class="unit">nm</span>
+          </div>
+          <div class="ve-row">
+            <label>Speed</label>
+            <input id="ve_ballSpd" type="number" step="0.5" style="flex-basis:74px;width:74px">
+            <input id="ve_ladenSpd" type="number" step="0.5" style="flex-basis:74px;width:74px">
+            <span class="unit">kn</span>
+          </div>
+          <div class="ve-row">
+            <label>Weather margin <span class="hint">added to sea days</span></label>
+            <input id="ve_wxMargin" type="number" step="0.5">
+            <span class="unit">%</span>
+          </div>
+
+          <div class="ve-subhead">Bunker consumption</div>
+          <div class="ve-leg-head"><span></span><span>Ballast</span><span>Laden</span></div>
+          <div class="ve-row">
+            <label>Main fuel at sea <span class="hint" id="ve_seaFuelLbl">VLSFO</span></label>
+            <input id="ve_ballCons" type="number" step="0.5" style="flex-basis:74px;width:74px">
+            <input id="ve_ladenCons" type="number" step="0.5" style="flex-basis:74px;width:74px">
+            <span class="unit">mt/d</span>
+          </div>
+          <div class="ve-row">
+            <label>MGO at sea <span class="hint">aux / pilotage</span></label>
+            <input id="ve_ballMgo" type="number" step="0.1" style="flex-basis:74px;width:74px">
+            <input id="ve_ladenMgo" type="number" step="0.1" style="flex-basis:74px;width:74px">
+            <span class="unit">mt/d</span>
+          </div>
+
+          <div class="ve-subhead">Port time &amp; consumption</div>
+          <div class="ve-row"><label>Load days <span class="hint">66k ÷ 8k + 24h turn</span></label><input id="ve_loadDays" type="number" step="0.25"><span class="unit">d</span></div>
+          <div class="ve-row"><label>Disch days <span class="hint">66k ÷ 8k + 12h turn</span></label><input id="ve_dischDays" type="number" step="0.25"><span class="unit">d</span></div>
+          <div class="ve-row"><label>Idle / waiting days</label><input id="ve_idleDays" type="number" step="0.5"><span class="unit">d</span></div>
+          <div class="ve-row"><label>Port cons <span class="hint">VLSFO per port day</span></label><input id="ve_portCons" type="number" step="0.5"><span class="unit">mt/d</span></div>
+
+          <div class="ve-subhead">Bunker prices</div>
+          <div class="ve-row"><label>VLSFO</label><input id="ve_pxVlsfo" type="number" step="5"><span class="unit">$/mt</span></div>
+          <div class="ve-row"><label>MGO</label><input id="ve_pxMgo" type="number" step="5"><span class="unit">$/mt</span></div>
+
+          <div class="ve-subhead">Scrubber benefit</div>
+          <div class="ve-row">
+            <label>Scrubber fitted? <span class="hint">burns HSFO, captures spread</span></label>
+            <select id="ve_scrubFitted" style="flex-basis:110px;width:110px;text-align:left">
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </div>
+          <div class="ve-row" id="ve_hsfoRow" style="display:none">
+            <label>HSFO price</label>
+            <input id="ve_pxHsfo" type="number" step="5">
+            <span class="unit">$/mt</span>
+          </div>
+          <div class="ve-row" id="ve_scrubSplitRow" style="display:none">
+            <label>Benefit to <span class="hint">who keeps the spread</span></label>
+            <div class="ve-scrub-seg" id="ve_scrubSplit">
+              <button data-split="owner" class="active">Owner</button>
+              <button data-split="5050">50/50</button>
+              <button data-split="chtr">Chtrr</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Column 3: Results -->
+      <div>
+        <section class="ve-card ve-result-card">
+          <h3>Result</h3>
+          <div class="ve-headline">
+            <div class="lbl" id="ve_hLbl">Time-charter equivalent</div>
+            <div class="big" id="ve_hBig"><span class="cur">$</span>0</div>
+            <div class="alt" id="ve_hAlt"></div>
+          </div>
+          <div class="ve-breakdown" id="ve_breakdown"></div>
+          <button class="ve-copy-btn" id="ve_copyBtn">Copy result</button>
+        </section>
+
+        <section class="ve-card ve-sens">
+          <h3 id="ve_sensTitle">Sensitivity</h3>
+          <div class="ve-body" style="padding:8px 10px">
+            <table class="ve-sens-tbl" id="ve_sensTbl"></table>
+            <div class="ve-note" id="ve_sensNote"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="ve-note">
+      Round-voyage basis: net freight less voyage costs (bunkers + ports + canal), divided by total voyage days
+      (sea days × weather margin + port + idle). Commission off gross freight. Scrubber benefit, when fitted,
+      is the VLSFO−HSFO spread on main-engine fuel, allocated per the split control. Vessel/cargo pickers prefill
+      what the records carry; speed/consumption defaults are Tess-82 since the tonnage tracker doesn't store them.
+    </div>
+  </div>
+</div><!-- end tab-estimator -->
+
 <div id="tab-report" class="tab-panel">
   <div class="report-wrap">
     <div class="report-main">
@@ -1171,9 +1414,11 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 </div>
 
 <script src="parser.js"></script>
+<script src="voyageCalc.js"></script>
 <script src="app.js"></script>
 <script src="cargo.js"></script>
 <script src="voyages.js"></script>
+<script src="voyage-estimator.js"></script>
 <script src="report.js"></script>
 <script src="market.js"></script>
 <script src="participants.js"></script>

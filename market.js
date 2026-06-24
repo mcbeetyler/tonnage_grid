@@ -588,7 +588,44 @@ function renderMarketChart() {
         },
       },
     },
+    // Inline plugin: draws a horizontal reference line at the voyage estimator's
+    // most-recent computed TCE so a $/mt freight offer can be compared visually
+    // against P6 $/day quotes on the scatter. No-op if the estimator hasn't run.
+    plugins: [{
+      id: 'voyageEstimatorTceLine',
+      afterDatasetsDraw(chart) {
+        const data = window.voyageEstimatorComputedTce;
+        if (!data || !isFinite(data.tce)) return;
+        const yScale = chart.scales.y;
+        if (!yScale) return;
+        const y = yScale.getPixelForValue(data.tce);
+        if (y < chart.chartArea.top || y > chart.chartArea.bottom) return;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([6, 4]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(186, 117, 23, 0.85)';
+        ctx.moveTo(chart.chartArea.left, y);
+        ctx.lineTo(chart.chartArea.right, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '11px ' + (getComputedStyle(document.body).fontFamily || 'sans-serif');
+        ctx.fillStyle = 'rgba(186, 117, 23, 1)';
+        const label = data.mode === 'rate2tce'
+          ? `Voy est @ $${(+data.rate).toFixed(2)}/mt → $${Math.round(data.tce).toLocaleString()}/day`
+          : `Voy est target → $${(+data.rate).toFixed(2)}/mt @ $${Math.round(data.tce).toLocaleString()}/day`;
+        ctx.fillText(label, chart.chartArea.left + 8, y - 5);
+        ctx.restore();
+      }
+    }],
   });
+
+  // If the estimator updates while the market chart is mounted, redraw it
+  // so the reference line tracks live edits.
+  window.onVoyageEstimatorUpdate = function () {
+    if (marketChart) marketChart.update('none');
+  };
 }
 
 // ─── Distribution: IQR boxes per laycan tag ──────────────────────────────────
