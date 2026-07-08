@@ -6469,6 +6469,30 @@ async function parseCargoPaste() {
     return;
   }
 
+  const { addedCount, updatedCount, autoFixedCount } = applyParsedCargoes(parsed);
+
+  // Show summary
+  const preview = document.createElement('div');
+  preview.style.cssText = 'padding:8px 12px;margin-top:6px;background:var(--green-light);color:var(--green);border-radius:6px;font-size:11px';
+  preview.textContent = `Parsed ${parsed.length} cargoes: ${addedCount} new, ${updatedCount} still live, ${autoFixedCount} auto-marked FIXED (dropped from update).`;
+  const summaryBody = document.getElementById('cargoPasteBody');
+  const existingSummary = summaryBody.querySelector('.parse-summary');
+  if (existingSummary) existingSummary.remove();
+  preview.className = 'parse-summary';
+  summaryBody.appendChild(preview);
+
+  // Auto-collapse after 3s
+  setTimeout(() => {
+    document.getElementById('cargoPasteBody').classList.remove('open');
+    document.getElementById('cargoPasteArrow').classList.remove('open');
+    if (preview.parentNode) preview.remove();
+  }, 3000);
+}
+
+// Merge a parsed cargo list into the book — shared by manual paste and the
+// Google Sheets feed. Same rules as ever: refresh live cargoes, add new ones,
+// auto-mark dropped ones FIXED.
+function applyParsedCargoes(parsed) {
   const today = new Date().toISOString().split('T')[0];
 
   // Build map of existing history for fast lookup
@@ -6535,22 +6559,7 @@ async function parseCargoPaste() {
   saveCargo();
   renderCargo();
 
-  // Show summary
-  const preview = document.createElement('div');
-  preview.style.cssText = 'padding:8px 12px;margin-top:6px;background:var(--green-light);color:var(--green);border-radius:6px;font-size:11px';
-  preview.textContent = `Parsed ${parsed.length} cargoes: ${addedCount} new, ${updatedCount} still live, ${autoFixedCount} auto-marked FIXED (dropped from update).`;
-  const body = document.getElementById('cargoPasteBody');
-  const existing = body.querySelector('.parse-summary');
-  if (existing) existing.remove();
-  preview.className = 'parse-summary';
-  body.appendChild(preview);
-
-  // Auto-collapse after 3s
-  setTimeout(() => {
-    document.getElementById('cargoPasteBody').classList.remove('open');
-    document.getElementById('cargoPasteArrow').classList.remove('open');
-    if (preview.parentNode) preview.remove();
-  }, 3000);
+  return { addedCount, updatedCount, autoFixedCount };
 }
 
 function clearCargo() {
@@ -10448,6 +10457,8 @@ function excelDate(v) {
     const d = new Date(Math.round((v - 25569) * 86400 * 1000));
     return isNaN(d) ? null : d.toISOString().slice(0, 10);
   }
+  // ISO string (JSON-serialised Date from the Google Sheets feed)
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
   return null;
 }
 function s(v) { return (v == null) ? null : String(v).trim() || null; }
@@ -10458,11 +10469,19 @@ function parseWorkbook(wb) {
   const di = wb.Sheets['Distances'];
   if (!mv) throw new Error('Sheet "NEW MAINVIEW" not found in workbook');
   if (!di) throw new Error('Sheet "Distances" not found in workbook');
+  return parseArrays(
+    XLSX.utils.sheet_to_json(mv, { header: 1, raw: true, cellDates: true }),
+    XLSX.utils.sheet_to_json(di, { header: 1, raw: true }),
+    'imported xlsx'
+  );
+}
 
+// Core parser over plain row arrays — used by both the xlsx drag-drop
+// (via parseWorkbook) and the Google Sheets feed (rows arrive as JSON).
+function parseArrays(vrows, drows, sourceLabel) {
   // Distances: header on 2nd row, dely port in col B.
   // Destinations: main block C..AG, plus extra named columns further right
   // (mostly empty Capesize stubs — kept only if coverage >= MIN_PORT_COVERAGE).
-  const drows = XLSX.utils.sheet_to_json(di, { header: 1, raw: true });
   const hdr = drows[1] || [];
   const SKIP = /eca|^row$|^region$|zone|cal$|passage|ballast|canal|^miles|^time$|^cost$/i;
   let ports = [];
@@ -10501,7 +10520,6 @@ function parseWorkbook(wb) {
   }
 
   // NEW MAINVIEW: fixed column positions (0-based), header on row 1
-  const vrows = XLSX.utils.sheet_to_json(mv, { header: 1, raw: true, cellDates: true });
   const PRE = [['Rouen', 49], ['Ust Luga', 52], ['NORFOLK', 55], ['Itaqui', 58], ['Nola', 61], ['Yuzhny', 64], ['San Lorenzo', 67]];
   const vessels = [];
   for (let ri = 1; ri < vrows.length; ri++) {
@@ -10523,7 +10541,7 @@ function parseWorkbook(wb) {
   }
   return {
     imported_at: new Date().toISOString().slice(0, 10),
-    source: 'imported xlsx', ports: ports.map(p => p[0]),
+    source: sourceLabel || 'imported xlsx', ports: ports.map(p => p[0]),
     distances, port_regions, vessels,
   };
 }
@@ -11067,6 +11085,16 @@ if (IS_BROWSER) {
     if (_origSwitchTabMatcher) _origSwitchTabMatcher(tab);
     if (tab === 'matcher') lmInit();
   };
+
+  // Public hook for the Google Sheets feed (feeds.js)
+  window.LaycanMatcher = {
+    applyNatlFeed(mainviewRows, distancesRows) {
+      const data = parseArrays(mainviewRows, distancesRows, 'sheets feed');
+      storeData(data);
+      if (LM.initialised) render();
+      return { vessels: data.vessels.length, ports: Object.keys(data.distances).length };
+    },
+  };
 }
 
 // Expose internals for Node tests
@@ -11077,7 +11105,7 @@ if (typeof module !== 'undefined' && module.exports) {
       setData: d => { LM.data = d; },
       setUi: u => { Object.assign(ui, u); },
       setCustom: c => { customAreas = c; },
-      computeRows, parseNmInput, vesselZones,
+      computeRows, parseNmInput, vesselZones, parseArrays,
     },
   };
 }
@@ -11880,6 +11908,150 @@ if (typeof module !== 'undefined' && module.exports) {
       computeSupply,
     },
   };
+}
+
+})();
+
+</script>
+<script>
+/* ============================================================
+   feeds.js — applies the Google Sheets feeds pushed by the
+   Apps Script (see apps-script.gs / FEEDS_SETUP.md).
+
+   On page load (and via the "Feeds" button) it asks /api/import
+   which sources have fresh payloads, then routes each through
+   the SAME pipeline the manual paste uses:
+
+     ecsa  → TSV text  → parseCSVVessels + syncCSVVessels (grid)
+     cargo → TSV text  → parseCargoData + applyParsedCargoes (book)
+     natl  → row arrays → LaycanMatcher.applyNatlFeed (matcher)
+
+   Manual pastes keep working exactly as before — this is just a
+   robot doing the same paste every 30 minutes.
+   ============================================================ */
+
+(function () {
+'use strict';
+
+const LS_APPLIED = 'feeds_applied';
+
+function appliedStamps() {
+  try { return JSON.parse(localStorage.getItem(LS_APPLIED) || '{}'); }
+  catch { return {}; }
+}
+function markApplied(src, ts) {
+  const a = appliedStamps();
+  a[src] = ts;
+  localStorage.setItem(LS_APPLIED, JSON.stringify(a));
+}
+
+function setBadge(text, color, title) {
+  const el = document.getElementById('feedsBadge');
+  if (!el) return;
+  el.textContent = text;
+  el.title = title || '';
+  el.style.cssText = `font-size:10px;padding:3px 8px;border-radius:10px;font-weight:500;cursor:pointer;background:${color === 'ok' ? '#EAF3DE' : color === 'err' ? '#FAEAEA' : '#FAEEDA'};color:${color === 'ok' ? '#3B6D11' : color === 'err' ? '#A32D2D' : '#BA7517'}`;
+}
+
+// 2D array → TSV text (what the manual-paste parsers expect)
+function rowsToTsv(rows) {
+  return rows.map(r => (r || []).map(c => c == null ? '' : String(c).replace(/\t/g, ' ')).join('\t')).join('\n');
+}
+
+async function fetchSource(src) {
+  const resp = await fetch('/api/import?src=' + src);
+  if (!resp.ok) throw new Error(src + ': server ' + resp.status);
+  return resp.json();
+}
+
+function applyEcsa(data) {
+  const tsv = typeof data === 'string' ? data : rowsToTsv(data);
+  if (typeof parseCSVVessels !== 'function') throw new Error('csv engine not loaded');
+  const { vessels: parsed } = parseCSVVessels(tsv);
+  if (!parsed.length) throw new Error('ecsa feed parsed 0 rows');
+  const r = syncCSVVessels(parsed);
+  save();
+  if (typeof renderTable === 'function') renderTable();
+  if (typeof updateStats === 'function') updateStats();
+  return `${parsed.length} rows (${r.added} new, ${r.updated} updated)`;
+}
+
+function applyCargo(data) {
+  const tsv = typeof data === 'string' ? data : rowsToTsv(data);
+  if (typeof parseCargoData !== 'function') throw new Error('cargo parser not loaded');
+  const parsed = parseCargoData(tsv);
+  if (!parsed.length) throw new Error('cargo feed parsed 0 rows');
+  const r = applyParsedCargoes(parsed);
+  return `${parsed.length} cargoes (${r.addedCount} new, ${r.autoFixedCount} auto-fixed)`;
+}
+
+function applyNatl(data) {
+  if (!window.LaycanMatcher) throw new Error('laycan matcher not loaded');
+  if (!data || !data.mainview || !data.distances) throw new Error('natl feed missing mainview/distances');
+  const r = window.LaycanMatcher.applyNatlFeed(data.mainview, data.distances);
+  return `${r.vessels} vessels, ${r.ports} dely ports`;
+}
+
+const APPLIERS = { ecsa: applyEcsa, cargo: applyCargo, natl: applyNatl };
+
+async function refreshFeeds(manual) {
+  setBadge('Feeds…', 'pend');
+  let results = [], anyFresh = false, anyErr = false;
+  try {
+    const stamps = await fetch('/api/import').then(r => {
+      if (!r.ok) throw new Error('server ' + r.status);
+      return r.json();
+    });
+    const applied = appliedStamps();
+    for (const src of ['ecsa', 'natl', 'cargo']) {
+      if (!stamps[src]) { results.push(src + ': no feed yet'); continue; }
+      if (applied[src] === stamps[src] && !manual) continue;   // already applied
+      try {
+        const payload = await fetchSource(src);
+        if (!payload.ts || payload.data == null) { results.push(src + ': empty'); continue; }
+        if (applied[src] === payload.ts && !manual) continue;
+        const summary = APPLIERS[src](payload.data);
+        markApplied(src, payload.ts);
+        anyFresh = true;
+        results.push(`${src}: ${summary} @ ${payload.ts.slice(11, 16)}z`);
+      } catch (e) {
+        anyErr = true;
+        results.push(`${src}: FAILED — ${e.message}`);
+      }
+    }
+    const oldest = Math.min(...['ecsa', 'natl', 'cargo'].map(s => stamps[s] ? new Date(stamps[s]).getTime() : Infinity));
+    const ageMin = isFinite(oldest) ? Math.round((Date.now() - oldest) / 60000) : null;
+    setBadge(
+      anyErr ? 'Feeds: error' : ageMin == null ? 'Feeds: none' : `Feeds: ${ageMin}m`,
+      anyErr ? 'err' : ageMin == null ? 'pend' : 'ok',
+      results.join('\n') || 'All feeds already applied.'
+    );
+    if (manual && results.length) console.log('[feeds]\n' + results.join('\n'));
+  } catch (e) {
+    setBadge('Feeds: offline', 'err', e.message);
+  }
+}
+
+function injectBadge() {
+  const syncBadge = document.getElementById('syncBadge');
+  if (!syncBadge || document.getElementById('feedsBadge')) return;
+  const el = document.createElement('span');
+  el.id = 'feedsBadge';
+  el.addEventListener('click', () => refreshFeeds(true));
+  syncBadge.parentNode.insertBefore(el, syncBadge.nextSibling);
+  setBadge('Feeds', 'pend', 'Click to pull the Google Sheets feeds now');
+}
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  document.addEventListener('DOMContentLoaded', () => {
+    injectBadge();
+    refreshFeeds(false);                       // apply anything fresh on load
+    setInterval(() => refreshFeeds(false), 10 * 60 * 1000);  // re-check every 10 min
+  });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { _test: { rowsToTsv } };
 }
 
 })();

@@ -110,6 +110,8 @@ function excelDate(v) {
     const d = new Date(Math.round((v - 25569) * 86400 * 1000));
     return isNaN(d) ? null : d.toISOString().slice(0, 10);
   }
+  // ISO string (JSON-serialised Date from the Google Sheets feed)
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
   return null;
 }
 function s(v) { return (v == null) ? null : String(v).trim() || null; }
@@ -120,11 +122,19 @@ function parseWorkbook(wb) {
   const di = wb.Sheets['Distances'];
   if (!mv) throw new Error('Sheet "NEW MAINVIEW" not found in workbook');
   if (!di) throw new Error('Sheet "Distances" not found in workbook');
+  return parseArrays(
+    XLSX.utils.sheet_to_json(mv, { header: 1, raw: true, cellDates: true }),
+    XLSX.utils.sheet_to_json(di, { header: 1, raw: true }),
+    'imported xlsx'
+  );
+}
 
+// Core parser over plain row arrays — used by both the xlsx drag-drop
+// (via parseWorkbook) and the Google Sheets feed (rows arrive as JSON).
+function parseArrays(vrows, drows, sourceLabel) {
   // Distances: header on 2nd row, dely port in col B.
   // Destinations: main block C..AG, plus extra named columns further right
   // (mostly empty Capesize stubs — kept only if coverage >= MIN_PORT_COVERAGE).
-  const drows = XLSX.utils.sheet_to_json(di, { header: 1, raw: true });
   const hdr = drows[1] || [];
   const SKIP = /eca|^row$|^region$|zone|cal$|passage|ballast|canal|^miles|^time$|^cost$/i;
   let ports = [];
@@ -163,7 +173,6 @@ function parseWorkbook(wb) {
   }
 
   // NEW MAINVIEW: fixed column positions (0-based), header on row 1
-  const vrows = XLSX.utils.sheet_to_json(mv, { header: 1, raw: true, cellDates: true });
   const PRE = [['Rouen', 49], ['Ust Luga', 52], ['NORFOLK', 55], ['Itaqui', 58], ['Nola', 61], ['Yuzhny', 64], ['San Lorenzo', 67]];
   const vessels = [];
   for (let ri = 1; ri < vrows.length; ri++) {
@@ -185,7 +194,7 @@ function parseWorkbook(wb) {
   }
   return {
     imported_at: new Date().toISOString().slice(0, 10),
-    source: 'imported xlsx', ports: ports.map(p => p[0]),
+    source: sourceLabel || 'imported xlsx', ports: ports.map(p => p[0]),
     distances, port_regions, vessels,
   };
 }
@@ -729,6 +738,16 @@ if (IS_BROWSER) {
     if (_origSwitchTabMatcher) _origSwitchTabMatcher(tab);
     if (tab === 'matcher') lmInit();
   };
+
+  // Public hook for the Google Sheets feed (feeds.js)
+  window.LaycanMatcher = {
+    applyNatlFeed(mainviewRows, distancesRows) {
+      const data = parseArrays(mainviewRows, distancesRows, 'sheets feed');
+      storeData(data);
+      if (LM.initialised) render();
+      return { vessels: data.vessels.length, ports: Object.keys(data.distances).length };
+    },
+  };
 }
 
 // Expose internals for Node tests
@@ -739,7 +758,7 @@ if (typeof module !== 'undefined' && module.exports) {
       setData: d => { LM.data = d; },
       setUi: u => { Object.assign(ui, u); },
       setCustom: c => { customAreas = c; },
-      computeRows, parseNmInput, vesselZones,
+      computeRows, parseNmInput, vesselZones, parseArrays,
     },
   };
 }

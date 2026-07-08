@@ -4,5 +4,8 @@
   "type": "module",
   "dependencies": {
     "@vercel/kv": "latest"
+  },
+  "scripts": {
+    "test": "node tests/run-tests.cjs"
   }
 }

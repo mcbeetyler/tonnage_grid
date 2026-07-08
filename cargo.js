@@ -727,6 +727,30 @@ async function parseCargoPaste() {
     return;
   }
 
+  const { addedCount, updatedCount, autoFixedCount } = applyParsedCargoes(parsed);
+
+  // Show summary
+  const preview = document.createElement('div');
+  preview.style.cssText = 'padding:8px 12px;margin-top:6px;background:var(--green-light);color:var(--green);border-radius:6px;font-size:11px';
+  preview.textContent = `Parsed ${parsed.length} cargoes: ${addedCount} new, ${updatedCount} still live, ${autoFixedCount} auto-marked FIXED (dropped from update).`;
+  const summaryBody = document.getElementById('cargoPasteBody');
+  const existingSummary = summaryBody.querySelector('.parse-summary');
+  if (existingSummary) existingSummary.remove();
+  preview.className = 'parse-summary';
+  summaryBody.appendChild(preview);
+
+  // Auto-collapse after 3s
+  setTimeout(() => {
+    document.getElementById('cargoPasteBody').classList.remove('open');
+    document.getElementById('cargoPasteArrow').classList.remove('open');
+    if (preview.parentNode) preview.remove();
+  }, 3000);
+}
+
+// Merge a parsed cargo list into the book — shared by manual paste and the
+// Google Sheets feed. Same rules as ever: refresh live cargoes, add new ones,
+// auto-mark dropped ones FIXED.
+function applyParsedCargoes(parsed) {
   const today = new Date().toISOString().split('T')[0];
 
   // Build map of existing history for fast lookup
@@ -793,22 +817,7 @@ async function parseCargoPaste() {
   saveCargo();
   renderCargo();
 
-  // Show summary
-  const preview = document.createElement('div');
-  preview.style.cssText = 'padding:8px 12px;margin-top:6px;background:var(--green-light);color:var(--green);border-radius:6px;font-size:11px';
-  preview.textContent = `Parsed ${parsed.length} cargoes: ${addedCount} new, ${updatedCount} still live, ${autoFixedCount} auto-marked FIXED (dropped from update).`;
-  const body = document.getElementById('cargoPasteBody');
-  const existing = body.querySelector('.parse-summary');
-  if (existing) existing.remove();
-  preview.className = 'parse-summary';
-  body.appendChild(preview);
-
-  // Auto-collapse after 3s
-  setTimeout(() => {
-    document.getElementById('cargoPasteBody').classList.remove('open');
-    document.getElementById('cargoPasteArrow').classList.remove('open');
-    if (preview.parentNode) preview.remove();
-  }, 3000);
+  return { addedCount, updatedCount, autoFixedCount };
 }
 
 function clearCargo() {

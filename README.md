@@ -23,36 +23,51 @@ This tool:
 ## Repo Structure
 
 ```
-panamax-tonnage-tracker/
-├── README.md                  ← You are here
-├── dashboard.html             ← Standalone single-file dashboard (open in Chrome)
-├── src/
-│   ├── parser.js              ← Core parsing logic (Node.js module + browser-inlined)
-│   ├── parser.test.js         ← Unit tests: run with `node src/parser.test.js`
-│   └── schema.js              ← Vessel data schema (JSDoc types + example objects)
-└── data/
-    └── sample_vessels.json    ← Sample vessel data for dashboard testing
+tonnage_grid/
+├── dashboard.html          ← the app shell: tabs + styles + script includes
+├── app.js                  ← Tonnage Board: state, rendering, sync, inline edits
+├── csv-import.js           ← CSV/TSV grid sync engine (CSV is source of truth;
+│                             manual edits win until a fresher CSV row arrives)
+├── parser.js               ← WhatsApp message parser
+├── cargo.js                ← Cargo Book tab
+├── fit-utils.js            ← shared FIT/EARLY/TIGHT laycan-fit logic
+├── laycan-matcher.js       ← Laycan Matcher tab (NATL positions vs cargo laycans)
+│     na-seed.js            ← seed snapshot of NORTH ATLANTIC TONNAGE.xlsx
+├── pairings.js             ← Pairings tab (board ships ↔ cargo book, both ways)
+├── supply.js               ← Supply tab (rolling depth curve + price ladder)
+│     curves-seed.js        ← seed history from TBM_ECSA Curves tab
+├── feeds.js                ← applies Google Sheets feeds (see FEEDS_SETUP.md)
+├── apps-script.gs          ← the read-only Apps Script that pushes the feeds
+├── voyages.js / voyage-estimator.js / voyageCalc.js / report.js / market.js /
+│   participants.js         ← remaining tabs
+├── api/                    ← Vercel serverless: vessels (rev-guarded KV sync),
+│                             cargo, voyages, import (feed drop-box), parse (AI)
+├── middleware.js            ← Basic-auth gate for the whole app
+├── schema.js               ← data-shape documentation (JSDoc)
+├── tests/run-tests.cjs     ← test suite (`npm test`)
+└── build.sh                ← regenerates dashboard-standalone.html from
+                              dashboard.html (auto-inlines all local scripts)
 ```
 
 ---
 
 ## Running the Tool
 
-**Dashboard** (no build step):
-```bash
-open dashboard.html   # macOS
-# or drag into Chrome
-```
+Deployed on Vercel (KV-backed, Basic auth). Local: `open dashboard.html`
+works too — server features degrade gracefully to localStorage.
 
-State is persisted to `localStorage`. To pre-load sample data:
-1. Open Chrome DevTools Console
-2. Run: `localStorage.setItem('pt_vessels', JSON.stringify([...]))`  
-   (paste the contents of `data/sample_vessels.json`)
+**Data in** (any of):
+- Google Sheets feeds every 30 min via Apps Script — see `FEEDS_SETUP.md`
+- Paste the ECSA grid CSV/TSV into the Tonnage Board input (auto-detected)
+- Drag the NORTH ATLANTIC TONNAGE xlsx onto the Laycan Matcher
+- Paste the cargo book into the Cargo Book tab
+- Paste WhatsApp position messages (AI-parsed server-side)
 
 **Run tests**:
 ```bash
-node src/parser.test.js
-# Expected: 43 passed, 0 failed
+npm test
+# tests/run-tests.cjs — csv parse/sync, fit logic, matcher math,
+# pairings, supply compute
 ```
 
 ---

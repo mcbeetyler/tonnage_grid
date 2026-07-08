@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(unzip -l panamax-tonnage-tracker.zip)",
+      "Bash(unzip -p panamax-tonnage-tracker.zip panamax-tonnage-tracker/src/parser.js)",
+      "Bash(git commit -m ' *)",
+      "Bash(git fetch *)",
+      "Bash(node -e ' *)",
+      "Bash(node --input-type=module -e ' *)"
+    ]
+  }
+}
