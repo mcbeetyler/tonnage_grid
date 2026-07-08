@@ -29,7 +29,10 @@ const LS_UI = 'lm_ui';
 
 // Port display order: NA/Continent loading areas first
 const PORT_ORDER = ['Rouen', 'Ust Luga', 'NORFOLK', 'Nola', 'Yuzhny', 'Itaqui', 'San Lorenzo',
-  'Santos', 'Kamsar', 'Gibraltar', 'PASSERO', 'PORT SAID', 'RBCT', 'ASTORIA', 'SEATTLE', 'VANCOUVER'];
+  'Santos', 'Rio grande', 'Kamsar', 'Gibraltar', 'PASSERO', 'PORT SAID', 'RBCT', 'ASTORIA', 'SEATTLE', 'VANCOUVER'];
+
+// Destination columns with fewer dely-port rows than this are dropped (empty Capesize stubs)
+const MIN_PORT_COVERAGE = 20;
 
 const IS_BROWSER = typeof window !== 'undefined' && typeof document !== 'undefined';
 
@@ -77,14 +80,32 @@ function parseWorkbook(wb) {
   if (!mv) throw new Error('Sheet "NEW MAINVIEW" not found in workbook');
   if (!di) throw new Error('Sheet "Distances" not found in workbook');
 
-  // Distances: header on 2nd row, dely port in col B, destinations from col C
+  // Distances: header on 2nd row, dely port in col B.
+  // Destinations: main block C..AG, plus extra named columns further right
+  // (mostly empty Capesize stubs — kept only if coverage >= MIN_PORT_COVERAGE).
   const drows = XLSX.utils.sheet_to_json(di, { header: 1, raw: true });
   const hdr = drows[1] || [];
-  const ports = [];
+  const SKIP = /eca|^row$|^region$|zone|cal$|passage|ballast|canal|^miles|^time$|^cost$/i;
+  let ports = [];
   for (let ci = 2; ci <= 32; ci++) {
     const nm = s(hdr[ci]);
-    if (nm && !/eca/i.test(nm)) ports.push([nm, ci]);
+    if (nm && !SKIP.test(nm)) ports.push([nm, ci]);
   }
+  for (let ci = 45; ci < Math.min(hdr.length, 75); ci++) {
+    const nm = s(hdr[ci]);
+    if (nm && !SKIP.test(nm)) ports.push([nm, ci]);
+  }
+  // Coverage pass
+  const coverage = {};
+  for (let ri = 2; ri < drows.length; ri++) {
+    const r = drows[ri]; if (!r || !s(r[1])) continue;
+    for (const [pname, ci] of ports) {
+      const v = n(r[ci]);
+      if (v && v > 0) coverage[pname] = (coverage[pname] || 0) + 1;
+    }
+  }
+  ports = ports.filter(([pname]) => (coverage[pname] || 0) >= MIN_PORT_COVERAGE);
+
   const distances = {}, port_regions = {};
   for (let ri = 2; ri < drows.length; ri++) {
     const r = drows[ri]; if (!r) continue;
@@ -184,9 +205,12 @@ function matchPortName(text) {
     'rouen': 'Rouen', 'ust luga': 'Ust Luga', 'ustluga': 'Ust Luga',
     'norfolk': 'NORFOLK', 'hampton': 'NORFOLK', 'nola': 'Nola', 'new orleans': 'Nola', 'mississippi': 'Nola', 'usg': 'Nola', 'miss river': 'Nola',
     'yuzhny': 'Yuzhny', 'pivdennyi': 'Yuzhny', 'itaqui': 'Itaqui', 'san lorenzo': 'San Lorenzo', 'up river': 'San Lorenzo', 'upriver': 'San Lorenzo',
-    'santos': 'Santos', 'kamsar': 'Kamsar', 'gibraltar': 'Gibraltar', 'passero': 'PASSERO', 'port said': 'PORT SAID', 'rbct': 'RBCT', 'richards bay': 'RBCT',
+    'santos': 'Santos', 'rio grande': 'Rio grande', 'kamsar': 'Kamsar', 'gibraltar': 'Gibraltar', 'passero': 'PASSERO', 'port said': 'PORT SAID', 'rbct': 'RBCT', 'richards bay': 'RBCT',
   };
-  for (const k in aliases) if (t.includes(k)) return aliases[k];
+  const available = (LM.data.ports || []);
+  // exact/substring match against actual destination port names first
+  for (const p of available) if (t.includes(p.toLowerCase())) return p;
+  for (const k in aliases) if (t.includes(k) && available.includes(aliases[k])) return aliases[k];
   return null;
 }
 
@@ -404,6 +428,7 @@ function buildUI() {
           <input type="number" id="lm_tol" step="0.5" min="0" style="width:70px" value="${ui.tolDays}"></div>
         <div class="lm-field"><label>Search</label><input type="text" id="lm_search" placeholder="vessel / owner / port" value="${esc(ui.search)}" style="width:170px"></div>
       </div>
+      <div id="lm_pickNote" style="display:none;font-size:12px;font-weight:500;margin:-4px 0 10px"></div>
 
       <div class="lm-controls" style="gap:6px">
         <span class="lm-check" id="lm_grain">Grain clean</span>
@@ -483,16 +508,31 @@ function populateCargoPicker() {
   sel.innerHTML = '<option value="">— manual entry —</option>' + live.map(c =>
     `<option value="${esc(c.id)}">${esc(c.charterer || '?')} · ${esc(c.load || '?')} · ${esc(c.laycan || 'no laycan')}</option>`).join('');
   sel.onchange = () => {
+    const note = document.getElementById('lm_pickNote');
+    if (note) { note.style.display = 'none'; note.textContent = ''; }
     const c = live.find(x => x.id === sel.value);
     if (!c) return;
+    const msgs = [];
     const w = parseLaycanWindow(c.laycan);
     if (w) {
       ui.layFrom = w.from; ui.layTo = w.to;
       document.getElementById('lm_layFrom').value = w.from;
       document.getElementById('lm_layTo').value = w.to;
+    } else if (c.laycan) {
+      msgs.push(`Couldn't parse laycan "${c.laycan}" — enter dates manually.`);
     }
     const p = matchPortName(c.load);
-    if (p) { ui.port = p; document.getElementById('lm_port').value = p; }
+    if (p) {
+      ui.port = p; document.getElementById('lm_port').value = p;
+      if (p.toLowerCase() !== (c.load || '').toLowerCase().trim()) msgs.push(`Load "${c.load}" mapped to ${p}.`);
+    } else if (c.load) {
+      msgs.push(`⚠ No distances for load port "${c.load}" — pick the nearest base port and use ± days (e.g. Tubarao ≈ Santos + 1d). Load port left at ${ui.port}.`);
+    }
+    if (note && msgs.length) {
+      note.textContent = msgs.join(' ');
+      note.style.color = msgs.some(m => m.startsWith('⚠')) ? 'var(--amber)' : 'var(--text-dim)';
+      note.style.display = '';
+    }
     saveUi(); render();
   };
 }
