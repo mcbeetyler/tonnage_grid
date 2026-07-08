@@ -76,14 +76,15 @@ function pushSource_(source) {
 
   let data;
   if (source === 'ecsa') {
-    // Grid header sits below decorative rows — slice from the header row on.
-    // Display values so rates/dates arrive exactly as a manual paste would.
+    // Grid header sits below decorative rows — slice from the header row when
+    // we can find it, otherwise send the whole tab (the dashboard's parser
+    // locates the header itself). Display values so rates/dates arrive
+    // exactly as a manual paste would.
     const rows = tab.getDataRange().getDisplayValues();
     const hdrIdx = rows.findIndex(r =>
-      r.some(c => String(c).trim().toUpperCase() === 'VESSEL') &&
-      r.some(c => String(c).trim().toUpperCase() === 'DWT'));
-    if (hdrIdx < 0) throw new Error('header row (VESSEL/DWT) not found');
-    data = rows.slice(hdrIdx);
+      r.some(c => /^vessel/i.test(String(c).trim())) &&
+      r.some(c => /dwt/i.test(String(c).trim())));
+    data = hdrIdx >= 0 ? rows.slice(hdrIdx) : rows;
   } else if (source === 'cargo') {
     data = tab.getDataRange().getDisplayValues();
   } else { // natl — raw values so dates stay dates (serialised to ISO in JSON)

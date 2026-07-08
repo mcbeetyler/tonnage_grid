@@ -119,6 +119,11 @@ section('csv-import + app');
     syncCSVVessels(parseCSVVessels(TSV).vessels);
     A(s.owner === 'GLOBE MARINE', 'fresher csv reclaims stale override');
 
+    // Feed sends whole tabs — header row may sit below decorative rows
+    const junky = ['\tFILTERING & SO\t\t', '\tSantos/Qingdao\t2026\t', TSV].join('\n');
+    A(looksLikeCSV(junky), 'header found below junk rows');
+    A(parseCSVVessels(junky).vessels.length === 2, 'parse with junk rows above header');
+
     const merged = mergeVesselArrays(
       [{ vessel_name: 'A', last_updated: '2026-07-08T10:00:00Z', dwt: 1 }, { vessel_name: 'B', last_updated: '2026-07-08T09:00:00Z', dwt: 2 }],
       [{ vessel_name: 'B', last_updated: '2026-07-08T11:00:00Z', dwt: 3 }, { vessel_name: 'C', dwt: 4 }]);

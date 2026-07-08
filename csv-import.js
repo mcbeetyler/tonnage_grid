@@ -238,6 +238,21 @@ function parseLaydayDate(s) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+// Find the header row: first row (searching the top 50) whose cells map to
+// vessel_name plus at least two other known fields. Tolerates decorative
+// rows above the grid — the Google Sheets feed sends whole tabs, and manual
+// pastes sometimes include the rows above the header too.
+function findHeaderRow(rows) {
+  const limit = Math.min(rows.length, 50);
+  for (let i = 0; i < limit; i++) {
+    const cells = (rows[i] || []).map(c => normalizeHeader(c));
+    const vesselHit = cells.some(c => CSV_HEADER_MAP[c] === 'vessel_name');
+    const others = cells.filter(c => CSV_HEADER_MAP[c] && CSV_HEADER_MAP[c] !== 'vessel_name').length;
+    if (vesselHit && others >= 2) return i;
+  }
+  return -1;
+}
+
 // Detect if the input looks like tabular data (CSV/TSV with a header row)
 function looksLikeCSV(raw) {
   const firstLine = raw.split('\n')[0];
@@ -246,17 +261,16 @@ function looksLikeCSV(raw) {
   // Use tokenizer so multi-line headers don't break detection
   const rows = tokenizeCSV(raw, delim);
   if (rows.length < 2) return false;
-  const headerCells = rows[0].map(c => normalizeHeader(c));
-  const vesselHit = headerCells.some(c => CSV_HEADER_MAP[c] === 'vessel_name');
-  const others = headerCells.filter(c => CSV_HEADER_MAP[c] && CSV_HEADER_MAP[c] !== 'vessel_name').length;
-  return vesselHit && others >= 2;
+  return findHeaderRow(rows) >= 0;
 }
 
 function parseCSVVessels(raw) {
   const firstLine = raw.split('\n')[0];
   const delim = detectDelimiter(firstLine);
-  const rows = tokenizeCSV(raw, delim);
-  if (rows.length < 2) return { vessels: [], headers: [], mapping: {} };
+  let rows = tokenizeCSV(raw, delim);
+  const hdrIdx = findHeaderRow(rows);
+  if (hdrIdx < 0 || rows.length < hdrIdx + 2) return { vessels: [], headers: [], mapping: {} };
+  rows = rows.slice(hdrIdx);
 
   // Build column map from header row
   const headerCells = rows[0].map(normalizeHeader);
