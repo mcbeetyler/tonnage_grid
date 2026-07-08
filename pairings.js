@@ -69,6 +69,7 @@ function cargoWindow(c) {
   return {
     from: new Date(w.from + 'T00:00:00Z'),
     to: new Date(w.to + 'T23:59:59Z'),
+    onw: !!w.onw,
   };
 }
 function isEcsa(c) {
@@ -161,6 +162,7 @@ function render() {
     const { cargo, window: w, rows } = computeCargo2Ship();
     if (!cargo) note.textContent = 'Pick a cargo — open board ships will be tiered on her laycan and sorted cheapest-first.';
     else if (!w) note.textContent = `Couldn't parse laycan "${cargo.laycan || '—'}" — fix it in the Cargo Book.`;
+    else if (w.onw) note.textContent = `Laycan "${cargo.laycan}" is open-ended — assumed a 20-day window.`;
     const shown = rows.filter(r => !w ? true : visible(r));
     thead.innerHTML = `<tr><th>Status</th><th>Vessel</th><th>DWT/Blt</th><th>Dely</th><th>ETA ECSA</th><th>Owner</th>
       <th style="text-align:right" title="P6-equivalent offer — the universal comparator">Offer P6</th>

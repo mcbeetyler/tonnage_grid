@@ -77,6 +77,13 @@
       return { from: mk(+m[1], MONTHS[m[2]]), to: mk(+m[1], MONTHS[m[2]]) };
     if ((m = t.match(/^([a-z]{3})(\d{1,2})[-–\/](\d{1,2})$/)) && MONTHS[m[1]] != null)
       return { from: mk(+m[2], MONTHS[m[1]]), to: mk(+m[3], MONTHS[m[1]]) };
+    // "22jul onw" / "1 Jul onwards" — open-ended: treat as a 20-day window
+    // from the date mentioned (desk convention)
+    if ((m = t.match(/^(\d{1,2})([a-z]{3})\+?onw(ards)?$/)) && MONTHS[m[2]] != null) {
+      const from = mk(+m[1], MONTHS[m[2]]);
+      const to = new Date(new Date(from + 'T00:00:00Z').getTime() + 20 * DAY).toISOString().slice(0, 10);
+      return { from, to, onw: true };
+    }
     return null;
   }
 

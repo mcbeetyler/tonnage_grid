@@ -10372,6 +10372,13 @@ function renderParticipants() {
       return { from: mk(+m[1], MONTHS[m[2]]), to: mk(+m[1], MONTHS[m[2]]) };
     if ((m = t.match(/^([a-z]{3})(\d{1,2})[-–\/](\d{1,2})$/)) && MONTHS[m[1]] != null)
       return { from: mk(+m[2], MONTHS[m[1]]), to: mk(+m[3], MONTHS[m[1]]) };
+    // "22jul onw" / "1 Jul onwards" — open-ended: treat as a 20-day window
+    // from the date mentioned (desk convention)
+    if ((m = t.match(/^(\d{1,2})([a-z]{3})\+?onw(ards)?$/)) && MONTHS[m[2]] != null) {
+      const from = mk(+m[1], MONTHS[m[2]]);
+      const to = new Date(new Date(from + 'T00:00:00Z').getTime() + 20 * DAY).toISOString().slice(0, 10);
+      return { from, to, onw: true };
+    }
     return null;
   }
 
@@ -11222,6 +11229,7 @@ function populateCargoPicker() {
       ui.layFrom = w.from; ui.layTo = w.to;
       document.getElementById('lm_layFrom').value = w.from;
       document.getElementById('lm_layTo').value = w.to;
+      if (w.onw) msgs.push(`"${c.laycan}" is open-ended — assumed a 20-day window (adjust Cancelling if you know better).`);
     } else if (c.laycan) {
       msgs.push(`Couldn't parse laycan "${c.laycan}" — enter dates manually.`);
     }
@@ -11371,6 +11379,7 @@ function cargoWindow(c) {
   return {
     from: new Date(w.from + 'T00:00:00Z'),
     to: new Date(w.to + 'T23:59:59Z'),
+    onw: !!w.onw,
   };
 }
 function isEcsa(c) {
@@ -11463,6 +11472,7 @@ function render() {
     const { cargo, window: w, rows } = computeCargo2Ship();
     if (!cargo) note.textContent = 'Pick a cargo — open board ships will be tiered on her laycan and sorted cheapest-first.';
     else if (!w) note.textContent = `Couldn't parse laycan "${cargo.laycan || '—'}" — fix it in the Cargo Book.`;
+    else if (w.onw) note.textContent = `Laycan "${cargo.laycan}" is open-ended — assumed a 20-day window.`;
     const shown = rows.filter(r => !w ? true : visible(r));
     thead.innerHTML = `<tr><th>Status</th><th>Vessel</th><th>DWT/Blt</th><th>Dely</th><th>ETA ECSA</th><th>Owner</th>
       <th style="text-align:right" title="P6-equivalent offer — the universal comparator">Offer P6</th>

@@ -59,6 +59,9 @@ const FU = load('fit-utils.js');
   A(w && w.from.endsWith('-07-11') && w.to.endsWith('-07-12'), 'laycan 11Jul-12Jul');
   A(FU.parseLaycanWindow('01-10 Aug').to.endsWith('-08-10'), 'laycan 01-10 Aug');
   A(FU.parseLaycanWindow('15 Jul').from === FU.parseLaycanWindow('15 Jul').to, 'single-day laycan');
+  const onw = FU.parseLaycanWindow('22jul onw');
+  A(onw && onw.from.endsWith('-07-22') && onw.to.endsWith('-08-11') && onw.onw, 'onw = 20-day window');
+  A(FU.parseLaycanWindow('1 Jul onwards').from.endsWith('-07-01'), 'onwards long form');
   A(FU.parseLaycanWindow('garbage') === null, 'garbage laycan null');
 }
 

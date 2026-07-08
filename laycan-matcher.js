@@ -830,6 +830,7 @@ function populateCargoPicker() {
       ui.layFrom = w.from; ui.layTo = w.to;
       document.getElementById('lm_layFrom').value = w.from;
       document.getElementById('lm_layTo').value = w.to;
+      if (w.onw) msgs.push(`"${c.laycan}" is open-ended — assumed a 20-day window (adjust Cancelling if you know better).`);
     } else if (c.laycan) {
       msgs.push(`Couldn't parse laycan "${c.laycan}" — enter dates manually.`);
     }
