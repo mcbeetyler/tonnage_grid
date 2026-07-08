@@ -320,6 +320,19 @@
 
   /* Tab system */
   .tab-bar{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0;background:var(--bg2);padding:0 28px}
+  .tab-bar-grouped{gap:22px;align-items:stretch}
+  .tab-group{display:flex;align-items:stretch;gap:0;position:relative;padding-top:14px}
+  .tab-group + .tab-group{border-left:1px solid var(--border);padding-left:22px}
+  .tab-group-label{position:absolute;top:2px;left:2px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);opacity:.75;pointer-events:none}
+  .tab-group + .tab-group .tab-group-label{left:24px}
+  .tab-bar-grouped .tab-btn{padding:8px 14px 12px}
+  /* Overview strip (morning glance) */
+  .ov-strip{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 28px;background:var(--bg3);border-bottom:1px solid var(--border)}
+  .ov-pill{display:inline-flex;align-items:baseline;gap:6px;font-size:12px;padding:6px 12px;border:1px solid var(--border);border-radius:16px;background:var(--bg2);cursor:pointer;white-space:nowrap}
+  .ov-pill:hover{border-color:var(--accent)}
+  .ov-pill b{font-family:var(--mono);font-size:13px;color:var(--text-bright)}
+  .ov-pill .ov-label{color:var(--text-dim);font-weight:500}
+  .ov-pill.ov-hot{border-color:var(--accent);background:var(--accent-light)}
   .tab-btn{padding:12px 24px;font-size:13px;font-weight:600;color:var(--text-dim);background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;transition:all .15s;letter-spacing:.2px}
   .tab-btn:hover{color:var(--text)}
   .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
@@ -666,20 +679,34 @@
 </head>
 <body>
 
-<div class="tab-bar">
-  <button class="tab-btn active" onclick="switchTab('tonnage')">Tonnage Board</button>
-  <button class="tab-btn" onclick="switchTab('cargo')">Cargo Book</button>
-  <button class="tab-btn" onclick="switchTab('matcher')">Laycan Matcher</button>
-  <button class="tab-btn" onclick="switchTab('pairings')">Pairings</button>
-  <button class="tab-btn" onclick="switchTab('supply')">Supply</button>
-  <button class="tab-btn" onclick="switchTab('voyages')">Voyages</button>
-  <button class="tab-btn" onclick="switchTab('estimator')">Voyage Estimator</button>
-  <button class="tab-btn" onclick="switchTab('report')">Report</button>
-  <button class="tab-btn" onclick="switchTab('market')">Market</button>
-  <button class="tab-btn" onclick="switchTab('participants')">Participants</button>
+<div class="tab-bar tab-bar-grouped">
+  <div class="tab-group">
+    <span class="tab-group-label">Boards</span>
+    <button class="tab-btn active" onclick="switchTab('tonnage')">ECSA</button>
+    <button class="tab-btn" onclick="switchTab('natlboard')">NATL</button>
+    <button class="tab-btn" onclick="switchTab('cargo')">Cargo Book</button>
+  </div>
+  <div class="tab-group">
+    <span class="tab-group-label">Matching</span>
+    <button class="tab-btn" onclick="switchTab('matcher')">Laycan Matcher</button>
+    <button class="tab-btn" onclick="switchTab('pairings')">Pairings</button>
+  </div>
+  <div class="tab-group">
+    <span class="tab-group-label">Market</span>
+    <button class="tab-btn" onclick="switchTab('supply')">Supply</button>
+    <button class="tab-btn" onclick="switchTab('market')">Market</button>
+    <button class="tab-btn" onclick="switchTab('report')">Report</button>
+  </div>
+  <div class="tab-group">
+    <span class="tab-group-label">Tools</span>
+    <button class="tab-btn" onclick="switchTab('voyages')">Voyages</button>
+    <button class="tab-btn" onclick="switchTab('estimator')">Estimator</button>
+    <button class="tab-btn" onclick="switchTab('participants')">Participants</button>
+  </div>
 </div>
 
 <div id="tab-tonnage" class="tab-panel active">
+<div id="ov_strip" class="ov-strip" style="display:none"></div>
 <header class="header">
   <div class="header-top">
     <div>
@@ -998,6 +1025,10 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 <div id="tab-pairings" class="tab-panel">
   <div id="pr_root"></div>
 </div><!-- end tab-pairings -->
+
+<div id="tab-natlboard" class="tab-panel">
+  <div id="nb_root"></div>
+</div><!-- end tab-natlboard -->
 
 <div id="tab-supply" class="tab-panel">
   <div id="sp_root"></div>
@@ -1446,6 +1477,8 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 <script src="laycan-matcher.js"></script>
 <script src="pairings.js"></script>
 <script src="supply.js"></script>
+<script src="natl-board.js"></script>
+<script src="overview.js"></script>
 <script src="feeds.js"></script>
 </body>
 </html>
