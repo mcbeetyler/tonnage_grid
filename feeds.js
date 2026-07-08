@@ -37,9 +37,13 @@ function setBadge(text, color, title) {
   el.style.cssText = `font-size:10px;padding:3px 8px;border-radius:10px;font-weight:500;cursor:pointer;background:${color === 'ok' ? '#EAF3DE' : color === 'err' ? '#FAEAEA' : '#FAEEDA'};color:${color === 'ok' ? '#3B6D11' : color === 'err' ? '#A32D2D' : '#BA7517'}`;
 }
 
-// 2D array → TSV text (what the manual-paste parsers expect)
+// 2D array → TSV text (what the manual-paste parsers expect).
+// Cells can contain literal newlines (e.g. the "HIRE\n(offer)" header) —
+// flatten them to spaces or they'd split the row and shift every column.
 function rowsToTsv(rows) {
-  return rows.map(r => (r || []).map(c => c == null ? '' : String(c).replace(/\t/g, ' ')).join('\t')).join('\n');
+  return rows.map(r => (r || []).map(c =>
+    c == null ? '' : String(c).replace(/[\t\r\n]+/g, ' ')
+  ).join('\t')).join('\n');
 }
 
 async function fetchSource(src) {

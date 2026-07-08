@@ -213,6 +213,8 @@ section('supply + feeds');
   A(r.ladder[0].rate === 18000 && !r.ladder[0].rated, 'ladder implied first (cheaper)');
   const fd = load('feeds.js');
   A(fd._test.rowsToTsv([['a', 'b'], ['c\td', null]]) === 'a\tb\nc d\t', 'rowsToTsv');
+  // Header cells with embedded newlines ("HIRE\n(offer)") must not split rows
+  A(fd._test.rowsToTsv([['HIRE\n(offer)', 'x']]) === 'HIRE (offer)\tx', 'rowsToTsv flattens newlines');
 }
 
 // ═══ result ═══════════════════════════════════════════════════════════════════
