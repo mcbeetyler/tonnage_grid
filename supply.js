@@ -23,14 +23,44 @@ const LS_UI = 'sp_ui';
 const IS_BROWSER = typeof window !== 'undefined' && typeof document !== 'undefined';
 const DAY = 86400000;
 
-let SP = { initialised: false, chart: null };
+let SP = { initialised: false, chart: null, rollChart: null };
 let ui = Object.assign({
   includeUnrated: true,
   layFrom: '', layTo: '', etaFrom: '', etaTo: '',
   minDwt: '', maxDwt: '', scrubOnly: false, search: '',
-  p6Ref: '',
+  p6Ref: '', range: '6M', ratedCurve: false,
 }, IS_BROWSER ? JSON.parse(localStorage.getItem(LS_UI) || '{}') : {});
 function saveUi() { if (IS_BROWSER) localStorage.setItem(LS_UI, JSON.stringify(ui)); }
+
+// ─── Rolling depth history ───────────────────────────────────────────────────
+// Seeded from the workbook's Curves tab (curves-seed.js); every day the tab
+// is opened, today's bucket counts are snapshotted so the series keeps
+// growing without the spreadsheet. Snapshots also store rated-only counts,
+// which the seed doesn't have.
+const LS_SNAPS = 'sp_snapshots';
+
+function loadHistory() {
+  const seed = (IS_BROWSER && window.CURVES_SEED) ? window.CURVES_SEED : [];
+  const snaps = IS_BROWSER ? JSON.parse(localStorage.getItem(LS_SNAPS) || '{}') : {};
+  const byDate = {};
+  for (const h of seed) byDate[h.date] = Object.assign({}, h);
+  for (const d in snaps) byDate[d] = Object.assign(byDate[d] || { date: d }, snaps[d]);
+  return Object.values(byDate).sort((a, b) => a.date < b.date ? -1 : 1);
+}
+
+function snapshotToday(res) {
+  if (!IS_BROWSER) return;
+  if (!res.ships.length) return;   // don't overwrite a good snapshot with an empty board
+  const d = new Date().toISOString().slice(0, 10);
+  const snaps = JSON.parse(localStorage.getItem(LS_SNAPS) || '{}');
+  const b = res.buckets, rb = res.ratedBuckets;
+  snaps[d] = {
+    b0_10: b.b0_10, b10_20: b.b10_20, b20_30: b.b20_30, next30: b.next30, b30_40: b.b30_40,
+    r0_10: rb.b0_10, r10_20: rb.b10_20, r20_30: rb.b20_30, rnext30: rb.next30, r30_40: rb.b30_40,
+    p6: parseFloat(ui.p6Ref) || (snaps[d] && snaps[d].p6) || null,
+  };
+  localStorage.setItem(LS_SNAPS, JSON.stringify(snaps));
+}
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 function boardVessels() {
@@ -82,16 +112,20 @@ function computeSupply() {
     ships.push({ v, rated, rate, etaDays });
   }
 
-  // Depth buckets on ETA (all filtered ships, priced or not)
-  const buckets = { b0_10: 0, b10_20: 0, b20_30: 0, b30_40: 0, next30: 0, noEta: 0 };
+  // Depth buckets on ETA (all filtered ships, priced or not) + rated-only set
+  const mkB = () => ({ b0_10: 0, b10_20: 0, b20_30: 0, b30_40: 0, next30: 0, noEta: 0 });
+  const buckets = mkB(), ratedBuckets = mkB();
+  const bump = (B, d) => {
+    if (d >= 0 && d < 10) B.b0_10++;
+    else if (d >= 10 && d < 20) B.b10_20++;
+    else if (d >= 20 && d < 30) B.b20_30++;
+    else if (d >= 30 && d < 40) B.b30_40++;
+    if (d >= 0 && d < 30) B.next30++;
+  };
   for (const s of ships) {
-    if (s.etaDays == null) { buckets.noEta++; continue; }
-    const d = s.etaDays;
-    if (d >= 0 && d < 10) buckets.b0_10++;
-    else if (d >= 10 && d < 20) buckets.b10_20++;
-    else if (d >= 20 && d < 30) buckets.b20_30++;
-    else if (d >= 30 && d < 40) buckets.b30_40++;
-    if (d >= 0 && d < 30) buckets.next30++;
+    if (s.etaDays == null) { buckets.noEta++; if (s.rated) ratedBuckets.noEta++; continue; }
+    bump(buckets, s.etaDays);
+    if (s.rated) bump(ratedBuckets, s.etaDays);
   }
 
   // Ladder: rated always; unrated included when toggled and priced by Arrow
@@ -103,7 +137,7 @@ function computeSupply() {
   const rates = ladder.filter(s => s.rated).map(s => s.rate);
   const median = rates.length ? rates.slice().sort((a, b) => a - b)[Math.floor(rates.length / 2)] : null;
 
-  return { ships, ladder, buckets, excluded, ratedCount: rates.length, median };
+  return { ships, ladder, buckets, ratedBuckets, excluded, ratedCount: rates.length, median };
 }
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
@@ -115,6 +149,57 @@ function fmtD(iso) {
   if (!iso) return '—';
   const d = new Date(String(iso).slice(0, 10) + 'T00:00:00Z');
   return isNaN(d) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+}
+
+// Rolling depth curve — the old Curves tab, live: x = date, y = ships by ETA
+// bucket, P6 value on the right axis.
+function renderRollChart() {
+  const canvas = document.getElementById('sp_rollChart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  let hist = loadHistory();
+  const days = { '3M': 92, '6M': 183, '1Y': 366, 'ALL': 99999 }[ui.range] || 183;
+  const cutoff = new Date(Date.now() - days * DAY).toISOString().slice(0, 10);
+  hist = hist.filter(h => h.date >= cutoff);
+
+  const rated = ui.ratedCurve;
+  const pick = (h, all, r) => rated ? (h[r] != null ? h[r] : null) : h[all];
+  const mkSeries = (label, all, r, color, width, hidden) => ({
+    label, data: hist.map(h => pick(h, all, r)),
+    borderColor: color, backgroundColor: color, borderWidth: width,
+    pointRadius: 0, pointHoverRadius: 4, tension: .3, spanGaps: true, yAxisID: 'y', hidden,
+  });
+  const datasets = [
+    mkSeries('0–10d', 'b0_10', 'r0_10', '#A32D2D', 1.5, false),
+    mkSeries('10–20d', 'b10_20', 'r10_20', '#BA7517', 1.5, false),
+    mkSeries('20–30d', 'b20_30', 'r20_30', '#3B6D11', 1.5, false),
+    mkSeries('Next 30d', 'next30', 'rnext30', '#185FA5', 2.5, false),
+    mkSeries('30–40d', 'b30_40', 'r30_40', '#888888', 1.5, true),
+    {
+      label: 'P6 $/day', data: hist.map(h => h.p6 ?? null),
+      borderColor: '#1A1A1A', borderDash: [6, 4], borderWidth: 1.5,
+      pointRadius: 0, pointHoverRadius: 4, tension: .2, spanGaps: true, yAxisID: 'y2',
+    },
+  ];
+
+  if (SP.rollChart) SP.rollChart.destroy();
+  SP.rollChart = new Chart(canvas, {
+    type: 'line',
+    data: { labels: hist.map(h => h.date), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { ticks: { maxTicksLimit: 14, callback(v) {
+          const d = this.getLabelForValue(v);
+          const dt = new Date(d + 'T00:00:00Z');
+          return isNaN(dt) ? d : dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+        } } },
+        y: { title: { display: true, text: rated ? 'Ships with offers (by ETA)' : 'Ships (by ETA)' }, beginAtZero: true },
+        y2: { position: 'right', title: { display: true, text: 'P6 $/day' }, grid: { drawOnChartArea: false } },
+      },
+      plugins: { legend: { position: 'top', labels: { boxWidth: 18 } } },
+    },
+  });
 }
 
 function renderChart(res) {
@@ -202,6 +287,8 @@ function render() {
   if (b.noEta) note.push(`${b.noEta} without ETA (not in buckets)`);
   document.getElementById('sp_note').textContent = note.join(' · ');
 
+  snapshotToday(res);
+  renderRollChart();
   renderChart(res);
 
   // Ranked table (cheapest first)
@@ -269,7 +356,22 @@ function buildUI() {
       <div id="sp_stats" style="display:flex;gap:10px;margin-bottom:6px;flex-wrap:wrap"></div>
       <div id="sp_note" style="font-size:11px;color:var(--text-dim);margin-bottom:10px"></div>
 
-      <div style="height:380px;border:1px solid var(--border);border-radius:var(--radius);padding:12px;background:var(--bg2);margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <strong style="font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim)">Rolling supply depth</strong>
+        <div style="flex:1"></div>
+        <span class="pr-check" id="sp_ratedCurve" title="Plot only ships with offers (tracked from today onwards — the imported history counts all ships)">Offers only</span>
+        <div id="sp_range" style="display:inline-flex;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+          ${['3M', '6M', '1Y', 'ALL'].map(r => `<button data-range="${r}" style="border:none;border-right:1px solid var(--border);background:var(--bg2);font-size:11px;padding:6px 12px;cursor:pointer">${r}</button>`).join('')}
+        </div>
+      </div>
+      <div style="height:360px;border:1px solid var(--border);border-radius:var(--radius);padding:12px;background:var(--bg2);margin-bottom:18px">
+        <canvas id="sp_rollChart"></canvas>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <strong style="font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim)">Price ladder (today)</strong>
+      </div>
+      <div style="height:340px;border:1px solid var(--border);border-radius:var(--radius);padding:12px;background:var(--bg2);margin-bottom:14px">
         <canvas id="sp_chart"></canvas>
       </div>
 
@@ -294,12 +396,25 @@ function buildUI() {
   on('sp_maxDwt', 'input', e => { ui.maxDwt = e.target.value; saveUi(); render(); });
   on('sp_p6', 'input', e => { ui.p6Ref = e.target.value; saveUi(); render(); });
   on('sp_search', 'input', e => { ui.search = e.target.value; saveUi(); render(); });
-  for (const [id, key] of [['sp_unrated', 'includeUnrated'], ['sp_scrub', 'scrubOnly']]) {
+  for (const [id, key] of [['sp_unrated', 'includeUnrated'], ['sp_scrub', 'scrubOnly'], ['sp_ratedCurve', 'ratedCurve']]) {
     const el = document.getElementById(id);
     const sync = () => el.classList.toggle('on', !!ui[key]);
     sync();
     el.addEventListener('click', () => { ui[key] = !ui[key]; saveUi(); sync(); render(); });
   }
+
+  // Range buttons for the rolling curve
+  const rangeWrap = document.getElementById('sp_range');
+  const syncRange = () => rangeWrap.querySelectorAll('button').forEach(b => {
+    const on = b.dataset.range === ui.range;
+    b.style.background = on ? 'var(--accent)' : 'var(--bg2)';
+    b.style.color = on ? '#fff' : 'var(--text)';
+    b.style.fontWeight = on ? '600' : '400';
+  });
+  syncRange();
+  rangeWrap.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    ui.range = b.dataset.range; saveUi(); syncRange(); renderRollChart();
+  }));
 }
 
 function spInit() {
