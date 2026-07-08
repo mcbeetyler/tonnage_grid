@@ -45,6 +45,8 @@ let ui = Object.assign({
   clampToday: true, grainOnly: false, scrubOnly: false, fhOnly: false,
   includeGone: false, showAll: false, search: '', minDwt: '', maxDwt: '', maxAge: '',
   sortKey: 'eta', sortDir: 1,
+  seaMarginPct: 8, fixedSpeed: '', // fixedSpeed empty = per-vessel ballast speed
+
 }, IS_BROWSER ? JSON.parse(localStorage.getItem(LS_UI) || '{}') : {});
 
 function saveUi() { if (IS_BROWSER) localStorage.setItem(LS_UI, JSON.stringify(ui)); }
@@ -293,11 +295,12 @@ function computeRows() {
     } else {
       dist = lookup(ui.port);
     }
-    const speed = v.ballast_speed || 13;
+    const speed = (parseFloat(ui.fixedSpeed) > 0) ? parseFloat(ui.fixedSpeed) : (v.ballast_speed || 13);
+    const margin = 1 + (parseFloat(ui.seaMarginPct) >= 0 ? parseFloat(ui.seaMarginPct) : 8) / 100;
 
     let eta = null, ballastDays = null, departs = null, clamped = false;
     if (dist && v.lay) {
-      ballastDays = dist / speed / 24 * SEA_MARGIN;
+      ballastDays = dist / speed / 24 * margin;
       departs = new Date(v.lay + 'T00:00:00Z');
       if (ui.clampToday && departs < today) { departs = today; clamped = true; }
       eta = new Date(departs.getTime() + ballastDays * 86400000 + extra);
@@ -468,7 +471,7 @@ function buildUI() {
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap">
         <div>
           <h2 style="font-size:16px;font-weight:700;color:var(--text-bright)">Laycan Matcher</h2>
-          <div style="font-size:12px;color:var(--text-dim)">Which North Atlantic ships make your cargo's laycan · ETA = open date + ballast @ 8% sea margin (sheet convention)</div>
+          <div style="font-size:12px;color:var(--text-dim)">Which North Atlantic ships make your cargo's laycan · ETA = open date + ballast time at chosen speed &amp; sea margin (sheet default: per-vessel speed, 8%)</div>
         </div>
         <div class="spacer" style="flex:1"></div>
         <span id="lm_source" style="font-size:11px;color:var(--text-dim)"></span>
@@ -491,6 +494,10 @@ function buildUI() {
           <input type="number" id="lm_extra" step="0.5" style="width:80px" value="${ui.extraDays || 0}"></div>
         <div class="lm-field"><label>Tight tolerance (d)</label>
           <input type="number" id="lm_tol" step="0.5" min="0" style="width:70px" value="${ui.tolDays}"></div>
+        <div class="lm-field"><label title="Weather/routing allowance added to sea time. Sheet convention 8%; Netpas-style estimators often 5%">Sea margin %</label>
+          <input type="number" id="lm_margin" step="1" min="0" max="25" style="width:70px" value="${ui.seaMarginPct}"></div>
+        <div class="lm-field"><label title="Blank = each vessel's own warranted ballast speed. Enter a figure (e.g. 11.7) to force one speed for all">Speed kn (blank = per vessel)</label>
+          <input type="number" id="lm_speed" step="0.1" min="8" max="18" style="width:100px" placeholder="per vessel" value="${esc(ui.fixedSpeed)}"></div>
         <div class="lm-field"><label>Search</label><input type="text" id="lm_search" placeholder="vessel / owner / port" value="${esc(ui.search)}" style="width:170px"></div>
       </div>
       <div id="lm_pickNote" style="display:none;font-size:12px;font-weight:500;margin:-4px 0 10px"></div>
@@ -531,6 +538,8 @@ function buildUI() {
   on('lm_layTo', 'change', e => { ui.layTo = e.target.value; saveUi(); render(); });
   on('lm_extra', 'input', e => { ui.extraDays = e.target.value; saveUi(); render(); });
   on('lm_tol', 'input', e => { ui.tolDays = e.target.value; saveUi(); render(); });
+  on('lm_margin', 'input', e => { ui.seaMarginPct = e.target.value; saveUi(); render(); });
+  on('lm_speed', 'input', e => { ui.fixedSpeed = e.target.value; saveUi(); render(); });
   on('lm_search', 'input', e => { ui.search = e.target.value; saveUi(); render(); });
   on('lm_minDwt', 'input', e => { ui.minDwt = e.target.value; saveUi(); render(); });
   on('lm_maxDwt', 'input', e => { ui.maxDwt = e.target.value; saveUi(); render(); });
