@@ -13,10 +13,11 @@
    ============================================================ */
 
 const CONFIG = {
-  // Your dashboard URL — no trailing slash
-  appUrl: 'https://YOUR-APP.vercel.app',
-  // The dashboard's Basic-auth password (same one you type in the browser)
-  appPassword: 'PASTE_YOUR_DASHBOARD_PASSWORD',
+  // URL + password live in Script Properties (gear icon → Script Properties:
+  // APP_URL = your dashboard URL without trailing slash, APP_PASSWORD = the
+  // Basic-auth password) so re-pasting this file never wipes them.
+  appUrl: PropertiesService.getScriptProperties().getProperty('APP_URL'),
+  appPassword: PropertiesService.getScriptProperties().getProperty('APP_PASSWORD'),
   // Where to email you if a run fails (leave '' to disable)
   alertEmail: 'mcbee.tyler@gmail.com',
 
@@ -39,6 +40,9 @@ const CONFIG = {
 
 /** Run this. Reads all three sheets and pushes them to the dashboard. */
 function syncAll() {
+  if (!CONFIG.appUrl || !CONFIG.appPassword) {
+    throw new Error('Set APP_URL and APP_PASSWORD in Project Settings → Script Properties first.');
+  }
   const errors = [];
   for (const source of ['ecsa', 'natl', 'cargo']) {
     try {

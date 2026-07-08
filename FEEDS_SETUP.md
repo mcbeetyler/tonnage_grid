@@ -18,9 +18,10 @@ the same as you opening the sheets in a browser tab.
 2. Delete the placeholder code and paste in the contents of
    **apps-script.gs** from this repo.
 
-3. Edit the two lines at the top of `CONFIG`:
-   - `appUrl` — your dashboard's Vercel URL
-   - `appPassword` — the password you type when the dashboard asks
+3. Click the gear icon (Project Settings) → **Script Properties** → add two
+   properties: `APP_URL` (your dashboard's URL, no trailing slash) and
+   `APP_PASSWORD` (the password you type when the dashboard asks).
+   They live outside the code, so re-pasting a newer script never wipes them.
 
 4. In the toolbar, select the function **syncAll** and click **Run** once.
    Google will ask for permission — it will say the script wants to *view
