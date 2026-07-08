@@ -356,6 +356,56 @@ function esc(x) {
   return String(x == null ? '' : x).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// ─── Share/export text (for principals — internal comments deliberately excluded)
+function describeRow(r, oneLine) {
+  const v = r.v;
+  const dwtBlt = v.dwt_yr || `${Math.round((v.dwt || 0) / 1000)},000/${v.built || '?'}`;
+  const openTxt = v.lay ? fmtDStr(v.lay) + (v.can ? '-' + fmtDStr(v.can) : '') : (v.laycan_str || '?');
+  const flags = [v.grain_clean ? 'grain clean' : '', v.scrubber ? 'scrubber' : ''].filter(Boolean).join(', ');
+  const portLbl = portLabel(ui.port).replace(' ~', '');
+  const etaTxt = r.eta ? fmtD(r.eta) : 'n/a';
+  const speedTxt = r.speed ? `${r.speed.toFixed(1)}kn` : '';
+  const offer = r.offer && r.offer.rate != null
+    ? `$${r.offer.rate.toLocaleString()}${r.offer.bb ? ' + $' + r.offer.bb.toLocaleString() + ' bb' : ''} ${offerSide()}`
+    : null;
+  let fitTxt = '';
+  if (ui.layTo && r.marginDays != null) {
+    if (r.status === 'FIT' || r.status === 'EARLY') fitTxt = `makes ${fmtDStr(ui.layFrom)}-${fmtDStr(ui.layTo)} laycan (${r.marginDays.toFixed(1)}d spare${r.waitDays ? `, arrives ${r.waitDays.toFixed(1)}d early` : ''})`;
+    else if (r.status === 'TIGHT') fitTxt = `tight for ${fmtDStr(ui.layFrom)}-${fmtDStr(ui.layTo)} (misses cancelling by ${(-r.marginDays).toFixed(1)}d)`;
+  }
+  if (oneLine) {
+    return `${(v.name || '').toUpperCase()} ${dwtBlt} — open ${v.dely_port || '?'} ${openTxt}` +
+      ` — ETA ${portLbl} ${etaTxt}${offer ? ` — ${offer}` : ''}`;
+  }
+  const lines = [
+    `MV ${(v.name || '').toUpperCase()} — ${dwtBlt}${v.owner ? ' — ' + v.owner.toUpperCase() : ''}`,
+    `Open ${v.dely_port || '?'} ${openTxt}${flags ? ' · ' + flags : ''}`,
+    `ETA ${portLbl} ${etaTxt}` + (r.dist ? ` (${r.dist.toLocaleString()}nm${speedTxt ? ' @ ' + speedTxt : ''})` : '') + (fitTxt ? ` — ${fitTxt}` : ''),
+  ];
+  if (offer) lines.push(`Offer ${offer}`);
+  return lines.join('\n');
+}
+
+function copyText(text, btn) {
+  const done = () => {
+    if (!btn) return;
+    const t = btn.textContent;
+    btn.textContent = '✓';
+    setTimeout(() => { btn.textContent = t; }, 1200);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else fallbackCopy(text, done);
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch (e) { /* give up quietly */ }
+  document.body.removeChild(ta);
+  done();
+}
+
 const BADGE = {
   FIT: ['FITS', '#fff', 'var(--green)'],
   EARLY: ['EARLY', 'var(--blue)', 'var(--blue-light)'],
@@ -370,7 +420,7 @@ function render() {
   if (!root || !LM.initialised) return;
   const d = LM.data;
   if (!d) {
-    root.querySelector('#lm_tbody').innerHTML = '<tr><td colspan="13" style="padding:20px;color:var(--text-dim)">No position data. Drop the NORTH ATLANTIC TONNAGE xlsx above.</td></tr>';
+    root.querySelector('#lm_tbody').innerHTML = '<tr><td colspan="14" style="padding:20px;color:var(--text-dim)">No position data. Drop the NORTH ATLANTIC TONNAGE xlsx above.</td></tr>';
     return;
   }
 
@@ -400,12 +450,15 @@ function render() {
     ['No distance', cnt('NODATA')],
   ].map(([l, v]) => `<div class="stat" style="min-width:90px;padding:8px 16px"><div class="stat-label">${l}</div><div class="stat-value" style="font-size:22px">${v}</div></div>`).join('');
 
+  // Remember what's on screen for the copy handlers
+  LM.visibleRows = visible;
+
   // Table
   const tb = root.querySelector('#lm_tbody');
   if (!visible.length) {
-    tb.innerHTML = `<tr><td colspan="13" style="padding:20px;color:var(--text-dim)">No vessels ${hasLaycan ? 'make this laycan — toggle "Show all" to see the misses.' : 'match the current filters.'}</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="14" style="padding:20px;color:var(--text-dim)">No vessels ${hasLaycan ? 'make this laycan — toggle "Show all" to see the misses.' : 'match the current filters.'}</td></tr>`;
   } else {
-    tb.innerHTML = visible.map(r => {
+    tb.innerHTML = visible.map((r, i) => {
       const [label, fg, bg] = BADGE[r.status];
       const flags = [
         r.v.grain_clean ? '<span class="lm-flag" title="Grain clean">G</span>' : '',
@@ -431,8 +484,13 @@ function render() {
         <td style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text-bright)">${fmtD(r.eta)}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:600" title="${r.offer.rate != null ? offerSide() + ' offer' + (r.offer.bb ? ' + BB $' + r.offer.bb.toLocaleString() : '') + (r.offer.other != null ? ' · other side $' + r.offer.other.toLocaleString() : '') : 'no offer on the sheet'}">${r.offer.rate != null ? '$' + r.offer.rate.toLocaleString() + (r.offer.bb ? '<span style="color:var(--text-dim);font-weight:400">+bb</span>' : '') : '—'}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px;color:${marginColor}">${marginTxt} ${waitTxt}</td>
+        <td><button class="lm-mini lm-copy" data-copy="${i}" title="Copy a share-ready description for the principal (internal comments excluded)">📋</button></td>
       </tr>`;
     }).join('');
+    tb.querySelectorAll('.lm-copy').forEach(b => b.addEventListener('click', () => {
+      const r = LM.visibleRows[parseInt(b.dataset.copy, 10)];
+      if (r) copyText(describeRow(r, false), b);
+    }));
   }
 
   const src = document.getElementById('lm_source');
@@ -489,6 +547,7 @@ function buildUI() {
         </div>
         <div class="spacer" style="flex:1"></div>
         <span id="lm_source" style="font-size:11px;color:var(--text-dim)"></span>
+        <button class="lm-mini" id="lm_copyFits" style="padding:7px 14px" title="Copy a share-ready shortlist of every FITS ship on screen — one line each, internal comments excluded">Copy fits 📋</button>
         <div class="lm-drop" id="lm_drop">⬆ Drop / click to import fresh NORTH ATLANTIC TONNAGE.xlsx</div>
         <input type="file" id="lm_file" accept=".xlsx,.xlsm" style="display:none">
       </div>
@@ -540,7 +599,7 @@ function buildUI() {
             <th data-sort="fit" title="Sort: best fit first, shortest ballast within each tier">Status ▾</th><th data-sort="name">Vessel</th><th data-sort="dwt">DWT/Blt</th><th></th>
             <th>Dely port</th><th data-sort="open">Open</th><th>Owner</th>
             <th style="text-align:right">Dist NM</th><th style="text-align:right">Spd</th>
-            <th data-sort="ballast" style="text-align:right" title="$ = top-3 shortest ballast among fixable ships — cheapest delivery">Ballast d</th><th data-sort="eta">ETA</th><th data-sort="offer" style="text-align:right" title="Sheet offer for the relevant direction: FH for ECSA-bound loads, TA otherwise. Hover a value for BB and the other side">Offer</th><th data-sort="margin" style="text-align:right">vs Canc.</th>
+            <th data-sort="ballast" style="text-align:right" title="$ = top-3 shortest ballast among fixable ships — cheapest delivery">Ballast d</th><th data-sort="eta">ETA</th><th data-sort="offer" style="text-align:right" title="Sheet offer for the relevant direction: FH for ECSA-bound loads, TA otherwise. Hover a value for BB and the other side">Offer</th><th data-sort="margin" style="text-align:right">vs Canc.</th><th></th>
           </tr></thead>
           <tbody id="lm_tbody"></tbody>
         </table>
@@ -578,6 +637,16 @@ function buildUI() {
       if (ui.sortKey === k) ui.sortDir = -ui.sortDir; else { ui.sortKey = k; ui.sortDir = 1; }
       saveUi(); render();
     });
+  });
+
+  // Copy-fits shortlist
+  document.getElementById('lm_copyFits').addEventListener('click', e => {
+    const fits = (LM.visibleRows || []).filter(r => r.status === 'FIT');
+    if (!fits.length) { copyText('No ships fit the current laycan/filters.', e.target); return; }
+    const hdr = ui.layTo
+      ? `Ships for ${portLabel(ui.port).replace(' ~', '')} ${fmtDStr(ui.layFrom)}-${fmtDStr(ui.layTo)}:`
+      : `Ships open for ${portLabel(ui.port).replace(' ~', '')}:`;
+    copyText(hdr + '\n' + fits.map(r => '· ' + describeRow(r, true)).join('\n'), e.target);
   });
 
   // Custom areas editor
@@ -792,7 +861,7 @@ if (typeof module !== 'undefined' && module.exports) {
       setData: d => { LM.data = d; },
       setUi: u => { Object.assign(ui, u); },
       setCustom: c => { customAreas = c; },
-      computeRows, parseNmInput, vesselZones, parseArrays,
+      computeRows, parseNmInput, vesselZones, parseArrays, describeRow,
     },
   };
 }
