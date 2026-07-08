@@ -1290,13 +1290,14 @@ function parseAgeField(s) {
   const trimmed = s.trim();
   const m = trimmed.match(/(19|20)\d{2}/);
   if (m) return parseInt(m[0], 10);
-  // "Jan-10" / "Jan 10" / "jan10" — month name + 2-digit year
+  const pivot = yy => yy <= (new Date().getFullYear() % 100) + 3 ? 2000 + yy : 1900 + yy;
+  // "Jan-10" / "Jan 10" / "jan10" — month name + 2-digit year (Excel mmm-yy display)
   const my = trimmed.match(/^[A-Za-z]{3,}[-\s]?(\d{2})$/);
-  if (my) {
-    const yy = parseInt(my[1], 10);
-    // Century pivot: allow newbuilds a couple of years out, else 19xx
-    return yy <= (new Date().getFullYear() % 100) + 3 ? 2000 + yy : 1900 + yy;
-  }
+  if (my) return pivot(parseInt(my[1], 10));
+  // "10-Jan" — same thing flipped by some export paths. Only 2-digit numbers:
+  // "1-Jan" stays rejected (that's a real date with the year dropped).
+  const ym = trimmed.match(/^(\d{2})[-\s]?[A-Za-z]{3,}$/);
+  if (ym) return pivot(parseInt(ym[1], 10));
   if (/^\d{1,2}$/.test(trimmed)) return 2000 + parseInt(trimmed, 10);
   return null;
 }
