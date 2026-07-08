@@ -38,6 +38,19 @@ const LS_CUSTOM = 'lm_custom';
 const PORT_ORDER = ['Rouen', 'Ust Luga', 'NORFOLK', 'Nola', 'Yuzhny', 'Itaqui', 'San Lorenzo',
   'Santos', 'Rio grande', 'Kamsar', 'Gibraltar', 'PASSERO', 'PORT SAID', 'RBCT', 'ASTORIA', 'SEATTLE', 'VANCOUVER'];
 
+// Loads at these ports are fronthaul business (via ECSA) → show the FH offer;
+// everything else on this desk is transatlantic → show the TA offer.
+const FH_PORTS = ['Itaqui', 'Santos', 'San Lorenzo', 'Rio grande', 'Kamsar', 'RBCT', 'Qingdao'];
+function offerSide() {
+  const p = ui.port.startsWith('custom:') ? '' : ui.port;
+  return FH_PORTS.includes(p) ? 'FH' : 'TA';
+}
+function offerOf(v) {
+  return offerSide() === 'FH'
+    ? { rate: v.rate_fh, bb: v.bb_fh, other: v.rate_ta }
+    : { rate: v.rate_ta, bb: v.bb_ta, other: v.rate_fh };
+}
+
 // Destination columns with fewer dely-port rows than this are dropped (empty Capesize stubs)
 const MIN_PORT_COVERAGE = 20;
 
@@ -190,6 +203,8 @@ function parseArrays(vrows, drows, sourceLabel) {
       built: n(r[21]) ? Math.round(n(r[21])) : null, cubic: n(r[23]),
       ballast_speed: n(r[48]), pre_dist: pre,
       imo: s(r[70]), updated: excelDate(r[1]), user: s(r[2]),
+      // Offers (phase 2): TA and FH rates + ballast bonuses where quoted
+      rate_ta: n(r[71]), bb_ta: n(r[72]), rate_fh: n(r[73]), bb_fh: n(r[74]),
     });
   }
   return {
@@ -298,7 +313,8 @@ function computeRows() {
     const { status, marginDays, waitDays } = FU.fitStatus(eta, layFrom, layTo,
       { waitTolDays: ui.waitTolDays, tightTolDays: ui.tolDays });
 
-    rows.push({ v, dist, distSrc, speed, ballastDays, eta, clamped, status, marginDays, waitDays });
+    const offer = offerOf(v);
+    rows.push({ v, dist, distSrc, speed, ballastDays, eta, clamped, status, marginDays, waitDays, offer });
   }
 
   const dir = ui.sortDir;
@@ -309,6 +325,8 @@ function computeRows() {
       switch (key) {
         // fit-first, then shortest ballast (cheapest to deliver) within each tier
         case 'fit': return (FIT_ORDER[r.status] ?? 9) * 10000 + (r.ballastDays != null ? r.ballastDays : 9999);
+        // fit-first, then cheapest offer (priced ships before unpriced)
+        case 'offer': return (FIT_ORDER[r.status] ?? 9) * 1e9 + (r.offer.rate != null ? r.offer.rate : 9e8);
         case 'ballast': return r.ballastDays != null ? r.ballastDays : Infinity;
         case 'eta': return r.eta ? r.eta.getTime() : Infinity;
         case 'margin': return r.marginDays == null ? -Infinity : r.marginDays;
@@ -352,7 +370,7 @@ function render() {
   if (!root || !LM.initialised) return;
   const d = LM.data;
   if (!d) {
-    root.querySelector('#lm_tbody').innerHTML = '<tr><td colspan="12" style="padding:20px;color:var(--text-dim)">No position data. Drop the NORTH ATLANTIC TONNAGE xlsx above.</td></tr>';
+    root.querySelector('#lm_tbody').innerHTML = '<tr><td colspan="13" style="padding:20px;color:var(--text-dim)">No position data. Drop the NORTH ATLANTIC TONNAGE xlsx above.</td></tr>';
     return;
   }
 
@@ -385,7 +403,7 @@ function render() {
   // Table
   const tb = root.querySelector('#lm_tbody');
   if (!visible.length) {
-    tb.innerHTML = `<tr><td colspan="12" style="padding:20px;color:var(--text-dim)">No vessels ${hasLaycan ? 'make this laycan — toggle "Show all" to see the misses.' : 'match the current filters.'}</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="13" style="padding:20px;color:var(--text-dim)">No vessels ${hasLaycan ? 'make this laycan — toggle "Show all" to see the misses.' : 'match the current filters.'}</td></tr>`;
   } else {
     tb.innerHTML = visible.map(r => {
       const [label, fg, bg] = BADGE[r.status];
@@ -411,6 +429,7 @@ function render() {
         <td style="text-align:right;font-family:var(--mono);font-size:12px">${r.speed ? r.speed.toFixed(1) : '—'}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px;${r.cheap ? 'color:var(--green);font-weight:700' : ''}">${r.cheap ? '<span title="Top-3 shortest ballast among fixable ships — cheapest delivery for the charterer">$</span> ' : ''}${r.ballastDays != null ? r.ballastDays.toFixed(1) : '—'}</td>
         <td style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text-bright)">${fmtD(r.eta)}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:600" title="${r.offer.rate != null ? offerSide() + ' offer' + (r.offer.bb ? ' + BB $' + r.offer.bb.toLocaleString() : '') + (r.offer.other != null ? ' · other side $' + r.offer.other.toLocaleString() : '') : 'no offer on the sheet'}">${r.offer.rate != null ? '$' + r.offer.rate.toLocaleString() + (r.offer.bb ? '<span style="color:var(--text-dim);font-weight:400">+bb</span>' : '') : '—'}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px;color:${marginColor}">${marginTxt} ${waitTxt}</td>
       </tr>`;
     }).join('');
@@ -521,7 +540,7 @@ function buildUI() {
             <th data-sort="fit" title="Sort: best fit first, shortest ballast within each tier">Status ▾</th><th data-sort="name">Vessel</th><th data-sort="dwt">DWT/Blt</th><th></th>
             <th>Dely port</th><th data-sort="open">Open</th><th>Owner</th>
             <th style="text-align:right">Dist NM</th><th style="text-align:right">Spd</th>
-            <th data-sort="ballast" style="text-align:right" title="$ = top-3 shortest ballast among fixable ships — cheapest delivery">Ballast d</th><th data-sort="eta">ETA</th><th data-sort="margin" style="text-align:right">vs Canc.</th>
+            <th data-sort="ballast" style="text-align:right" title="$ = top-3 shortest ballast among fixable ships — cheapest delivery">Ballast d</th><th data-sort="eta">ETA</th><th data-sort="offer" style="text-align:right" title="Sheet offer for the relevant direction: FH for ECSA-bound loads, TA otherwise. Hover a value for BB and the other side">Offer</th><th data-sort="margin" style="text-align:right">vs Canc.</th>
           </tr></thead>
           <tbody id="lm_tbody"></tbody>
         </table>
