@@ -221,17 +221,31 @@ function renderStats(rows) {
 }
 
 // ─── UI ──────────────────────────────────────────────────────────────────────
+let cargoLabelMap = new Map();   // display label → cargo id
+
+function cargoLabel(c) {
+  return `${c.charterer || '?'} · ${c.load || '?'}${c.disch ? '→' + c.disch : ''} · ${c.laycan || 'no laycan'}`;
+}
+
 function populatePickers() {
   const cs = document.getElementById('pr_cargoPick');
   const ss = document.getElementById('pr_shipPick');
   if (cs) {
-    cs.innerHTML = '<option value="">— select cargo —</option>' + liveCargoes().map(c =>
-      `<option value="${esc(c.id)}"${c.id === ui.cargoId ? ' selected' : ''}>${esc(c.charterer || '?')} · ${esc(c.load || '?')}${c.disch ? '→' + esc(c.disch) : ''} · ${esc(c.laycan || 'no laycan')}</option>`).join('');
+    cargoLabelMap = new Map();
+    const cargoes = liveCargoes();
+    document.getElementById('pr_cargoList').innerHTML = cargoes.map(c => {
+      const label = cargoLabel(c);
+      cargoLabelMap.set(label.toLowerCase(), c.id);
+      return `<option value="${esc(label)}"></option>`;
+    }).join('');
+    const sel = cargoes.find(c => c.id === ui.cargoId);
+    if (sel && !cs.value) cs.value = cargoLabel(sel);
   }
   if (ss) {
-    ss.innerHTML = '<option value="">— select ship —</option>' + openShips()
-      .slice().sort((a, b) => String(a.eta_ecsa || '9').localeCompare(String(b.eta_ecsa || '9')))
-      .map(v => `<option value="${esc(v.vessel_name)}"${v.vessel_name === ui.shipName ? ' selected' : ''}>${esc(v.vessel_name)} · ${v.dwt ? Math.round(v.dwt / 1000) + 'k' : '?'}/${v.build_year || '?'} · ETA ${esc(v.eta_ecsa || '?')}</option>`).join('');
+    const ships = openShips().slice().sort((a, b) => String(a.eta_ecsa || '9').localeCompare(String(b.eta_ecsa || '9')));
+    document.getElementById('pr_shipList').innerHTML = ships.map(v =>
+      `<option value="${esc(v.vessel_name)}" label="${v.dwt ? Math.round(v.dwt / 1000) + 'k' : '?'}/${v.build_year || '?'} · ETA ${esc(v.eta_ecsa || '?')}"></option>`).join('');
+    if (ui.shipName && !ss.value) ss.value = ui.shipName;
   }
 }
 
@@ -280,10 +294,12 @@ function buildUI() {
           <button data-mode="cargo2ship">Cargo → Ships</button>
           <button data-mode="ship2cargo">Ship → Cargoes</button>
         </div>
-        <div class="pr-field" id="pr_cargoField"><label>Cargo</label>
-          <select id="pr_cargoPick" style="max-width:300px"></select></div>
-        <div class="pr-field" id="pr_shipField"><label>Ship</label>
-          <select id="pr_shipPick" style="max-width:300px"></select></div>
+        <div class="pr-field" id="pr_cargoField"><label>Cargo — type to search</label>
+          <input id="pr_cargoPick" list="pr_cargoList" placeholder="charterer / load / laycan…" style="width:300px" autocomplete="off">
+          <datalist id="pr_cargoList"></datalist></div>
+        <div class="pr-field" id="pr_shipField"><label>Ship — type to search</label>
+          <input id="pr_shipPick" list="pr_shipList" placeholder="vessel name…" style="width:300px" autocomplete="off">
+          <datalist id="pr_shipList"></datalist></div>
         <div class="pr-field"><label title="Max idle days before layfrom to still count as FITS">Max wait (d)</label>
           <input type="number" id="pr_waitTol" step="0.5" min="0" style="width:70px" value="${ui.waitTolDays}"></div>
         <div class="pr-field"><label>Tight tolerance (d)</label>
@@ -306,8 +322,15 @@ function buildUI() {
     ui.mode = b.dataset.mode; saveUi(); syncModeUI(); render();
   }));
   const on = (id, ev, fn) => document.getElementById(id).addEventListener(ev, fn);
-  on('pr_cargoPick', 'change', e => { ui.cargoId = e.target.value; saveUi(); render(); });
-  on('pr_shipPick', 'change', e => { ui.shipName = e.target.value; saveUi(); render(); });
+  on('pr_cargoPick', 'input', e => {
+    const id = cargoLabelMap.get(e.target.value.toLowerCase().trim());
+    if (id !== undefined || e.target.value === '') { ui.cargoId = id || ''; saveUi(); render(); }
+  });
+  on('pr_shipPick', 'input', e => {
+    const t = e.target.value.trim();
+    const hit = openShips().find(v => (v.vessel_name || '').toLowerCase() === t.toLowerCase());
+    if (hit || t === '') { ui.shipName = hit ? hit.vessel_name : ''; saveUi(); render(); }
+  });
   on('pr_waitTol', 'input', e => { ui.waitTolDays = e.target.value; saveUi(); render(); });
   on('pr_tightTol', 'input', e => { ui.tightTolDays = e.target.value; saveUi(); render(); });
   on('pr_etaAdj', 'input', e => { ui.etaAdjDays = e.target.value; saveUi(); render(); });

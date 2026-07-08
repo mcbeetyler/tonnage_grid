@@ -10453,6 +10453,7 @@ let ui = Object.assign({
   port: 'Rouen', layFrom: '', layTo: '', extraDays: 0, tolDays: 2, waitTolDays: 2,
   clampToday: true, grainOnly: false, scrubOnly: false, fhOnly: false,
   includeGone: false, showAll: false, search: '', minDwt: '', maxDwt: '', maxAge: '',
+  regionFilter: 'ALL', tierFilter: 'ALL', showAdv: false,
   sortKey: 'fit', sortDir: 1,
   seaMarginPct: 8, fixedSpeed: '', // fixedSpeed empty = per-vessel ballast speed
 
@@ -10666,6 +10667,7 @@ function computeRows() {
   for (const v of d.vessels) {
     const region = (v.region || '').toUpperCase();
     if (!ui.includeGone && EXCLUDED_REGIONS.includes(region)) continue;
+    if (ui.regionFilter !== 'ALL' && region !== ui.regionFilter) continue;
     if (ui.grainOnly && !v.grain_clean) continue;
     if (ui.scrubOnly && !v.scrubber) continue;
     if (ui.fhOnly && !v.fh_candidate) continue;
@@ -10819,10 +10821,29 @@ function render() {
   const rows = computeRows();
   const hasLaycan = !!ui.layTo;
   const visible = rows.filter(r => {
+    if (ui.tierFilter !== 'ALL') return r.status === ui.tierFilter;
     if (!hasLaycan) return true;
     if (ui.showAll) return true;
     return r.status === 'FIT' || r.status === 'EARLY' || r.status === 'TIGHT';
   });
+
+  // Region pills (counts respect all filters except the region itself)
+  const pillWrap = document.getElementById('lm_regionPills');
+  if (pillWrap) {
+    const saveRegion = ui.regionFilter;
+    ui.regionFilter = 'ALL';
+    const allRows = computeRows();
+    ui.regionFilter = saveRegion;
+    const counts = {};
+    allRows.forEach(r => { const g = (r.v.region || '—').toUpperCase(); counts[g] = (counts[g] || 0) + 1; });
+    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    pillWrap.innerHTML = [['ALL', allRows.length]].concat(entries).map(([g, c]) =>
+      `<button class="filter-pill ${ui.regionFilter === g ? 'active' : ''}" data-region="${esc(g)}">${esc(g)} <span class="filter-count">${c}</span></button>`).join('');
+    pillWrap.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      ui.regionFilter = ui.regionFilter === b.dataset.region ? 'ALL' : b.dataset.region;
+      saveUi(); render();
+    }));
+  }
 
   // Cheapest delivery: shortest ballast among genuinely fixable ships (FIT/TIGHT).
   // Shorter ballast = fewer bunkers burnt getting to the load = lower rate/BB needed.
@@ -10830,17 +10851,22 @@ function render() {
     .sort((a, b) => a.ballastDays - b.ballastDays);
   fixable.forEach((r, i) => { r.cheap = i < 3; });
 
-  // Stats
+  // Stats — clickable: click a tier card to see only that tier
   const cnt = st => rows.filter(r => r.status === st).length;
   const statEl = document.getElementById('lm_stats');
   statEl.innerHTML = [
-    ['Candidates', rows.length],
-    ['Fits (≤' + (ui.waitTolDays || 0) + 'd wait)', hasLaycan ? cnt('FIT') : '—'],
-    ['Early (long wait)', hasLaycan ? cnt('EARLY') : '—'],
-    ['Tight (+' + (ui.tolDays || 0) + 'd)', hasLaycan ? cnt('TIGHT') : '—'],
-    ['Miss', hasLaycan ? cnt('MISSES') : '—'],
-    ['No distance', cnt('NODATA')],
-  ].map(([l, v]) => `<div class="stat" style="min-width:90px;padding:8px 16px"><div class="stat-label">${l}</div><div class="stat-value" style="font-size:22px">${v}</div></div>`).join('');
+    ['Candidates', rows.length, 'ALL'],
+    ['Fits (≤' + (ui.waitTolDays || 0) + 'd wait)', hasLaycan ? cnt('FIT') : '—', 'FIT'],
+    ['Early (long wait)', hasLaycan ? cnt('EARLY') : '—', 'EARLY'],
+    ['Tight (+' + (ui.tolDays || 0) + 'd)', hasLaycan ? cnt('TIGHT') : '—', 'TIGHT'],
+    ['Miss', hasLaycan ? cnt('MISSES') : '—', 'MISSES'],
+    ['No distance', cnt('NODATA'), 'NODATA'],
+  ].map(([l, v, tier]) => `<div class="stat lm-tier" data-tier="${tier}" title="Click to show only these ships" style="min-width:90px;padding:8px 16px;cursor:pointer${ui.tierFilter === tier && tier !== 'ALL' ? ';border-color:var(--accent);background:var(--accent-light)' : ''}"><div class="stat-label">${l}</div><div class="stat-value" style="font-size:22px">${v}</div></div>`).join('');
+  statEl.querySelectorAll('.lm-tier').forEach(el => el.addEventListener('click', () => {
+    const t = el.dataset.tier;
+    ui.tierFilter = (ui.tierFilter === t || t === 'ALL') ? 'ALL' : t;
+    saveUi(); render();
+  }));
 
   // Remember what's on screen for the copy handlers
   LM.visibleRows = visible;
@@ -10955,6 +10981,11 @@ function buildUI() {
           </div></div>
         <div class="lm-field"><label>Laycan from</label><input type="date" id="lm_layFrom" value="${esc(ui.layFrom)}"></div>
         <div class="lm-field"><label>Cancelling</label><input type="date" id="lm_layTo" value="${esc(ui.layTo)}"></div>
+        <div class="lm-field"><label>Search</label><input type="text" id="lm_search" placeholder="vessel / owner / port" value="${esc(ui.search)}" style="width:170px"></div>
+        <span class="lm-check" id="lm_advBtn" title="Tolerances, speed & margin, size/age limits, flag filters">⚙ More filters</span>
+      </div>
+
+      <div id="lm_advanced" class="lm-controls" style="gap:6px;display:${ui.showAdv ? 'flex' : 'none'};border:1px dashed var(--border);border-radius:var(--radius);padding:10px 12px;background:var(--bg3)">
         <div class="lm-field"><label title="One-off port: extra steaming days vs the selected base port (+/-)">± days (one-off port)</label>
           <input type="number" id="lm_extra" step="0.5" style="width:80px" value="${ui.extraDays || 0}"></div>
         <div class="lm-field"><label title="Max days a ship can arrive before layfrom and still count as FITS — few owners will wait longer for free">Max wait (d)</label>
@@ -10963,25 +10994,23 @@ function buildUI() {
           <input type="number" id="lm_tol" step="0.5" min="0" style="width:70px" value="${ui.tolDays}"></div>
         <div class="lm-field"><label title="Weather/routing allowance added to sea time. Sheet convention 8%; Netpas-style estimators often 5%">Sea margin %</label>
           <input type="number" id="lm_margin" step="1" min="0" max="25" style="width:70px" value="${ui.seaMarginPct}"></div>
-        <div class="lm-field"><label title="Blank = each vessel's own warranted ballast speed. Enter a figure (e.g. 11.7) to force one speed for all">Speed kn (blank = per vessel)</label>
-          <input type="number" id="lm_speed" step="0.1" min="8" max="18" style="width:100px" placeholder="per vessel" value="${esc(ui.fixedSpeed)}"></div>
-        <div class="lm-field"><label>Search</label><input type="text" id="lm_search" placeholder="vessel / owner / port" value="${esc(ui.search)}" style="width:170px"></div>
-      </div>
-      <div id="lm_pickNote" style="display:none;font-size:12px;font-weight:500;margin:-4px 0 10px"></div>
-      <div id="lm_custPanel" style="display:none"></div>
-
-      <div class="lm-controls" style="gap:6px">
+        <div class="lm-field"><label title="Blank = each vessel's own warranted ballast speed. Enter a figure (e.g. 11.7) to force one speed for all">Speed kn</label>
+          <input type="number" id="lm_speed" step="0.1" min="8" max="18" style="width:90px" placeholder="per vessel" value="${esc(ui.fixedSpeed)}"></div>
+        <div class="lm-field"><label>DWT min</label><input type="number" id="lm_minDwt" style="width:80px" value="${esc(ui.minDwt)}"></div>
+        <div class="lm-field"><label>DWT max</label><input type="number" id="lm_maxDwt" style="width:80px" value="${esc(ui.maxDwt)}"></div>
+        <div class="lm-field"><label>Max age</label><input type="number" id="lm_maxAge" style="width:70px" value="${esc(ui.maxAge)}"></div>
         <span class="lm-check" id="lm_grain">Grain clean</span>
         <span class="lm-check" id="lm_scrub">Scrubber</span>
         <span class="lm-check" id="lm_fh">FH candidates</span>
         <span class="lm-check" id="lm_clamp" title="If a vessel's open date is in the past, ballast is counted from today">Depart ≥ today</span>
         <span class="lm-check" id="lm_gone" title="Include vessels marked GONE / FIXED / ONSUB">Incl. gone/fixed/onsub</span>
         <span class="lm-check" id="lm_all" title="Show vessels that miss the laycan too">Show all</span>
-        <div class="spacer" style="flex:1"></div>
-        <div class="lm-field"><label>DWT min</label><input type="number" id="lm_minDwt" style="width:80px" value="${esc(ui.minDwt)}"></div>
-        <div class="lm-field"><label>DWT max</label><input type="number" id="lm_maxDwt" style="width:80px" value="${esc(ui.maxDwt)}"></div>
-        <div class="lm-field"><label>Max age</label><input type="number" id="lm_maxAge" style="width:70px" value="${esc(ui.maxAge)}"></div>
       </div>
+
+      <div id="lm_pickNote" style="display:none;font-size:12px;font-weight:500;margin:-4px 0 10px"></div>
+      <div id="lm_custPanel" style="display:none"></div>
+
+      <div id="lm_regionPills" class="filter-row" style="margin-bottom:10px"></div>
 
       <div id="lm_stats" style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap"></div>
 
@@ -11030,6 +11059,15 @@ function buildUI() {
       saveUi(); render();
     });
   });
+
+  // Advanced filters toggle
+  const advBtn = document.getElementById('lm_advBtn');
+  const syncAdv = () => {
+    advBtn.classList.toggle('on', !!ui.showAdv);
+    document.getElementById('lm_advanced').style.display = ui.showAdv ? 'flex' : 'none';
+  };
+  syncAdv();
+  advBtn.addEventListener('click', () => { ui.showAdv = !ui.showAdv; saveUi(); syncAdv(); });
 
   // Copy-fits shortlist
   document.getElementById('lm_copyFits').addEventListener('click', e => {
@@ -11485,17 +11523,31 @@ function renderStats(rows) {
 }
 
 // ─── UI ──────────────────────────────────────────────────────────────────────
+let cargoLabelMap = new Map();   // display label → cargo id
+
+function cargoLabel(c) {
+  return `${c.charterer || '?'} · ${c.load || '?'}${c.disch ? '→' + c.disch : ''} · ${c.laycan || 'no laycan'}`;
+}
+
 function populatePickers() {
   const cs = document.getElementById('pr_cargoPick');
   const ss = document.getElementById('pr_shipPick');
   if (cs) {
-    cs.innerHTML = '<option value="">— select cargo —</option>' + liveCargoes().map(c =>
-      `<option value="${esc(c.id)}"${c.id === ui.cargoId ? ' selected' : ''}>${esc(c.charterer || '?')} · ${esc(c.load || '?')}${c.disch ? '→' + esc(c.disch) : ''} · ${esc(c.laycan || 'no laycan')}</option>`).join('');
+    cargoLabelMap = new Map();
+    const cargoes = liveCargoes();
+    document.getElementById('pr_cargoList').innerHTML = cargoes.map(c => {
+      const label = cargoLabel(c);
+      cargoLabelMap.set(label.toLowerCase(), c.id);
+      return `<option value="${esc(label)}"></option>`;
+    }).join('');
+    const sel = cargoes.find(c => c.id === ui.cargoId);
+    if (sel && !cs.value) cs.value = cargoLabel(sel);
   }
   if (ss) {
-    ss.innerHTML = '<option value="">— select ship —</option>' + openShips()
-      .slice().sort((a, b) => String(a.eta_ecsa || '9').localeCompare(String(b.eta_ecsa || '9')))
-      .map(v => `<option value="${esc(v.vessel_name)}"${v.vessel_name === ui.shipName ? ' selected' : ''}>${esc(v.vessel_name)} · ${v.dwt ? Math.round(v.dwt / 1000) + 'k' : '?'}/${v.build_year || '?'} · ETA ${esc(v.eta_ecsa || '?')}</option>`).join('');
+    const ships = openShips().slice().sort((a, b) => String(a.eta_ecsa || '9').localeCompare(String(b.eta_ecsa || '9')));
+    document.getElementById('pr_shipList').innerHTML = ships.map(v =>
+      `<option value="${esc(v.vessel_name)}" label="${v.dwt ? Math.round(v.dwt / 1000) + 'k' : '?'}/${v.build_year || '?'} · ETA ${esc(v.eta_ecsa || '?')}"></option>`).join('');
+    if (ui.shipName && !ss.value) ss.value = ui.shipName;
   }
 }
 
@@ -11544,10 +11596,12 @@ function buildUI() {
           <button data-mode="cargo2ship">Cargo → Ships</button>
           <button data-mode="ship2cargo">Ship → Cargoes</button>
         </div>
-        <div class="pr-field" id="pr_cargoField"><label>Cargo</label>
-          <select id="pr_cargoPick" style="max-width:300px"></select></div>
-        <div class="pr-field" id="pr_shipField"><label>Ship</label>
-          <select id="pr_shipPick" style="max-width:300px"></select></div>
+        <div class="pr-field" id="pr_cargoField"><label>Cargo — type to search</label>
+          <input id="pr_cargoPick" list="pr_cargoList" placeholder="charterer / load / laycan…" style="width:300px" autocomplete="off">
+          <datalist id="pr_cargoList"></datalist></div>
+        <div class="pr-field" id="pr_shipField"><label>Ship — type to search</label>
+          <input id="pr_shipPick" list="pr_shipList" placeholder="vessel name…" style="width:300px" autocomplete="off">
+          <datalist id="pr_shipList"></datalist></div>
         <div class="pr-field"><label title="Max idle days before layfrom to still count as FITS">Max wait (d)</label>
           <input type="number" id="pr_waitTol" step="0.5" min="0" style="width:70px" value="${ui.waitTolDays}"></div>
         <div class="pr-field"><label>Tight tolerance (d)</label>
@@ -11570,8 +11624,15 @@ function buildUI() {
     ui.mode = b.dataset.mode; saveUi(); syncModeUI(); render();
   }));
   const on = (id, ev, fn) => document.getElementById(id).addEventListener(ev, fn);
-  on('pr_cargoPick', 'change', e => { ui.cargoId = e.target.value; saveUi(); render(); });
-  on('pr_shipPick', 'change', e => { ui.shipName = e.target.value; saveUi(); render(); });
+  on('pr_cargoPick', 'input', e => {
+    const id = cargoLabelMap.get(e.target.value.toLowerCase().trim());
+    if (id !== undefined || e.target.value === '') { ui.cargoId = id || ''; saveUi(); render(); }
+  });
+  on('pr_shipPick', 'input', e => {
+    const t = e.target.value.trim();
+    const hit = openShips().find(v => (v.vessel_name || '').toLowerCase() === t.toLowerCase());
+    if (hit || t === '') { ui.shipName = hit ? hit.vessel_name : ''; saveUi(); render(); }
+  });
   on('pr_waitTol', 'input', e => { ui.waitTolDays = e.target.value; saveUi(); render(); });
   on('pr_tightTol', 'input', e => { ui.tightTolDays = e.target.value; saveUi(); render(); });
   on('pr_etaAdj', 'input', e => { ui.etaAdjDays = e.target.value; saveUi(); render(); });
