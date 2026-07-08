@@ -41,13 +41,15 @@ const IS_BROWSER = typeof window !== 'undefined' && typeof document !== 'undefin
 
 let LM = { data: null, initialised: false };
 let ui = Object.assign({
-  port: 'Rouen', layFrom: '', layTo: '', extraDays: 0, tolDays: 2,
+  port: 'Rouen', layFrom: '', layTo: '', extraDays: 0, tolDays: 2, waitTolDays: 2,
   clampToday: true, grainOnly: false, scrubOnly: false, fhOnly: false,
   includeGone: false, showAll: false, search: '', minDwt: '', maxDwt: '', maxAge: '',
-  sortKey: 'eta', sortDir: 1,
+  sortKey: 'fit', sortDir: 1,
   seaMarginPct: 8, fixedSpeed: '', // fixedSpeed empty = per-vessel ballast speed
 
 }, IS_BROWSER ? JSON.parse(localStorage.getItem(LS_UI) || '{}') : {});
+// Migration: stored UI from before the FIT/EARLY split — adopt the new default sort
+if (IS_BROWSER && !JSON.parse(localStorage.getItem(LS_UI) || '{}').hasOwnProperty('waitTolDays')) ui.sortKey = 'fit';
 
 function saveUi() { if (IS_BROWSER) localStorage.setItem(LS_UI, JSON.stringify(ui)); }
 
@@ -309,10 +311,15 @@ function computeRows() {
     let status = 'NODATA', marginDays = null, waitDays = null;
     if (eta && layTo) {
       marginDays = (layTo - eta) / 86400000;
-      if (eta <= layTo) status = 'MAKES';
+      if (layFrom && eta < layFrom) waitDays = (layFrom - eta) / 86400000;
+      const waitTol = parseFloat(ui.waitTolDays);
+      if (eta <= layTo) {
+        // Makes cancelling — but a ship arriving long before the window opens
+        // would have to sit idle, and few owners will wait: that's EARLY, not FIT.
+        status = (waitDays != null && !isNaN(waitTol) && waitDays > waitTol) ? 'EARLY' : 'FIT';
+      }
       else if (eta - layTo <= tolMs) status = 'TIGHT';
       else status = 'MISSES';
-      if (layFrom && eta < layFrom) waitDays = (layFrom - eta) / 86400000;
     } else if (eta) status = 'ETA';
 
     rows.push({ v, dist, distSrc, speed, ballastDays, eta, clamped, status, marginDays, waitDays });
@@ -320,9 +327,13 @@ function computeRows() {
 
   const dir = ui.sortDir;
   const key = ui.sortKey;
+  const FIT_ORDER = { FIT: 0, TIGHT: 1, EARLY: 2, ETA: 3, MISSES: 4, NODATA: 5 };
   rows.sort((a, b) => {
     const val = r => {
       switch (key) {
+        // fit-first, then shortest ballast (cheapest to deliver) within each tier
+        case 'fit': return (FIT_ORDER[r.status] ?? 9) * 10000 + (r.ballastDays != null ? r.ballastDays : 9999);
+        case 'ballast': return r.ballastDays != null ? r.ballastDays : Infinity;
         case 'eta': return r.eta ? r.eta.getTime() : Infinity;
         case 'margin': return r.marginDays == null ? -Infinity : r.marginDays;
         case 'dwt': return r.v.dwt || 0;
@@ -352,7 +363,8 @@ function esc(x) {
 }
 
 const BADGE = {
-  MAKES: ['MAKES', 'var(--green)', 'var(--green-light)'],
+  FIT: ['FITS', '#fff', 'var(--green)'],
+  EARLY: ['EARLY', 'var(--blue)', 'var(--blue-light)'],
   TIGHT: ['TIGHT', 'var(--amber)', 'var(--amber-light)'],
   MISSES: ['MISSES', 'var(--red)', 'var(--red-light)'],
   ETA: ['ETA', 'var(--accent)', 'var(--accent-light)'],
@@ -373,15 +385,22 @@ function render() {
   const visible = rows.filter(r => {
     if (!hasLaycan) return true;
     if (ui.showAll) return true;
-    return r.status === 'MAKES' || r.status === 'TIGHT';
+    return r.status === 'FIT' || r.status === 'EARLY' || r.status === 'TIGHT';
   });
+
+  // Cheapest delivery: shortest ballast among genuinely fixable ships (FIT/TIGHT).
+  // Shorter ballast = fewer bunkers burnt getting to the load = lower rate/BB needed.
+  const fixable = visible.filter(r => (r.status === 'FIT' || r.status === 'TIGHT') && r.ballastDays != null)
+    .sort((a, b) => a.ballastDays - b.ballastDays);
+  fixable.forEach((r, i) => { r.cheap = i < 3; });
 
   // Stats
   const cnt = st => rows.filter(r => r.status === st).length;
   const statEl = document.getElementById('lm_stats');
   statEl.innerHTML = [
     ['Candidates', rows.length],
-    ['Make laycan', hasLaycan ? cnt('MAKES') : '—'],
+    ['Fits (≤' + (ui.waitTolDays || 0) + 'd wait)', hasLaycan ? cnt('FIT') : '—'],
+    ['Early (long wait)', hasLaycan ? cnt('EARLY') : '—'],
     ['Tight (+' + (ui.tolDays || 0) + 'd)', hasLaycan ? cnt('TIGHT') : '—'],
     ['Miss', hasLaycan ? cnt('MISSES') : '—'],
     ['No distance', cnt('NODATA')],
@@ -414,7 +433,7 @@ function render() {
         <td>${esc(r.v.owner || '—')}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px" title="${r.distSrc === 'zone' ? 'From your zone constant (' + esc(r.v.region || '') + ')' : r.distSrc === 'offset' ? 'Base port + offset — rough guide' : 'Distances matrix'}">${r.dist ? (r.distSrc !== 'matrix' ? '~' : '') + r.dist.toLocaleString() : '—'}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px">${r.speed ? r.speed.toFixed(1) : '—'}</td>
-        <td style="text-align:right;font-family:var(--mono);font-size:12px">${r.ballastDays != null ? r.ballastDays.toFixed(1) : '—'}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:12px;${r.cheap ? 'color:var(--green);font-weight:700' : ''}">${r.cheap ? '<span title="Top-3 shortest ballast among fixable ships — cheapest delivery for the charterer">$</span> ' : ''}${r.ballastDays != null ? r.ballastDays.toFixed(1) : '—'}</td>
         <td style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text-bright)">${fmtD(r.eta)}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px;color:${marginColor}">${marginTxt} ${waitTxt}</td>
       </tr>`;
@@ -492,6 +511,8 @@ function buildUI() {
         <div class="lm-field"><label>Cancelling</label><input type="date" id="lm_layTo" value="${esc(ui.layTo)}"></div>
         <div class="lm-field"><label title="One-off port: extra steaming days vs the selected base port (+/-)">± days (one-off port)</label>
           <input type="number" id="lm_extra" step="0.5" style="width:80px" value="${ui.extraDays || 0}"></div>
+        <div class="lm-field"><label title="Max days a ship can arrive before layfrom and still count as FITS — few owners will wait longer for free">Max wait (d)</label>
+          <input type="number" id="lm_waitTol" step="0.5" min="0" style="width:70px" value="${ui.waitTolDays}"></div>
         <div class="lm-field"><label>Tight tolerance (d)</label>
           <input type="number" id="lm_tol" step="0.5" min="0" style="width:70px" value="${ui.tolDays}"></div>
         <div class="lm-field"><label title="Weather/routing allowance added to sea time. Sheet convention 8%; Netpas-style estimators often 5%">Sea margin %</label>
@@ -521,10 +542,10 @@ function buildUI() {
       <div style="overflow:auto;max-height:calc(100vh - 380px);border:1px solid var(--border);border-radius:var(--radius)">
         <table class="lm-table">
           <thead><tr>
-            <th data-sort="margin">Status</th><th data-sort="name">Vessel</th><th data-sort="dwt">DWT/Blt</th><th></th>
+            <th data-sort="fit" title="Sort: best fit first, shortest ballast within each tier">Status ▾</th><th data-sort="name">Vessel</th><th data-sort="dwt">DWT/Blt</th><th></th>
             <th>Dely port</th><th data-sort="open">Open</th><th>Owner</th>
             <th style="text-align:right">Dist NM</th><th style="text-align:right">Spd</th>
-            <th style="text-align:right">Ballast d</th><th data-sort="eta">ETA ▾</th><th data-sort="margin" style="text-align:right">vs Canc.</th>
+            <th data-sort="ballast" style="text-align:right" title="$ = top-3 shortest ballast among fixable ships — cheapest delivery">Ballast d</th><th data-sort="eta">ETA</th><th data-sort="margin" style="text-align:right">vs Canc.</th>
           </tr></thead>
           <tbody id="lm_tbody"></tbody>
         </table>
@@ -538,6 +559,7 @@ function buildUI() {
   on('lm_layTo', 'change', e => { ui.layTo = e.target.value; saveUi(); render(); });
   on('lm_extra', 'input', e => { ui.extraDays = e.target.value; saveUi(); render(); });
   on('lm_tol', 'input', e => { ui.tolDays = e.target.value; saveUi(); render(); });
+  on('lm_waitTol', 'input', e => { ui.waitTolDays = e.target.value; saveUi(); render(); });
   on('lm_margin', 'input', e => { ui.seaMarginPct = e.target.value; saveUi(); render(); });
   on('lm_speed', 'input', e => { ui.fixedSpeed = e.target.value; saveUi(); render(); });
   on('lm_search', 'input', e => { ui.search = e.target.value; saveUi(); render(); });
