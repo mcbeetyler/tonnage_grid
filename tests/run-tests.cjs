@@ -120,7 +120,7 @@ section('csv-import + app');
     A(s.owner === 'GLOBE MARINE', 'fresher csv reclaims stale override');
 
     // Feed sends whole tabs — header row may sit below decorative rows
-    const junky = ['\tFILTERING & SO\t\t', '\tSantos/Qingdao\t2026\t', TSV].join('\n');
+    const junky = ['\\tFILTERING & SO\\t\\t', '\\tSantos/Qingdao\\t2026\\t', TSV].join('\\n');
     A(looksLikeCSV(junky), 'header found below junk rows');
     A(parseCSVVessels(junky).vessels.length === 2, 'parse with junk rows above header');
 
