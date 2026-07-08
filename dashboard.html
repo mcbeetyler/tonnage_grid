@@ -670,6 +670,7 @@
   <button class="tab-btn active" onclick="switchTab('tonnage')">Tonnage Board</button>
   <button class="tab-btn" onclick="switchTab('cargo')">Cargo Book</button>
   <button class="tab-btn" onclick="switchTab('matcher')">Laycan Matcher</button>
+  <button class="tab-btn" onclick="switchTab('pairings')">Pairings</button>
   <button class="tab-btn" onclick="switchTab('voyages')">Voyages</button>
   <button class="tab-btn" onclick="switchTab('estimator')">Voyage Estimator</button>
   <button class="tab-btn" onclick="switchTab('report')">Report</button>
@@ -992,6 +993,10 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 <div id="tab-matcher" class="tab-panel">
   <div id="lm_root"></div>
 </div><!-- end tab-matcher -->
+
+<div id="tab-pairings" class="tab-panel">
+  <div id="pr_root"></div>
+</div><!-- end tab-pairings -->
 
 <div id="tab-voyages" class="tab-panel">
   <!-- Bunker prices: drives TCE conversion for Market scatter voyage layer -->
@@ -1427,9 +1432,11 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 <script src="report.js"></script>
 <script src="market.js"></script>
 <script src="participants.js"></script>
-<!-- Laycan Matcher: SheetJS for xlsx import + seed snapshot + module -->
+<!-- Laycan Matcher + Pairings: shared fit logic, SheetJS for xlsx import, seed snapshot -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+<script src="fit-utils.js"></script>
 <script src="na-seed.js"></script>
 <script src="laycan-matcher.js"></script>
+<script src="pairings.js"></script>
 </body>
 </html>

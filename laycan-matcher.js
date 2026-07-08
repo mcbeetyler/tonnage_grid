@@ -22,6 +22,10 @@
 (function () {
 'use strict';
 
+// Shared fit logic (fit-utils.js): browser global or CJS require in tests
+const FU = (typeof FitUtils !== 'undefined') ? FitUtils
+  : (typeof require === 'function' ? require('./fit-utils.js') : null);
+
 const SEA_MARGIN = 1.08;
 const EXCLUDED_REGIONS = ['GONE', 'FIXED', 'ONSUB'];
 const NON_GEO_REGIONS = EXCLUDED_REGIONS.concat(['IN HOUSE']);
@@ -207,33 +211,8 @@ function handleFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
-// ─── Laycan parsing (for cargo-book prefill) ─────────────────────────────────
-const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
-function parseLaycanWindow(str) {
-  if (!str) return null;
-  const t = str.toLowerCase().replace(/\s+/g, '');
-  const yearNow = new Date().getFullYear();
-  const mk = (d, m) => {
-    let dt = new Date(Date.UTC(yearNow, m, d));
-    const now = new Date();
-    if (dt < now && (now - dt) / 86400000 > 180) dt = new Date(Date.UTC(yearNow + 1, m, d));
-    return dt.toISOString().slice(0, 10);
-  };
-  let m;
-  // 11jul-12jul / 11jul–12aug
-  if ((m = t.match(/^(\d{1,2})([a-z]{3})[-–\/](\d{1,2})([a-z]{3})/)) && MONTHS[m[2]] != null && MONTHS[m[4]] != null)
-    return { from: mk(+m[1], MONTHS[m[2]]), to: mk(+m[3], MONTHS[m[4]]) };
-  // 1-10aug / 01-10aug
-  if ((m = t.match(/^(\d{1,2})[-–\/](\d{1,2})([a-z]{3})/)) && MONTHS[m[3]] != null)
-    return { from: mk(+m[1], MONTHS[m[3]]), to: mk(+m[2], MONTHS[m[3]]) };
-  // 15jul (single day)
-  if ((m = t.match(/^(\d{1,2})([a-z]{3})$/)) && MONTHS[m[2]] != null)
-    return { from: mk(+m[1], MONTHS[m[2]]), to: mk(+m[1], MONTHS[m[2]]) };
-  // jul11-12 style
-  if ((m = t.match(/^([a-z]{3})(\d{1,2})[-–\/](\d{1,2})$/)) && MONTHS[m[1]] != null)
-    return { from: mk(+m[2], MONTHS[m[1]]), to: mk(+m[3], MONTHS[m[1]]) };
-  return null;
-}
+// ─── Laycan parsing (delegates to shared fit-utils) ──────────────────────────
+function parseLaycanWindow(str) { return FU.parseLaycanWindow(str); }
 
 function matchPortName(text) {
   if (!text || !LM.data) return null;
@@ -265,7 +244,6 @@ function computeRows() {
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
   const layTo = ui.layTo ? new Date(ui.layTo + 'T23:59:59Z') : null;
   const layFrom = ui.layFrom ? new Date(ui.layFrom + 'T00:00:00Z') : null;
-  const tolMs = (parseFloat(ui.tolDays) || 0) * 86400000;
   const extra = (parseFloat(ui.extraDays) || 0) * 86400000;
 
   const rows = [];
@@ -308,26 +286,15 @@ function computeRows() {
       eta = new Date(departs.getTime() + ballastDays * 86400000 + extra);
     }
 
-    let status = 'NODATA', marginDays = null, waitDays = null;
-    if (eta && layTo) {
-      marginDays = (layTo - eta) / 86400000;
-      if (layFrom && eta < layFrom) waitDays = (layFrom - eta) / 86400000;
-      const waitTol = parseFloat(ui.waitTolDays);
-      if (eta <= layTo) {
-        // Makes cancelling — but a ship arriving long before the window opens
-        // would have to sit idle, and few owners will wait: that's EARLY, not FIT.
-        status = (waitDays != null && !isNaN(waitTol) && waitDays > waitTol) ? 'EARLY' : 'FIT';
-      }
-      else if (eta - layTo <= tolMs) status = 'TIGHT';
-      else status = 'MISSES';
-    } else if (eta) status = 'ETA';
+    const { status, marginDays, waitDays } = FU.fitStatus(eta, layFrom, layTo,
+      { waitTolDays: ui.waitTolDays, tightTolDays: ui.tolDays });
 
     rows.push({ v, dist, distSrc, speed, ballastDays, eta, clamped, status, marginDays, waitDays });
   }
 
   const dir = ui.sortDir;
   const key = ui.sortKey;
-  const FIT_ORDER = { FIT: 0, TIGHT: 1, EARLY: 2, ETA: 3, MISSES: 4, NODATA: 5 };
+  const FIT_ORDER = FU.FIT_ORDER;
   rows.sort((a, b) => {
     const val = r => {
       switch (key) {
