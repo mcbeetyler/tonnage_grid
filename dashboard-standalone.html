@@ -11150,10 +11150,25 @@ if (IS_BROWSER) {
     if (tab === 'matcher') lmInit();
   };
 
-  // Public hook for the Google Sheets feed (feeds.js)
+  // Public hook for the Google Sheets feed (feeds.js).
+  // distancesRows may be null: the script only sends the (rarely-changing)
+  // distances matrix once a day — in between, we reuse the cached matrix.
   window.LaycanMatcher = {
     applyNatlFeed(mainviewRows, distancesRows) {
-      const data = parseArrays(mainviewRows, distancesRows, 'sheets feed');
+      let data;
+      if (distancesRows) {
+        data = parseArrays(mainviewRows, distancesRows, 'sheets feed');
+      } else {
+        loadData(); // ensure LM.data holds the cached matrix (or seed)
+        if (!LM.data) throw new Error('mainview-only feed but no cached distances');
+        const fresh = parseArrays(mainviewRows,
+          [[], ['', 'DELY PORT']], 'sheets feed'); // vessels only; empty matrix
+        data = {
+          imported_at: fresh.imported_at, source: 'sheets feed',
+          ports: LM.data.ports, distances: LM.data.distances,
+          port_regions: LM.data.port_regions, vessels: fresh.vessels,
+        };
+      }
       storeData(data);
       if (LM.initialised) render();
       return { vessels: data.vessels.length, ports: Object.keys(data.distances).length };
@@ -12403,9 +12418,10 @@ function applyCargo(data) {
 
 function applyNatl(data) {
   if (!window.LaycanMatcher) throw new Error('laycan matcher not loaded');
-  if (!data || !data.mainview || !data.distances) throw new Error('natl feed missing mainview/distances');
-  const r = window.LaycanMatcher.applyNatlFeed(data.mainview, data.distances);
-  return `${r.vessels} vessels, ${r.ports} dely ports`;
+  if (!data || !data.mainview) throw new Error('natl feed missing mainview');
+  // distances arrive once a day; in between the cached matrix is reused
+  const r = window.LaycanMatcher.applyNatlFeed(data.mainview, data.distances || null);
+  return `${r.vessels} vessels, ${r.ports} dely ports${data.distances ? '' : ' (cached matrix)'}`;
 }
 
 const APPLIERS = { ecsa: applyEcsa, cargo: applyCargo, natl: applyNatl };

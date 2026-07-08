@@ -88,14 +88,27 @@ function pushSource_(source) {
   } else if (source === 'cargo') {
     data = tab.getDataRange().getDisplayValues();
   } else { // natl — raw values so dates stay dates (serialised to ISO in JSON)
-    const distances = ss.getSheetByName(cfg.distancesTab);
-    if (!distances) throw new Error('tab "' + cfg.distancesTab + '" not found');
-    data = {
-      mainview: tab.getDataRange().getValues(),
-      distances: distances.getDataRange().getValues(),
-    };
+    // The distances matrix is ~90% of the payload and rarely changes:
+    // send it once a day, mainview every run. Keeps each run fast and
+    // well inside Google's daily trigger-runtime quota.
+    const props = PropertiesService.getScriptProperties();
+    const today = Utilities.formatDate(new Date(), 'UTC', 'yyyy-MM-dd');
+    const sendDistances = props.getProperty('NATL_DIST_SENT') !== today;
+    data = { mainview: tab.getDataRange().getValues() };
+    if (sendDistances) {
+      const distances = ss.getSheetByName(cfg.distancesTab);
+      if (!distances) throw new Error('tab "' + cfg.distancesTab + '" not found');
+      data.distances = distances.getDataRange().getValues();
+    }
+    postPayload_(source, data);
+    if (sendDistances) props.setProperty('NATL_DIST_SENT', today);
+    return;
   }
 
+  postPayload_(source, data);
+}
+
+function postPayload_(source, data) {
   const resp = UrlFetchApp.fetch(CONFIG.appUrl + '/api/import', {
     method: 'post',
     contentType: 'application/json',

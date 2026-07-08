@@ -75,9 +75,10 @@ function applyCargo(data) {
 
 function applyNatl(data) {
   if (!window.LaycanMatcher) throw new Error('laycan matcher not loaded');
-  if (!data || !data.mainview || !data.distances) throw new Error('natl feed missing mainview/distances');
-  const r = window.LaycanMatcher.applyNatlFeed(data.mainview, data.distances);
-  return `${r.vessels} vessels, ${r.ports} dely ports`;
+  if (!data || !data.mainview) throw new Error('natl feed missing mainview');
+  // distances arrive once a day; in between the cached matrix is reused
+  const r = window.LaycanMatcher.applyNatlFeed(data.mainview, data.distances || null);
+  return `${r.vessels} vessels, ${r.ports} dely ports${data.distances ? '' : ' (cached matrix)'}`;
 }
 
 const APPLIERS = { ecsa: applyEcsa, cargo: applyCargo, natl: applyNatl };
