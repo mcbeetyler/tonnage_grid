@@ -24,8 +24,11 @@
 
 const SEA_MARGIN = 1.08;
 const EXCLUDED_REGIONS = ['GONE', 'FIXED', 'ONSUB'];
+const NON_GEO_REGIONS = EXCLUDED_REGIONS.concat(['IN HOUSE']);
+const DAYS_TO_NM_SPEED = 13; // "9.5d" input converts to NM at this speed
 const LS_KEY = 'lm_data';
 const LS_UI = 'lm_ui';
+const LS_CUSTOM = 'lm_custom';
 
 // Port display order: NA/Continent loading areas first
 const PORT_ORDER = ['Rouen', 'Ust Luga', 'NORFOLK', 'Nola', 'Yuzhny', 'Itaqui', 'San Lorenzo',
@@ -45,6 +48,36 @@ let ui = Object.assign({
 }, IS_BROWSER ? JSON.parse(localStorage.getItem(LS_UI) || '{}') : {});
 
 function saveUi() { if (IS_BROWSER) localStorage.setItem(LS_UI, JSON.stringify(ui)); }
+
+// ─── Custom load areas ───────────────────────────────────────────────────────
+// A custom area (e.g. "NCSA bss Pto Drummond") resolves distance per vessel:
+//   1. regionNm[vessel zone]  — your NM constant from that opening zone
+//   2. else base port distance + offsetNm  — route-offset rough guide
+// Input "9.5d" in the editor = days at 13 kn, converted to NM on save.
+let customAreas = IS_BROWSER ? JSON.parse(localStorage.getItem(LS_CUSTOM) || '[]') : [];
+function saveCustom() { if (IS_BROWSER) localStorage.setItem(LS_CUSTOM, JSON.stringify(customAreas)); }
+function getArea(portKey) {
+  if (!portKey || !portKey.startsWith('custom:')) return null;
+  const nm = portKey.slice(7);
+  return customAreas.find(a => a.name === nm) || null;
+}
+function vesselZones() {
+  const seen = new Map();
+  if (LM.data) for (const v of LM.data.vessels) {
+    const r = (v.region || '').toUpperCase();
+    if (r && !NON_GEO_REGIONS.includes(r)) seen.set(r, (seen.get(r) || 0) + 1);
+  }
+  for (const a of customAreas) for (const z in (a.regionNm || {})) if (!seen.has(z)) seen.set(z, 0);
+  return [...seen.entries()].sort((x, y) => y[1] - x[1]).map(e => e[0]);
+}
+function parseNmInput(raw) {
+  const t = String(raw || '').trim().toLowerCase();
+  if (!t) return null;
+  let m = t.match(/^([\d.]+)\s*d(ays?)?$/);
+  if (m) return Math.round(parseFloat(m[1]) * 24 * DAYS_TO_NM_SPEED);
+  const f = parseFloat(t.replace(/,/g, ''));
+  return isNaN(f) ? null : Math.round(f);
+}
 
 // ─── Data loading ────────────────────────────────────────────────────────────
 function loadData() {
@@ -211,8 +244,15 @@ function matchPortName(text) {
   // exact/substring match against actual destination port names first
   for (const p of available) if (t.includes(p.toLowerCase())) return p;
   for (const k in aliases) if (t.includes(k) && available.includes(aliases[k])) return aliases[k];
+  // custom areas: match on name or any word >= 4 chars
+  for (const a of customAreas) {
+    const an = a.name.toLowerCase();
+    if (t.includes(an) || an.includes(t)) return 'custom:' + a.name;
+    for (const w of an.split(/[\s,\/·-]+/)) if (w.length >= 4 && t.includes(w)) return 'custom:' + a.name;
+  }
   return null;
 }
+function portLabel(portKey) { return portKey && portKey.startsWith('custom:') ? portKey.slice(7) + ' ~' : portKey; }
 
 // ─── Core match ──────────────────────────────────────────────────────────────
 function computeRows() {
@@ -240,7 +280,19 @@ function computeRows() {
     }
 
     const key = (v.dely_port || '').toLowerCase();
-    const dist = (d.distances[key] && d.distances[key][ui.port]) || (v.pre_dist && v.pre_dist[ui.port]) || null;
+    const lookup = p => (d.distances[key] && d.distances[key][p]) || (v.pre_dist && v.pre_dist[p]) || null;
+    const area = getArea(ui.port);
+    let dist = null, distSrc = 'matrix';
+    if (area) {
+      const zone = (v.region || '').toUpperCase();
+      if (area.regionNm && area.regionNm[zone] != null) { dist = area.regionNm[zone]; distSrc = 'zone'; }
+      else if (area.base) {
+        const b = lookup(area.base);
+        if (b != null) { dist = b + (area.offsetNm || 0); distSrc = 'offset'; }
+      }
+    } else {
+      dist = lookup(ui.port);
+    }
     const speed = v.ballast_speed || 13;
 
     let eta = null, ballastDays = null, departs = null, clamped = false;
@@ -260,7 +312,7 @@ function computeRows() {
       if (layFrom && eta < layFrom) waitDays = (layFrom - eta) / 86400000;
     } else if (eta) status = 'ETA';
 
-    rows.push({ v, dist, speed, ballastDays, eta, clamped, status, marginDays, waitDays });
+    rows.push({ v, dist, distSrc, speed, ballastDays, eta, clamped, status, marginDays, waitDays });
   }
 
   const dir = ui.sortDir;
@@ -357,7 +409,7 @@ function render() {
         <td>${esc(r.v.dely_port || '—')}</td>
         <td style="font-family:var(--mono);font-size:12px">${openTxt}${r.clamped ? ' <span title="Open date in the past — departure assumed today" style="color:var(--amber)">▸today</span>' : ''}</td>
         <td>${esc(r.v.owner || '—')}</td>
-        <td style="text-align:right;font-family:var(--mono);font-size:12px">${r.dist ? r.dist.toLocaleString() : '—'}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:12px" title="${r.distSrc === 'zone' ? 'From your zone constant (' + esc(r.v.region || '') + ')' : r.distSrc === 'offset' ? 'Base port + offset — rough guide' : 'Distances matrix'}">${r.dist ? (r.distSrc !== 'matrix' ? '~' : '') + r.dist.toLocaleString() : '—'}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px">${r.speed ? r.speed.toFixed(1) : '—'}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px">${r.ballastDays != null ? r.ballastDays.toFixed(1) : '—'}</td>
         <td style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text-bright)">${fmtD(r.eta)}</td>
@@ -393,13 +445,22 @@ function buildUI() {
     .lm-table tr:hover td{background:var(--bg-hover)}
     .lm-drop{border:1.5px dashed var(--border2);border-radius:var(--radius);padding:8px 14px;font-size:12px;color:var(--text-dim);cursor:pointer;transition:all .15s}
     .lm-drop.over{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
+    .lm-mini{border:1px solid var(--border);background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;font-size:11px;padding:4px 10px}
+    .lm-mini:hover{border-color:var(--accent);color:var(--accent)}
   `;
   document.head.appendChild(style);
 
   const portOpts = () => {
     const ports = (LM.data && LM.data.ports) || PORT_ORDER;
     const ordered = PORT_ORDER.filter(p => ports.includes(p)).concat(ports.filter(p => !PORT_ORDER.includes(p)));
-    return ordered.map(p => `<option value="${esc(p)}"${p === ui.port ? ' selected' : ''}>${esc(p)}</option>`).join('');
+    let html = ordered.map(p => `<option value="${esc(p)}"${p === ui.port ? ' selected' : ''}>${esc(p)}</option>`).join('');
+    if (customAreas.length) {
+      html += '<optgroup label="Custom areas">' + customAreas.map(a => {
+        const val = 'custom:' + a.name;
+        return `<option value="${esc(val)}"${val === ui.port ? ' selected' : ''}>${esc(a.name)} ~</option>`;
+      }).join('') + '</optgroup>';
+    }
+    return html;
   };
 
   root.innerHTML = `
@@ -419,7 +480,11 @@ function buildUI() {
       <div class="lm-controls">
         <div class="lm-field"><label>Cargo (from Cargo Book)</label>
           <select id="lm_cargoPick" style="max-width:260px"><option value="">— manual entry —</option></select></div>
-        <div class="lm-field"><label>Load port</label><select id="lm_port">${portOpts()}</select></div>
+        <div class="lm-field"><label>Load port / area</label>
+          <div style="display:flex;gap:4px">
+            <select id="lm_port">${portOpts()}</select>
+            <button id="lm_custBtn" title="Manage custom load areas (NCSA, one-off ports…)" style="border:1px solid var(--border);background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;padding:0 9px;font-size:14px">✎</button>
+          </div></div>
         <div class="lm-field"><label>Laycan from</label><input type="date" id="lm_layFrom" value="${esc(ui.layFrom)}"></div>
         <div class="lm-field"><label>Cancelling</label><input type="date" id="lm_layTo" value="${esc(ui.layTo)}"></div>
         <div class="lm-field"><label title="One-off port: extra steaming days vs the selected base port (+/-)">± days (one-off port)</label>
@@ -429,6 +494,7 @@ function buildUI() {
         <div class="lm-field"><label>Search</label><input type="text" id="lm_search" placeholder="vessel / owner / port" value="${esc(ui.search)}" style="width:170px"></div>
       </div>
       <div id="lm_pickNote" style="display:none;font-size:12px;font-weight:500;margin:-4px 0 10px"></div>
+      <div id="lm_custPanel" style="display:none"></div>
 
       <div class="lm-controls" style="gap:6px">
         <span class="lm-check" id="lm_grain">Grain clean</span>
@@ -488,6 +554,13 @@ function buildUI() {
     });
   });
 
+  // Custom areas editor
+  document.getElementById('lm_custBtn').addEventListener('click', () => {
+    const p = document.getElementById('lm_custPanel');
+    if (p.style.display === 'none') { renderCustPanel(); p.style.display = ''; }
+    else p.style.display = 'none';
+  });
+
   // Import: click + drag-drop
   const drop = document.getElementById('lm_drop');
   const file = document.getElementById('lm_file');
@@ -498,6 +571,112 @@ function buildUI() {
   drop.addEventListener('drop', e => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
 
   populateCargoPicker();
+}
+
+// ─── Custom areas editor panel ───────────────────────────────────────────────
+let custEditing = null; // name of area being edited, or '' for new
+
+function refreshPortSelect() {
+  const sel = document.getElementById('lm_port');
+  if (!sel) return;
+  const ports = (LM.data && LM.data.ports) || PORT_ORDER;
+  const ordered = PORT_ORDER.filter(p => ports.includes(p)).concat(ports.filter(p => !PORT_ORDER.includes(p)));
+  let html = ordered.map(p => `<option value="${esc(p)}"${p === ui.port ? ' selected' : ''}>${esc(p)}</option>`).join('');
+  if (customAreas.length) {
+    html += '<optgroup label="Custom areas">' + customAreas.map(a => {
+      const val = 'custom:' + a.name;
+      return `<option value="${esc(val)}"${val === ui.port ? ' selected' : ''}>${esc(a.name)} ~</option>`;
+    }).join('') + '</optgroup>';
+  }
+  sel.innerHTML = html;
+}
+
+function renderCustPanel() {
+  const p = document.getElementById('lm_custPanel');
+  if (!p) return;
+  const area = custEditing != null ? (customAreas.find(a => a.name === custEditing) || { name: '', regionNm: {}, base: '', offsetNm: 0 }) : null;
+  const zones = vesselZones();
+  const ports = (LM.data && LM.data.ports) || [];
+  const basePorts = PORT_ORDER.filter(x => ports.includes(x)).concat(ports.filter(x => !PORT_ORDER.includes(x)));
+
+  const listHtml = customAreas.length
+    ? customAreas.map(a => {
+        const nZones = Object.keys(a.regionNm || {}).length;
+        const fb = a.base ? `${esc(a.base)} ${a.offsetNm >= 0 ? '+' : ''}${a.offsetNm || 0} NM` : 'none';
+        return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+          <strong>${esc(a.name)}</strong>
+          <span style="color:var(--text-dim)">${nZones} zone constant${nZones === 1 ? '' : 's'} · fallback: ${fb}</span>
+          <div style="flex:1"></div>
+          <button class="lm-mini" data-edit="${esc(a.name)}">Edit</button>
+          <button class="lm-mini" data-del="${esc(a.name)}" style="color:var(--red)">Delete</button>
+        </div>`;
+      }).join('')
+    : '<div style="font-size:12px;color:var(--text-dim);padding:6px 0">No custom areas yet.</div>';
+
+  const formHtml = area == null ? '' : `
+    <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
+      <div class="lm-controls">
+        <div class="lm-field"><label>Area name</label><input type="text" id="lm_caName" placeholder="e.g. NCSA bss Pto Drummond" value="${esc(area.name)}" style="width:220px"></div>
+        <div class="lm-field"><label>Fallback base port</label>
+          <select id="lm_caBase"><option value="">— none —</option>${basePorts.map(x => `<option${x === area.base ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
+        <div class="lm-field"><label>Fallback ± NM</label><input type="text" id="lm_caOff" style="width:90px" value="${area.offsetNm || 0}"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">
+        Zone constants (preferred): NM from each opening zone to this area. Accepts NM ("4600") or days at ${DAYS_TO_NM_SPEED} kn ("9.5d"). Blank = fall back to base port ± NM.
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        ${zones.map(z => `<div class="lm-field"><label>${esc(z)}</label>
+          <input type="text" class="lm-caZone" data-zone="${esc(z)}" style="width:110px" placeholder="NM or 9.5d"
+            value="${area.regionNm && area.regionNm[z] != null ? area.regionNm[z] : ''}"></div>`).join('')}
+        <div class="lm-field"><label>+ zone</label><input type="text" id="lm_caNewZone" style="width:110px" placeholder="zone name"></div>
+      </div>
+      <button class="lm-mini" id="lm_caSave" style="background:var(--accent);color:#fff;border-color:var(--accent);padding:6px 16px">Save area</button>
+      <button class="lm-mini" id="lm_caCancel" style="padding:6px 12px">Cancel</button>
+      <span id="lm_caErr" style="font-size:12px;color:var(--red);margin-left:8px"></span>
+    </div>`;
+
+  p.innerHTML = `
+    <div style="border:1px solid var(--border);border-radius:var(--radius);background:var(--bg3);padding:12px 16px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+        <strong style="font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim)">Custom load areas</strong>
+        <div style="flex:1"></div>
+        ${area == null ? '<button class="lm-mini" id="lm_caAdd">+ Add area</button>' : ''}
+      </div>
+      ${listHtml}${formHtml}
+    </div>`;
+
+  const q = id => p.querySelector('#' + id);
+  p.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => { custEditing = b.dataset.edit; renderCustPanel(); }));
+  p.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+    customAreas = customAreas.filter(a => a.name !== b.dataset.del);
+    if (ui.port === 'custom:' + b.dataset.del) ui.port = 'Rouen';
+    saveCustom(); saveUi(); refreshPortSelect(); renderCustPanel(); render();
+  }));
+  if (q('lm_caAdd')) q('lm_caAdd').addEventListener('click', () => { custEditing = ''; renderCustPanel(); });
+  if (q('lm_caCancel')) q('lm_caCancel').addEventListener('click', () => { custEditing = null; renderCustPanel(); });
+  if (q('lm_caSave')) q('lm_caSave').addEventListener('click', () => {
+    const name = q('lm_caName').value.trim();
+    if (!name) { q('lm_caErr').textContent = 'Name required.'; return; }
+    const regionNm = {};
+    p.querySelectorAll('.lm-caZone').forEach(inp => {
+      const nm = parseNmInput(inp.value);
+      if (nm != null) regionNm[inp.dataset.zone.toUpperCase()] = nm;
+    });
+    const nz = q('lm_caNewZone').value.trim().toUpperCase();
+    const a = {
+      name,
+      base: q('lm_caBase').value || null,
+      offsetNm: parseNmInput(q('lm_caOff').value) || 0,
+      regionNm,
+    };
+    if (nz && !(nz in regionNm)) a.regionNm[nz] = null; // placeholder row appears next edit
+    const old = custEditing;
+    customAreas = customAreas.filter(x => x.name !== old && x.name !== name).concat([a]);
+    if (old && ui.port === 'custom:' + old) ui.port = 'custom:' + name;
+    saveCustom(); saveUi();
+    custEditing = nz ? name : null; // keep editing if they added a new zone row
+    refreshPortSelect(); renderCustPanel(); render();
+  });
 }
 
 function populateCargoPicker() {
@@ -526,7 +705,7 @@ function populateCargoPicker() {
       ui.port = p; document.getElementById('lm_port').value = p;
       if (p.toLowerCase() !== (c.load || '').toLowerCase().trim()) msgs.push(`Load "${c.load}" mapped to ${p}.`);
     } else if (c.load) {
-      msgs.push(`⚠ No distances for load port "${c.load}" — pick the nearest base port and use ± days (e.g. Tubarao ≈ Santos + 1d). Load port left at ${ui.port}.`);
+      msgs.push(`⚠ No distances for load port "${c.load}" — pick the nearest base port and use ± days, or add it as a custom area (✎). Load port left at ${portLabel(ui.port)}.`);
     }
     if (note && msgs.length) {
       note.textContent = msgs.join(' ');
@@ -561,7 +740,8 @@ if (typeof module !== 'undefined' && module.exports) {
     _test: {
       setData: d => { LM.data = d; },
       setUi: u => { Object.assign(ui, u); },
-      computeRows,
+      setCustom: c => { customAreas = c; },
+      computeRows, parseNmInput, vesselZones,
     },
   };
 }
