@@ -601,6 +601,11 @@ function applyEdit(idx, field, val) {
     }
   }
 
+  // Stamp the manual override: CSV sync will respect this edit until a
+  // CSV row with a fresher UPDATE timestamp arrives (last write wins).
+  v.field_overrides = v.field_overrides || {};
+  v.field_overrides[field] = now;
+
   save();
 }
 
@@ -1163,6 +1168,32 @@ const CSV_HEADER_MAP = {
   'bunkers': 'bunker',
   'scrubber': 'scrubber_raw',
   'scr': 'scrubber_raw',
+  // Extended desk-sheet columns
+  'update': 'csv_updated_raw',      // row freshness — drives sync conflict resolution
+  'updated': 'csv_updated_raw',
+  'hire ta': 'hire_ta',
+  'hire (ta)': 'hire_ta',
+  'user': 'user',
+  'scrub fit': 'scrubber_raw',
+  'scrub chart acc': 'scrub_chart_acc_raw',
+  'oa': 'spec_oa',
+  'duration': 'spec_duration',
+  'final intake': 'spec_final_intake',
+  'best speed': null,               // lookup label column ("Globe Danae 1") — not a speed
+  'tpc': 'spec_tpc',
+  'cubic': 'spec_cubic',
+  'speed b': 'spec_speed_b',
+  'ifo day b': 'spec_ifo_b',
+  'mdo day b': 'spec_mdo_b',
+  'speed l': 'spec_speed_l',
+  'ifo day l': 'spec_ifo_l',
+  'mdo day l': 'spec_mdo_l',
+  'ifo at port wking': 'spec_ifo_port',
+  'mdo at port wking': 'spec_mdo_port',
+  'type': 'vessel_type',            // KMX / PMX / PPMX / 87DWT
+  'added to grid': 'added_to_grid',
+  'status': 'csv_status_raw',       // 1 = active
+  'cargo': 'last_cargo',            // GRAIN CLEAN / COAL / X DD ...
 };
 
 function normalizeHeader(h) {
@@ -1252,14 +1283,54 @@ function parseMoney(s) {
 }
 
 function parseAgeField(s) {
-  // "Jan-2006" → 2006;  "2016" → 2016;  "16" → 2016
+  // "Jan-2006" → 2006;  "2016" → 2016;  "16" → 2016;  "Jan-10" → 2010 (Excel
+  // 2-digit year display);  "Oct-24" → 2024.
   // Reject "1-Jan" etc. where Excel has dropped the year — would otherwise be misread as 2001.
   if (!s) return null;
   const trimmed = s.trim();
   const m = trimmed.match(/(19|20)\d{2}/);
   if (m) return parseInt(m[0], 10);
+  // "Jan-10" / "Jan 10" / "jan10" — month name + 2-digit year
+  const my = trimmed.match(/^[A-Za-z]{3,}[-\s]?(\d{2})$/);
+  if (my) {
+    const yy = parseInt(my[1], 10);
+    // Century pivot: allow newbuilds a couple of years out, else 19xx
+    return yy <= (new Date().getFullYear() % 100) + 3 ? 2000 + yy : 1900 + yy;
+  }
   if (/^\d{1,2}$/.test(trimmed)) return 2000 + parseInt(trimmed, 10);
   return null;
+}
+
+function parseDwtField(s) {
+  // "80,306" → 80306;  "80.306" (EU thousands) → 80306;  "82" → 82000;
+  // "76,483 " → 76483. Sanity range for this desk: 10k–250k.
+  if (!s) return null;
+  const t = s.toString().trim();
+  // Digit groups separated by , or . in thousands pattern
+  const grp = t.match(/^(\d{1,3})[.,](\d{3})(?:[.,](\d{3}))?$/);
+  if (grp) {
+    const n = parseInt(grp[1] + grp[2] + (grp[3] || ''), 10);
+    if (n >= 10000 && n <= 250000) return n;
+  }
+  const n = parseFloat(t.replace(/[,\s]/g, ''));
+  if (isNaN(n)) return null;
+  if (n < 1000) return Math.round(n * 1000);   // "82" / "76.5" → 82,000 / 76,500
+  return Math.round(n);
+}
+
+// "08-Jul 10:46" → ISO timestamp (current year, rolled back a year if it would
+// land in the future — a Dec sheet read in Jan).
+function parseCsvUpdateTs(s) {
+  if (!s) return null;
+  const m = s.trim().match(/^(\d{1,2})[-\s]([A-Za-z]{3,})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (!m) return null;
+  const monthMap = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+  const mo = monthMap[m[2].slice(0, 3).toLowerCase()];
+  if (mo == null) return null;
+  const now = new Date();
+  let d = new Date(now.getFullYear(), mo, parseInt(m[1], 10), parseInt(m[3] || '0', 10), parseInt(m[4] || '0', 10));
+  if (d.getTime() > now.getTime() + 86400000) d.setFullYear(d.getFullYear() - 1);
+  return d.toISOString();
 }
 
 function parseLaydayDate(s) {
@@ -1273,7 +1344,10 @@ function parseLaydayDate(s) {
   const monthKey = m[2].slice(0, 3).toLowerCase();
   const month = monthMap[monthKey];
   if (!month) return null;
-  const year = new Date().getFullYear();
+  // Year-roll: "15-Jan" pasted in December means next year, not 11 months ago
+  let year = new Date().getFullYear();
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  if (Date.now() - candidate.getTime() > 180 * 86400000) year += 1;
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
@@ -1314,6 +1388,9 @@ function parseCSVVessels(raw) {
       hire_offer: null, bb_offer: null, eta_ecsa: null, eta_type: null,
       owner: null, bki_eqvt: null, rate_pmt: null, arrow_eqvt: null,
       notes: null, bunker: null, scrubber: null,
+      hire_ta: null, scrub_chart_acc: null, vessel_type: null,
+      last_cargo: null, added_to_grid: null, user: null,
+      csv_updated: null, csv_status: null, specs: {},
       market_colour: [],
       status: 'OPEN',
       raw: cells.join('\t'),
@@ -1326,18 +1403,27 @@ function parseCSVVessels(raw) {
       const val = cells[j];
       if (!field || !val) continue;
 
+      // Spec columns (TPC, cubic, speeds/consumptions...) → v.specs.*
+      if (field.startsWith('spec_')) {
+        const n = parseFloat(val.toString().replace(/[,\s]/g, ''));
+        if (!isNaN(n)) v.specs[field.slice(5)] = n;
+        continue;
+      }
+
       switch (field) {
         case 'vessel_name':
           v.vessel_name = val.replace(/\s+\d+\s*dwt$/i, '').trim();
           break;
         case 'dwt': {
-          const n = parseFloat(val.replace(/[,\s]/g, ''));
-          if (!isNaN(n)) v.dwt = n < 1000 ? n * 1000 : n;
+          const n = parseDwtField(val);
+          if (n != null) v.dwt = n;
           break;
         }
-        case 'build_year_raw':
-          v.build_year = parseAgeField(val);
+        case 'build_year_raw': {
+          const y = parseAgeField(val);
+          if (y) v.build_year = y;   // don't clobber a good parse with a bad duplicate column
           break;
+        }
         case 'draft': {
           const n = parseFloat(val);
           if (!isNaN(n)) v.draft = n;
@@ -1377,6 +1463,18 @@ function parseCSVVessels(raw) {
           else if (/no|false|none/.test(s)) v.scrubber = false;
           break;
         }
+        case 'csv_updated_raw': v.csv_updated = parseCsvUpdateTs(val); break;
+        case 'hire_ta': v.hire_ta = parseMoney(val); break;
+        case 'user': v.user = val; break;
+        case 'scrub_chart_acc_raw': v.scrub_chart_acc = /true|yes|1/i.test(val); break;
+        case 'vessel_type': v.vessel_type = val.toUpperCase(); break;
+        case 'added_to_grid': {
+          const d = parseLaydayDate(val);
+          if (d) v.added_to_grid = d;
+          break;
+        }
+        case 'csv_status_raw': v.csv_status = val.trim(); break;
+        case 'last_cargo': v.last_cargo = val.toUpperCase(); break;
       }
     }
 
@@ -1389,6 +1487,7 @@ function parseCSVVessels(raw) {
         collecting: false, notes: null,
       }];
     }
+    if (v.csv_updated) v.last_updated = v.csv_updated;
 
     if (v.vessel_name) vessels.push(v);
   }
@@ -1396,24 +1495,83 @@ function parseCSVVessels(raw) {
   return { vessels, headers: headerCells, mapping };
 }
 
-// Reconcile CSV upload against the board.
-// - New vessel names → added immediately
-// - Existing vessels → LEFT UNTOUCHED (manual edits preserved)
+// Reconcile CSV upload against the board — CSV IS THE SOURCE OF TRUTH.
+// - New vessel names → added
+// - Existing vessels → CSV-owned fields UPDATED, except fields the user
+//   manually edited AFTER the CSV row's UPDATE timestamp (field_overrides,
+//   stamped by applyEdit). A fresher CSV row later wins those back.
+// - Bid-side intel (p6_bid, bid_usd, bidding_charterer, bid_history) and
+//   fixture fields are NEVER touched by CSV — that's desk knowledge.
+// - Status: CSV never flips a FIXED/FAILED/WITHDRAWN ship back to OPEN.
 // - Existing OPEN vessels NOT in the CSV → returned as withdraw CANDIDATES
 //   (caller must explicitly confirm before applying).
-function mergeCSVVessels(newVessels) {
+
+// Scalar fields the CSV owns (copied when present on the CSV row)
+const CSV_SYNC_FIELDS = ['dwt', 'build_year', 'draft', 'yard', 'origin', 'delivery_basis',
+  'laycan_date', 'open_date', 'eta_ecsa', 'eta_type', 'owner', 'bki_eqvt', 'rate_pmt',
+  'arrow_eqvt', 'notes', 'bunker', 'scrubber', 'hire_offer', 'bb_offer', 'hire_ta',
+  'scrub_chart_acc', 'vessel_type', 'last_cargo', 'added_to_grid', 'user'];
+
+function syncCSVVessels(newVessels) {
   const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const csvNames = new Set(newVessels.map(v => norm(v.vessel_name)).filter(Boolean));
-  let added = 0, skipped = 0;
+  let added = 0, updated = 0, unchanged = 0, protectedFields = 0;
 
   for (const nv of newVessels) {
-    const exists = vessels.some(v => norm(v.vessel_name) === norm(nv.vessel_name));
-    if (exists) {
-      skipped++;
-    } else {
+    const existing = vessels.find(v => norm(v.vessel_name) === norm(nv.vessel_name));
+    if (!existing) {
+      if (nv.csv_status === '0') nv.status = 'WITHDRAWN';
       vessels.push(nv);
       added++;
+      continue;
     }
+
+    const rowTs = nv.csv_updated || new Date().toISOString();
+    const overrides = existing.field_overrides || {};
+    // A manual edit newer than this CSV row wins; otherwise CSV wins.
+    const isProtected = f => overrides[f] && overrides[f] > rowTs;
+    let changed = false;
+
+    for (const f of CSV_SYNC_FIELDS) {
+      if (nv[f] == null || nv[f] === '') continue;
+      if (isProtected(f)) { protectedFields++; continue; }
+      if (existing[f] !== nv[f]) { existing[f] = nv[f]; changed = true; }
+    }
+    // Specs merge (TPC, cubic, speeds/consumptions)
+    if (nv.specs && Object.keys(nv.specs).length) {
+      existing.specs = Object.assign({}, existing.specs, nv.specs);
+    }
+
+    // market_colour: CSV owns the OFFER side only; bid side is desk intel.
+    if (nv.hire_offer != null || nv.bki_eqvt != null || nv.bb_offer != null) {
+      if (!existing.market_colour || !existing.market_colour[0]) {
+        existing.market_colour = [{ route: 'ECSA FH', bid_usd: null, p6_bid: null,
+          offer_usd: null, p6_offer: null, bb_usd: null,
+          bid_multiple_claims: false, is_bid: false, is_idea: false, collecting: false, notes: null }];
+      }
+      const mc = existing.market_colour[0];
+      const beforeOffer = { p6: mc.p6_offer, raw: mc.offer_usd, bb: mc.bb_usd };
+      if (nv.hire_offer != null && !isProtected('hire_offer')) mc.offer_usd = nv.hire_offer;
+      if (nv.bki_eqvt != null && !isProtected('p6_offer') && !isProtected('bki_eqvt')) mc.p6_offer = nv.bki_eqvt;
+      if (nv.bb_offer != null && !isProtected('bb_offer')) mc.bb_usd = nv.bb_offer;
+      if (mc.p6_offer !== beforeOffer.p6 || mc.offer_usd !== beforeOffer.raw || mc.bb_usd !== beforeOffer.bb) {
+        existing.offer_history = existing.offer_history || [];
+        existing.offer_history.push({ ts: rowTs, p6_offer: mc.p6_offer, offer_usd: mc.offer_usd, bb_usd: mc.bb_usd });
+        existing.offer_updated_at = rowTs;
+        changed = true;
+      }
+    }
+
+    // Status: '1' = active. Only ever (re)opens ships that are already OPEN
+    // or WITHDRAWN — never resurrects FIXED/FAILED.
+    if (nv.csv_status === '0' && existing.status === 'OPEN' && !isProtected('status')) {
+      existing.status = 'WITHDRAWN'; changed = true;
+    } else if (nv.csv_status === '1' && existing.status === 'WITHDRAWN' && !isProtected('status')) {
+      existing.status = 'OPEN'; changed = true;
+    }
+
+    if (changed) { existing.last_updated = rowTs; updated++; }
+    else unchanged++;
   }
 
   const withdrawCandidates = [];
@@ -1423,7 +1581,7 @@ function mergeCSVVessels(newVessels) {
     withdrawCandidates.push({ vessel: v, name: v.vessel_name || '(unnamed)' });
   }
 
-  return { added, skipped, withdrawCandidates };
+  return { added, updated, unchanged, protectedFields, withdrawCandidates };
 }
 
 // Pending withdrawal queue — populated by a CSV parse, applied by user click.
@@ -1618,7 +1776,7 @@ async function handleParse() {
         preview.className = 'preview-box has-error';
         return;
       }
-      const { added, skipped: skippedExisting, withdrawCandidates } = mergeCSVVessels(parsed);
+      const { added, updated, unchanged, protectedFields, withdrawCandidates } = syncCSVVessels(parsed);
       save();
       renderTable();
       updateStats();
@@ -1635,8 +1793,9 @@ async function handleParse() {
 
       const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
       const statsLine =
-        `CSV parsed: ${parsed.length} row(s) → ${plural(added, 'new vessel added', 'new vessels added')}, ` +
-        `${skippedExisting} already on board (left untouched).`;
+        `CSV synced: ${parsed.length} row(s) → ${plural(added, 'new vessel added', 'new vessels added')}, ` +
+        `${updated} updated, ${unchanged} unchanged` +
+        (protectedFields ? `, ${protectedFields} field(s) kept from your manual edits (newer than the CSV row).` : '.');
 
       let html = `<div style="white-space:pre-wrap">${_escHtml(statsLine + '\n\n' + mapSummary)}</div>`;
 
