@@ -152,6 +152,9 @@ function renderReport() {
       .sort((a, b) => getP6Values(b).bid - getP6Values(a).bid)
       .slice(0, topN);
 
+    // Only show laycans with open ships — windows carrying nothing but old
+    // fixtures are noise at the top of the report.
+    if (inWindow.length === 0) continue;
     if (withOffer.length === 0 && withBid.length === 0 && fixedInWindow.length === 0) continue;
 
     // Medians: market sides over all OPEN-in-window quotes (not just top-N);
@@ -512,7 +515,7 @@ function copyFullReport() {
       return eta >= win.from && eta <= win.to;
     });
     const fixedInWindow = reportShowFixtures() ? fixedVesselsInWindow(win, topN) : [];
-    if (inWindow.length === 0 && fixedInWindow.length === 0) continue;
+    if (inWindow.length === 0) continue;   // match the page view: open ships only
 
     text += `\n*${win.label}*\n`;
 
