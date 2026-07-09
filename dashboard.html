@@ -1320,6 +1320,9 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
           <option value="offers">Offers only</option>
           <option value="bids">Bids only</option>
         </select>
+        <label class="toolbar-label" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer" title="Show/hide the Recent Fixtures column (also applies to copied reports)">
+          <input type="checkbox" id="reportShowFixtures" onchange="toggleReportFixtures(this)"> Fixtures
+        </label>
         <button class="report-copy-btn" onclick="copyFullReport()">Copy Full Report</button>
       </div>
       <div id="reportContent"></div>

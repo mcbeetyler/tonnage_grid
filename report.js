@@ -12,6 +12,8 @@ window.switchTab = function(tab) {
   _origSwitchTabReport(tab);
   if (tab === 'report') {
     populateReportMonths();
+    const fx = document.getElementById('reportShowFixtures');
+    if (fx) fx.checked = reportShowFixtures();
     renderReport();
   }
 };
@@ -93,10 +95,19 @@ function reportMedian(arr) {
   return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
 }
 
+function reportShowFixtures() {
+  return localStorage.getItem('pt_report_fixtures') !== '0';
+}
+function toggleReportFixtures(el) {
+  localStorage.setItem('pt_report_fixtures', el.checked ? '1' : '0');
+  renderReport();
+}
+
 function renderReport() {
   const mode = document.getElementById('reportMonth').value;
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
   const showType = document.getElementById('reportType').value;
+  const showFixtures = reportShowFixtures();
   const windows = getEtaWindows(mode);
   const container = document.getElementById('reportContent');
 
@@ -187,26 +198,28 @@ function renderReport() {
       html += '</div>';
     }
 
-    html += `</div>
-      <div class="report-window-right">`;
+    html += `</div>`;
 
-    if (fixedInWindow.length > 0) {
-      html += `<div class="report-section">
-        <div style="display:flex;justify-content:space-between;align-items:center;padding-right:14px">
+    if (showFixtures) {
+      html += `<div class="report-window-right">`;
+      if (fixedInWindow.length > 0) {
+        html += `<div class="report-section">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding-right:14px">
+            <div class="report-section-label fixtures">Recent Fixtures</div>
+            <button class="report-copy-btn" onclick="copyWindowFixtures('${win.label}', '${mode}')">Copy</button>
+          </div>`;
+        fixedInWindow.forEach((v, i) => { html += renderFixtureCard(v, i + 1); });
+        html += '</div>';
+      } else {
+        html += `<div class="report-section">
           <div class="report-section-label fixtures">Recent Fixtures</div>
-          <button class="report-copy-btn" onclick="copyWindowFixtures('${win.label}', '${mode}')">Copy</button>
+          <div class="report-empty" style="padding:8px 14px">No fixtures yet</div>
         </div>`;
-      fixedInWindow.forEach((v, i) => { html += renderFixtureCard(v, i + 1); });
-      html += '</div>';
-    } else {
-      html += `<div class="report-section">
-        <div class="report-section-label fixtures">Recent Fixtures</div>
-        <div class="report-empty" style="padding:8px 14px">No fixtures yet</div>
-      </div>`;
+      }
+      html += `</div>`;
     }
 
     html += `</div>
-      </div>
     </div>`;
   }
 
@@ -316,6 +329,9 @@ function renderReportCard(v, rank, type) {
   if (etaStr) chips.push('ETA ' + etaStr + etaType);
   if (hire) chips.push('Hire ' + hire);
   if (bb) chips.push('BB ' + bb);
+  // Bunkers on delivery: CSV `bunker` string ("1250/240") or parsed BOD fields
+  const bod = v.bunker || (v.bod_ifo != null ? `${v.bod_ifo}/${v.bod_mdo ?? '?'}` : null);
+  if (bod) chips.push(`<span title="Bunkers on delivery IFO/MDO (mt)">BOD ${bod}</span>`);
 
   return `<div class="report-card${stale ? ' report-card-stale' : ''}${isQuiet ? ' report-card-quiet' : ''}">
     <span class="report-rank">${rank}</span>
@@ -365,6 +381,7 @@ function vesselToWhatsApp(v, type) {
   const typeLabel = type === 'bid' ? ' [BID]' : '';
 
   let line1 = `*${v.vessel_name || '?'} ${specs}*${typeLabel}`;
+  if (v.owner) line1 += ` — ${v.owner.toUpperCase()}`;
   if (delivery) line1 += ` — ${delivery}`;
   if (etaStr) line1 += ` — ETA: ${etaStr}${etaType}`;
 
@@ -393,6 +410,7 @@ function fixtureToWhatsApp(v) {
   const charterer = v.charterer || '';
 
   let line1 = `*${v.vessel_name || '?'} ${specs}* [FIXED]`;
+  if (v.owner) line1 += ` — ${v.owner.toUpperCase()}`;
   if (etaStr) line1 += ` — ETA: ${etaStr}${etaType}`;
 
   const parts = [];
@@ -454,10 +472,12 @@ function copyWindowReport(winLabel, mode) {
     }
   }
 
-  const fixedInWindow = fixedVesselsInWindow(win, topN);
-  if (fixedInWindow.length > 0) {
-    text += `_Recent fixtures:_\n`;
-    fixedInWindow.forEach(v => { text += fixtureToWhatsApp(v) + '\n'; });
+  if (reportShowFixtures()) {
+    const fixedInWindow = fixedVesselsInWindow(win, topN);
+    if (fixedInWindow.length > 0) {
+      text += `_Recent fixtures:_\n`;
+      fixedInWindow.forEach(v => { text += fixtureToWhatsApp(v) + '\n'; });
+    }
   }
 
   copyToClipboard(text.trim());
@@ -491,7 +511,7 @@ function copyFullReport() {
       const eta = new Date(v.eta_ecsa);
       return eta >= win.from && eta <= win.to;
     });
-    const fixedInWindow = fixedVesselsInWindow(win, topN);
+    const fixedInWindow = reportShowFixtures() ? fixedVesselsInWindow(win, topN) : [];
     if (inWindow.length === 0 && fixedInWindow.length === 0) continue;
 
     text += `\n*${win.label}*\n`;
