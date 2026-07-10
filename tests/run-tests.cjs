@@ -156,6 +156,24 @@ section('csv-import + app');
     A(vessels.find(v => v.vessel_name === 'FIXED SHEET SHIP').status === 'FIXED', 'fixed never auto-touched');
     A(wr.autoWithdrawn === 1 && wr.withdrawCandidates.length === 1, 'counts: 1 auto, 1 candidate');
 
+    // Fixtures feed: board ships matching the Fixtures tab go FIXED;
+    // unknown fixtures don't create rows; manual judgments stand
+    const fxHdr = ['LAST UPDATE', 'VESSEL', 'DWT', 'AGE', 'DELY', 'HIRE (offer)', 'ETA', 'OWNER', 'BKI EQVT', 'FIX MSG', 'COMMENTS'].join('\\t');
+    const fxRow = ['29-Jun 09:54', 'Minoan Bay', '92,759', 'Jan-2012', 'Port Louis via CGH', '$20,000', '18-Jul', 'MODION', '$26,886', '', '20k +600gbb bss port louis'].join('\\t');
+    const fxRow2 = ['06-Jul 07:12', 'Pegasus', '81,852', 'Jan-2012', 'Singapore via CGH', '$22,000', '27-Jul', 'DALNAVE', '$22,597', '', '22K FOR ECSA FH'].join('\\t');
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'MINOAN BAY', status: 'OPEN', csv_updated: '2026-06-01T00:00:00Z' });
+    vessels.push({ vessel_name: 'PEGASUS', status: 'FAILED' });  // desk marked failed — stands
+    const fxParsed = parseCSVVessels([fxHdr, fxRow, fxRow2].join('\\n')).vessels;
+    A(fxParsed.length === 2 && fxParsed[0].fix_msg === null, 'fixtures rows parse');
+    const fr = markFixturesFromCSV(fxParsed);
+    const mb = vessels.find(v => v.vessel_name === 'MINOAN BAY');
+    A(mb.status === 'FIXED' && mb.fixed_price === 26886, 'board ship marked FIXED w/ BKI price');
+    A(mb.date_fixed && mb.date_fixed.endsWith('-06-29'), 'fix date from LAST UPDATE');
+    A(mb.fix_msg && /600gbb/.test(mb.fix_msg), 'fixture story captured');
+    A(vessels.find(v => v.vessel_name === 'PEGASUS').status === 'FAILED', 'FAILED never overridden');
+    A(vessels.length === 2 && fr.marked === 1 && fr.unmatched === 0, 'no new rows created; counts right');
+
     const merged = mergeVesselArrays(
       [{ vessel_name: 'A', last_updated: '2026-07-08T10:00:00Z', dwt: 1 }, { vessel_name: 'B', last_updated: '2026-07-08T09:00:00Z', dwt: 2 }],
       [{ vessel_name: 'B', last_updated: '2026-07-08T11:00:00Z', dwt: 3 }, { vessel_name: 'C', dwt: 4 }]);

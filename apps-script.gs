@@ -35,6 +35,10 @@ const CONFIG = {
       id: '1JlusYmcm6-0PRPDvI9U6pBJuJ3g4XHgy63SQe3jWEz0',
       gid: 1641067976,
     },
+    fixtures: {
+      id: '1zyvCTNtsyahMjhdtshKjaDcww-9Y9HFlmh6hjyoYc24',  // same workbook as ecsa
+      tabName: 'Fixtures',                                   // located by name
+    },
   },
 };
 
@@ -44,7 +48,7 @@ function syncAll() {
     throw new Error('Set APP_URL and APP_PASSWORD in Project Settings → Script Properties first.');
   }
   const errors = [];
-  for (const source of ['ecsa', 'natl', 'cargo']) {
+  for (const source of ['ecsa', 'natl', 'cargo', 'fixtures']) {
     try {
       pushSource_(source);
     } catch (e) {
@@ -75,11 +79,11 @@ function setupTrigger() {
 function pushSource_(source) {
   const cfg = CONFIG.sheets[source];
   const ss = SpreadsheetApp.openById(cfg.id);
-  const tab = findByGid_(ss, cfg.gid);
-  if (!tab) throw new Error('tab gid ' + cfg.gid + ' not found');
+  const tab = cfg.tabName ? ss.getSheetByName(cfg.tabName) : findByGid_(ss, cfg.gid);
+  if (!tab) throw new Error('tab ' + (cfg.tabName || 'gid ' + cfg.gid) + ' not found');
 
   let data;
-  if (source === 'ecsa') {
+  if (source === 'ecsa' || source === 'fixtures') {
     // Grid header sits below decorative rows — slice from the header row when
     // we can find it, otherwise send the whole tab (the dashboard's parser
     // locates the header itself). Display values so rates/dates arrive

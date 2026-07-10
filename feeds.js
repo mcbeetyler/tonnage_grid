@@ -83,7 +83,21 @@ function applyNatl(data) {
   return `${r.vessels} vessels, ${r.ports} dely ports${data.distances ? '' : ' (cached matrix)'}`;
 }
 
-const APPLIERS = { ecsa: applyEcsa, cargo: applyCargo, natl: applyNatl };
+function applyFixtures(data) {
+  const tsv = typeof data === 'string' ? data : rowsToTsv(data);
+  if (typeof parseCSVVessels !== 'function' || typeof markFixturesFromCSV !== 'function') throw new Error('csv engine not loaded');
+  const { vessels: parsed } = parseCSVVessels(tsv);
+  if (!parsed.length) throw new Error('fixtures feed parsed 0 rows');
+  const r = markFixturesFromCSV(parsed);
+  if (r.marked) {
+    save();
+    if (typeof renderTable === 'function') renderTable();
+    if (typeof updateStats === 'function') updateStats();
+  }
+  return `${parsed.length} fixtures (${r.marked} newly marked FIXED on the board)`;
+}
+
+const APPLIERS = { ecsa: applyEcsa, fixtures: applyFixtures, cargo: applyCargo, natl: applyNatl };
 
 async function refreshFeeds(manual) {
   setBadge('Feeds…', 'pend');
@@ -94,7 +108,7 @@ async function refreshFeeds(manual) {
       return r.json();
     });
     const applied = appliedStamps();
-    for (const src of ['ecsa', 'natl', 'cargo']) {
+    for (const src of ['ecsa', 'fixtures', 'natl', 'cargo']) {
       if (!stamps[src]) { results.push(src + ': no feed yet'); continue; }
       if (applied[src] === stamps[src] && !manual) continue;   // already applied
       try {
@@ -110,7 +124,7 @@ async function refreshFeeds(manual) {
         results.push(`${src}: FAILED — ${e.message}`);
       }
     }
-    const oldest = Math.min(...['ecsa', 'natl', 'cargo'].map(s => stamps[s] ? new Date(stamps[s]).getTime() : Infinity));
+    const oldest = Math.min(...['ecsa', 'fixtures', 'natl', 'cargo'].map(s => stamps[s] ? new Date(stamps[s]).getTime() : Infinity));
     const ageMin = isFinite(oldest) ? Math.round((Date.now() - oldest) / 60000) : null;
     setBadge(
       anyErr ? 'Feeds: error' : ageMin == null ? 'Feeds: none' : `Feeds: ${ageMin}m`,

@@ -57,6 +57,8 @@ const CSV_HEADER_MAP = {
   // Extended desk-sheet columns
   'update': 'csv_updated_raw',      // row freshness — drives sync conflict resolution
   'updated': 'csv_updated_raw',
+  'last update': 'csv_updated_raw', // Fixtures tab uses this header (= fix date)
+  'fix msg': 'fix_msg',
   'hire ta': 'hire_ta',
   'hire (ta)': 'hire_ta',
   'user': 'user',
@@ -376,6 +378,7 @@ function parseCSVVessels(raw) {
         }
         case 'csv_status_raw': v.csv_status = val.trim(); break;
         case 'last_cargo': v.last_cargo = val.toUpperCase(); break;
+        case 'fix_msg': v.fix_msg = val; break;
       }
     }
 
@@ -499,6 +502,30 @@ function syncCSVVessels(newVessels, opts) {
   }
 
   return { added, updated, unchanged, protectedFields, withdrawCandidates, autoWithdrawn };
+}
+
+// Mark board ships FIXED from the Fixtures-tab feed. Only touches ships
+// already on the board (149 rows of fixture history shouldn't flood the
+// grid); never overrides FAILED or a manual status edit newer than the fix.
+function markFixturesFromCSV(parsed) {
+  const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  let marked = 0, already = 0, unmatched = 0;
+  for (const f of parsed) {
+    const v = vessels.find(x => norm(x.vessel_name) === norm(f.vessel_name));
+    if (!v) { unmatched++; continue; }
+    if (v.status === 'FIXED') { already++; continue; }
+    if (v.status === 'FAILED') continue;                    // desk judgment stands
+    const fixTs = f.csv_updated || new Date().toISOString();
+    const o = v.field_overrides || {};
+    if (o.status && o.status > fixTs) continue;             // manual status is newer
+    v.status = 'FIXED';
+    v.date_fixed = fixTs.slice(0, 10);
+    if (f.bki_eqvt != null) v.fixed_price = Math.round(f.bki_eqvt);
+    if (f.fix_msg || f.notes) v.fix_msg = f.fix_msg || f.notes;
+    v.last_updated = fixTs;
+    marked++;
+  }
+  return { marked, already, unmatched };
 }
 
 // Pending withdrawal queue — populated by a CSV parse, applied by user click.

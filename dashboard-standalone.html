@@ -2442,6 +2442,8 @@ const CSV_HEADER_MAP = {
   // Extended desk-sheet columns
   'update': 'csv_updated_raw',      // row freshness — drives sync conflict resolution
   'updated': 'csv_updated_raw',
+  'last update': 'csv_updated_raw', // Fixtures tab uses this header (= fix date)
+  'fix msg': 'fix_msg',
   'hire ta': 'hire_ta',
   'hire (ta)': 'hire_ta',
   'user': 'user',
@@ -2761,6 +2763,7 @@ function parseCSVVessels(raw) {
         }
         case 'csv_status_raw': v.csv_status = val.trim(); break;
         case 'last_cargo': v.last_cargo = val.toUpperCase(); break;
+        case 'fix_msg': v.fix_msg = val; break;
       }
     }
 
@@ -2884,6 +2887,30 @@ function syncCSVVessels(newVessels, opts) {
   }
 
   return { added, updated, unchanged, protectedFields, withdrawCandidates, autoWithdrawn };
+}
+
+// Mark board ships FIXED from the Fixtures-tab feed. Only touches ships
+// already on the board (149 rows of fixture history shouldn't flood the
+// grid); never overrides FAILED or a manual status edit newer than the fix.
+function markFixturesFromCSV(parsed) {
+  const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  let marked = 0, already = 0, unmatched = 0;
+  for (const f of parsed) {
+    const v = vessels.find(x => norm(x.vessel_name) === norm(f.vessel_name));
+    if (!v) { unmatched++; continue; }
+    if (v.status === 'FIXED') { already++; continue; }
+    if (v.status === 'FAILED') continue;                    // desk judgment stands
+    const fixTs = f.csv_updated || new Date().toISOString();
+    const o = v.field_overrides || {};
+    if (o.status && o.status > fixTs) continue;             // manual status is newer
+    v.status = 'FIXED';
+    v.date_fixed = fixTs.slice(0, 10);
+    if (f.bki_eqvt != null) v.fixed_price = Math.round(f.bki_eqvt);
+    if (f.fix_msg || f.notes) v.fix_msg = f.fix_msg || f.notes;
+    v.last_updated = fixTs;
+    marked++;
+  }
+  return { marked, already, unmatched };
 }
 
 // Pending withdrawal queue — populated by a CSV parse, applied by user click.
@@ -12821,7 +12848,21 @@ function applyNatl(data) {
   return `${r.vessels} vessels, ${r.ports} dely ports${data.distances ? '' : ' (cached matrix)'}`;
 }
 
-const APPLIERS = { ecsa: applyEcsa, cargo: applyCargo, natl: applyNatl };
+function applyFixtures(data) {
+  const tsv = typeof data === 'string' ? data : rowsToTsv(data);
+  if (typeof parseCSVVessels !== 'function' || typeof markFixturesFromCSV !== 'function') throw new Error('csv engine not loaded');
+  const { vessels: parsed } = parseCSVVessels(tsv);
+  if (!parsed.length) throw new Error('fixtures feed parsed 0 rows');
+  const r = markFixturesFromCSV(parsed);
+  if (r.marked) {
+    save();
+    if (typeof renderTable === 'function') renderTable();
+    if (typeof updateStats === 'function') updateStats();
+  }
+  return `${parsed.length} fixtures (${r.marked} newly marked FIXED on the board)`;
+}
+
+const APPLIERS = { ecsa: applyEcsa, fixtures: applyFixtures, cargo: applyCargo, natl: applyNatl };
 
 async function refreshFeeds(manual) {
   setBadge('Feeds…', 'pend');
@@ -12832,7 +12873,7 @@ async function refreshFeeds(manual) {
       return r.json();
     });
     const applied = appliedStamps();
-    for (const src of ['ecsa', 'natl', 'cargo']) {
+    for (const src of ['ecsa', 'fixtures', 'natl', 'cargo']) {
       if (!stamps[src]) { results.push(src + ': no feed yet'); continue; }
       if (applied[src] === stamps[src] && !manual) continue;   // already applied
       try {
@@ -12848,7 +12889,7 @@ async function refreshFeeds(manual) {
         results.push(`${src}: FAILED — ${e.message}`);
       }
     }
-    const oldest = Math.min(...['ecsa', 'natl', 'cargo'].map(s => stamps[s] ? new Date(stamps[s]).getTime() : Infinity));
+    const oldest = Math.min(...['ecsa', 'fixtures', 'natl', 'cargo'].map(s => stamps[s] ? new Date(stamps[s]).getTime() : Infinity));
     const ageMin = isFinite(oldest) ? Math.round((Date.now() - oldest) / 60000) : null;
     setBadge(
       anyErr ? 'Feeds: error' : ageMin == null ? 'Feeds: none' : `Feeds: ${ageMin}m`,

@@ -9,7 +9,7 @@ export const config = {
   api: { bodyParser: { sizeLimit: '4mb' } },
 };
 
-const SOURCES = ['ecsa', 'natl', 'cargo'];
+const SOURCES = ['ecsa', 'natl', 'cargo', 'fixtures'];
 
 // Google Sheets feed drop-box.
 //   POST { source, data }  ← from the Apps Script (Basic auth handled by
