@@ -12883,7 +12883,8 @@ async function refreshFeeds(manual) {
         const summary = APPLIERS[src](payload.data);
         markApplied(src, payload.ts);
         anyFresh = true;
-        results.push(`${src}: ${summary} @ ${payload.ts.slice(11, 16)}z`);
+        const local = new Date(payload.ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        results.push(`${src}: ${summary} @ ${local}`);
       } catch (e) {
         anyErr = true;
         results.push(`${src}: FAILED — ${e.message}`);
