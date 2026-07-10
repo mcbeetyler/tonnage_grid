@@ -191,7 +191,9 @@ section('laycan-matcher');
   A(lm._test.parseNmInput('9.5d') === Math.round(9.5 * 24 * 13), 'NM input days form');
   A(lm._test.parseNmInput('4,600') === 4600, 'NM input comma');
 
-  lm._test.setCustom([{ name: 'NCSA', base: 'Itaqui', offsetNm: -300, regionNm: { WMED: 4400 } }]);
+  // Custom-area constants are keyed on canonical zones (zones.js): the test
+  // ship opens Gibraltar → zone 'W MED' (derived from the port itself)
+  lm._test.setCustom([{ name: 'NCSA', base: 'Itaqui', offsetNm: -300, regionNm: { 'W MED': 4400 } }]);
   lm._test.setUi({ port: 'custom:NCSA' });
   const cr = lm._test.computeRows();
   A(cr[0].dist === 4400 && cr[0].distSrc === 'zone', 'custom area zone constant');
