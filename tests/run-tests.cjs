@@ -214,6 +214,23 @@ section('pairings');
   A(r.rows[0].v.vessel_name === 'CHEAP' && r.rows[1].v.vessel_name === 'DEAR', 'tier then price order');
   A(r.rows[2].status === 'MISSES', 'late ship misses');
   A(p._test.isEcsa({ stem: 'ECSA Fronthaul', load: '' }) && !p._test.isEcsa({ stem: 'USG Fronthaul', load: 'Nola' }), 'ecsa detector');
+
+  // Load-basis adjustment: Santos-basis ETA corrected for the actual load
+  A(p._test.loadBasisAdj({ load: 'santos' }).days === 0, 'santos basis 0');
+  A(p._test.loadBasisAdj({ load: 'itaqui' }).days === 2, 'n brazil +2');
+  A(p._test.loadBasisAdj({ load: 'pdm' }).days === 6.5 && p._test.loadBasisAdj({ load: 'puerto drummond' }).days === 6.5, 'caribbean +6.5 incl pdm shorthand');
+  A(p._test.loadBasisAdj({ load: 'ncsa (int amazon)' }).days === 5.5, 'ncsa zone token fallback');
+  A(p._test.loadBasisAdj({ load: 'rotterdam' }).days === null, 'out-of-reach load warns');
+  // FIT flips when basis applied: cargo laycan tight against unadjusted ETA
+  p._test.setGlobals({
+    vessels: [mkShip('EDGE CASE', '2026-07-27', 15000)],
+    cargoHistory: [{ id: 'c9', charterer: 'X', stem: 'NCSA Fronthaul', load: 'puerto drummond', laycan: '24Jul-29Jul', fixed: false }],
+    cargoCurrent: ['c9'],
+  });
+  p._test.setUi({ mode: 'cargo2ship', cargoId: 'c9', autoBasis: true, etaAdjDays: 0 });
+  A(p._test.computeCargo2Ship().rows[0].status !== 'FIT', 'basis adj pushes 27Jul+6.5d past 29Jul cancelling');
+  p._test.setUi({ autoBasis: false });
+  A(p._test.computeCargo2Ship().rows[0].status === 'FIT', 'without adj it would (misleadingly) fit');
 }
 
 // ═══ 5. supply + feeds ════════════════════════════════════════════════════════

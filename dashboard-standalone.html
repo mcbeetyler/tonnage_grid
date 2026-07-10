@@ -11462,6 +11462,62 @@ if (typeof module !== 'undefined' && module.exports) {
 
 const FU = (typeof FitUtils !== 'undefined') ? FitUtils
   : (typeof require === 'function' ? require('./fit-utils.js') : null);
+const ZN = (typeof Zones !== 'undefined') ? Zones
+  : (typeof require === 'function' ? require('./zones.js') : null);
+
+// ─── Load-basis ETA adjustment ───────────────────────────────────────────────
+// Board ETAs are declared bss Santos (ECSA convention). A ship bound for
+// NCSA forks off the Santos track after the Cape, so the honest correction
+// is the LEG DIFFERENCE from the fork — not Santos→NCSA steaming.
+// Days vs a Santos-basis ETA, ~13 kn:
+const BASIS_PORT_ADJ = {
+  // ECSA proper — same track, small deltas
+  'santos': 0, 'paranagua': 0.5, 'rio grande': 1, 'sao francisco do sul': 0.5,
+  'itaguai': 0.5, 'tubarao': 0.5, 'vitoria': 0.5, 'praia mole': 0.5, 'porto sudeste': 0.5,
+  'recalada': 1.5, 'bahia blanca': 2, 'necochea': 2, 'quequen': 2,
+  'san lorenzo': 2, 'rosario': 2, 'up river': 2, 'upriver': 2, 'buenos aires': 1.5, 'montevideo': 1.5,
+  // North Brazil — forks earlier, modest add
+  'salvador': 0.5, 'aratu': 0.5, 'suape': 1, 'recife': 1, 'fortaleza': 1.5,
+  'pecem': 2, 'itaqui': 2, 'sao luis': 2, 'ponta da madeira': 2,
+  'belem': 2.5, 'vila do conde': 2.5, 'barcarena': 2.5, 'santarem': 3, 'macapa': 3,
+  // Caribbean rim NCSA
+  'georgetown': 5, 'paramaribo': 4.5, 'point lisas': 5.5, 'port of spain': 5.5,
+  'puerto ordaz': 5.5, 'palua': 5.5, 'matanzas': 5.5, 'guanta': 6, 'jose': 6,
+  'la guaira': 6, 'puerto cabello': 6, 'puerto drummond': 6.5, 'santa marta': 6.5,
+  'barranquilla': 6.5, 'cartagena (col)': 6.5, 'puerto bolivar': 6,
+  // Panama
+  'cristobal': 7.5, 'colon': 7.5, 'balboa': 8.5, 'panama': 7.5,
+  // Desk shorthand seen in the cargo book
+  'pdm': 6.5, 'up river arg': 2, 'north brazil': 2, 'n brazil': 2, 'amazon': 2.5,
+};
+const BASIS_ZONE_ADJ = { 'ECSA': 0.5, 'NCSA': 5.5 };
+
+function basisNorm(p) {
+  return String(p || '').toLowerCase().replace(/\(.*?\)/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+// → { days, label } or { days: null, warn } when the load is outside reach
+function loadBasisAdj(cargo) {
+  if (!cargo || !cargo.load) return { days: 0, label: null };
+  const n = basisNorm(cargo.load);
+  for (const [port, d] of Object.entries(BASIS_PORT_ADJ)) {
+    const pn = basisNorm(port);
+    if (n === pn || n.includes(pn)) return { days: d, label: `${cargo.load.trim()} ≈ Santos ${d >= 0 ? '+' : ''}${d}d` };
+  }
+  // Zone from the port name, or a zone token written straight into the load
+  // field ("ncsa (int amazon)", "ecsa")
+  let zone = ZN ? ZN.zoneOfPort(cargo.load) : null;
+  if (!zone) {
+    if (/\bncsa\b/.test(n)) zone = 'NCSA';
+    else if (/\becsa\b/.test(n)) zone = 'ECSA';
+  }
+  if (zone && BASIS_ZONE_ADJ[zone] != null) {
+    return { days: BASIS_ZONE_ADJ[zone], label: `${zone} zone ≈ Santos +${BASIS_ZONE_ADJ[zone]}d` };
+  }
+  if (zone && !(zone in BASIS_ZONE_ADJ)) {
+    return { days: null, warn: `load "${cargo.load.trim()}" is ${zone} — Santos-basis ETAs aren't comparable; use the NATL Matcher or a manual ± adj` };
+  }
+  return { days: 0, label: null };   // unknown port: no auto adj, manual field still applies
+}
 
 const LS_UI = 'pr_ui';
 const IS_BROWSER = typeof window !== 'undefined' && typeof document !== 'undefined';
@@ -11470,7 +11526,7 @@ let PR = { initialised: false };
 let ui = Object.assign({
   mode: 'cargo2ship',       // or 'ship2cargo'
   cargoId: '', shipName: '',
-  waitTolDays: 2, tightTolDays: 2, etaAdjDays: 0,
+  waitTolDays: 2, tightTolDays: 2, etaAdjDays: 0, autoBasis: true,
   ecsaOnly: true, showAll: false,
 }, IS_BROWSER ? JSON.parse(localStorage.getItem(LS_UI) || '{}') : {});
 function saveUi() { if (IS_BROWSER) localStorage.setItem(LS_UI, JSON.stringify(ui)); }
@@ -11497,11 +11553,11 @@ function rawOfferOf(v) {
 }
 
 // ─── Core ────────────────────────────────────────────────────────────────────
-function shipEta(v) {
+function shipEta(v, extraDays) {
   if (!v || !v.eta_ecsa) return null;
   const d = new Date(String(v.eta_ecsa).slice(0, 10) + 'T00:00:00Z');
   if (isNaN(d)) return null;
-  const adj = parseFloat(ui.etaAdjDays) || 0;
+  const adj = (parseFloat(ui.etaAdjDays) || 0) + (extraDays || 0);
   return new Date(d.getTime() + adj * FU.DAY);
 }
 function cargoWindow(c) {
@@ -11521,9 +11577,10 @@ function isEcsa(c) {
 function computeCargo2Ship() {
   const cargo = liveCargoes().find(c => c.id === ui.cargoId) || null;
   const w = cargo ? cargoWindow(cargo) : null;
+  const basis = (ui.autoBasis && cargo) ? loadBasisAdj(cargo) : { days: 0, label: null };
   const opts = { waitTolDays: ui.waitTolDays, tightTolDays: ui.tightTolDays };
   const rows = openShips().map(v => {
-    const eta = shipEta(v);
+    const eta = shipEta(v, basis.days || 0);
     const fit = FU.fitStatus(eta, w && w.from, w && w.to, opts);
     const p6 = p6Of(v);
     return { v, eta, p6offer: p6.offer, p6bid: p6.bid, rawOffer: rawOfferOf(v),
@@ -11537,7 +11594,7 @@ function computeCargo2Ship() {
     || ((a.p6offer == null) - (b.p6offer == null))
     || ((a.p6offer ?? 0) - (b.p6offer ?? 0))
     || ((a.eta ? a.eta.getTime() : Infinity) - (b.eta ? b.eta.getTime() : Infinity)));
-  return { cargo, window: w, rows };
+  return { cargo, window: w, rows, basis };
 }
 
 function computeShip2Cargo() {
@@ -11548,9 +11605,15 @@ function computeShip2Cargo() {
   if (ui.ecsaOnly) cs = cs.filter(isEcsa);
   const rows = cs.map(c => {
     const w = cargoWindow(c);
-    const fit = FU.fitStatus(eta, w && w.from, w && w.to, opts);
-    return { c, window: w,
-      reason: !w ? 'laycan unparsed' : (ship && !ship.eta_ecsa ? 'ship has no ETA' : null),
+    // Per-cargo basis correction: each cargo's load may sit off the Santos track
+    const basis = ui.autoBasis ? loadBasisAdj(c) : { days: 0 };
+    const effEta = (basis.days != null && basis.days !== 0 && eta)
+      ? new Date(eta.getTime() + basis.days * FU.DAY) : eta;
+    const fit = FU.fitStatus(basis.days == null ? null : effEta, w && w.from, w && w.to, opts);
+    return { c, window: w, basisDays: basis.days, basisWarn: basis.warn || null,
+      reason: !w ? 'laycan unparsed'
+        : (ship && !ship.eta_ecsa ? 'ship has no ETA'
+        : (basis.days == null ? 'load outside Santos-basis reach' : null)),
       ...fit };
   });
   rows.sort((a, b) =>
@@ -11600,10 +11663,17 @@ function render() {
     || r.status === 'ETA' || r.status === 'NODATA' && false;
 
   if (ui.mode === 'cargo2ship') {
-    const { cargo, window: w, rows } = computeCargo2Ship();
+    const { cargo, window: w, rows, basis } = computeCargo2Ship();
     if (!cargo) note.textContent = 'Pick a cargo — open board ships will be tiered on her laycan and sorted cheapest-first.';
     else if (!w) note.textContent = `Couldn't parse laycan "${cargo.laycan || '—'}" — fix it in the Cargo Book.`;
-    else if (w.onw) note.textContent = `Laycan "${cargo.laycan}" is open-ended — assumed a 20-day window.`;
+    else {
+      const bits = [];
+      if (w.onw) bits.push(`laycan "${cargo.laycan}" open-ended — assumed 20 days`);
+      if (basis && basis.warn) bits.push(`⚠ ${basis.warn}`);
+      else if (basis && basis.days) bits.push(`ETAs adjusted for load basis: ${basis.label}`);
+      note.textContent = bits.join(' · ');
+      note.style.color = basis && basis.warn ? 'var(--amber)' : 'var(--text-dim)';
+    }
     const shown = rows.filter(r => !w ? true : visible(r));
     thead.innerHTML = `<tr><th>Status</th><th>Vessel</th><th>DWT/Blt</th><th>Dely</th><th>ETA ECSA</th><th>Owner</th>
       <th style="text-align:right" title="P6-equivalent offer — the universal comparator">Offer P6</th>
@@ -11645,7 +11715,7 @@ function render() {
         <td style="font-family:var(--mono);font-size:12px">${esc(c.size || '—')}</td>
         <td>${esc(c.load || '—')}</td>
         <td>${esc(c.disch || '—')}</td>
-        <td style="font-family:var(--mono);font-size:12px">${esc(c.laycan || '—')}</td>
+        <td style="font-family:var(--mono);font-size:12px">${esc(c.laycan || '—')}${r.basisDays ? ` <span style="color:var(--text-dim)" title="ETA adjusted for load basis vs Santos">+${r.basisDays}d bss</span>` : ''}</td>
         ${fitCells(r)}</tr>`;
     }).join('') : `<tr><td colspan="9" style="padding:18px;color:var(--text-dim)">${ship ? 'No cargoes fit — toggle "Show all", widen Max wait, or untick ECSA-only.' : 'No live cargoes in the book.'}</td></tr>`;
     renderStats(eta ? rows : []);
@@ -11752,6 +11822,7 @@ function buildUI() {
           <input type="number" id="pr_tightTol" step="0.5" min="0" style="width:70px" value="${ui.tightTolDays}"></div>
         <div class="pr-field"><label title="Adjust board ETAs for load basis, e.g. upriver +2, north Brazil -1. ETAs are usually quoted bss Santos">ETA ± d</label>
           <input type="number" id="pr_etaAdj" step="0.5" style="width:70px" value="${ui.etaAdjDays}"></div>
+        <span class="pr-check" id="pr_autoBasis" title="Correct Santos-basis ETAs for the cargo's actual load area (leg difference from the Cape fork: N Brazil +2d, Caribbean NCSA +6.5d, Balboa +8.5d...)">Auto basis adj</span>
         <span class="pr-check" id="pr_ecsaWrap" title="Only cargoes loading ECSA">ECSA only</span>
         <span class="pr-check" id="pr_showAll" title="Include misses and rows missing data">Show all</span>
       </div>
@@ -11786,7 +11857,7 @@ function buildUI() {
   on('pr_waitTol', 'input', e => { ui.waitTolDays = e.target.value; saveUi(); render(); });
   on('pr_tightTol', 'input', e => { ui.tightTolDays = e.target.value; saveUi(); render(); });
   on('pr_etaAdj', 'input', e => { ui.etaAdjDays = e.target.value; saveUi(); render(); });
-  for (const [id, key] of [['pr_ecsaWrap', 'ecsaOnly'], ['pr_showAll', 'showAll']]) {
+  for (const [id, key] of [['pr_autoBasis', 'autoBasis'], ['pr_ecsaWrap', 'ecsaOnly'], ['pr_showAll', 'showAll']]) {
     const el = document.getElementById(id);
     const sync = () => el.classList.toggle('on', !!ui[key]);
     sync();
@@ -11831,7 +11902,7 @@ if (typeof module !== 'undefined' && module.exports) {
         if (g.cargoHistory) global.cargoHistory = g.cargoHistory;
         if (g.cargoCurrent) global.cargoCurrent = g.cargoCurrent;
       },
-      computeCargo2Ship, computeShip2Cargo, isEcsa,
+      computeCargo2Ship, computeShip2Cargo, isEcsa, loadBasisAdj,
     },
   };
 }
