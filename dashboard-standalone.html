@@ -2798,7 +2798,8 @@ const CSV_SYNC_FIELDS = ['dwt', 'build_year', 'draft', 'yard', 'origin', 'delive
   'arrow_eqvt', 'notes', 'bunker', 'scrubber', 'hire_offer', 'bb_offer', 'hire_ta',
   'scrub_chart_acc', 'vessel_type', 'last_cargo', 'added_to_grid', 'user'];
 
-function syncCSVVessels(newVessels) {
+function syncCSVVessels(newVessels, opts) {
+  const autoWithdraw = !!(opts && opts.autoWithdraw);
   const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const csvNames = new Set(newVessels.map(v => norm(v.vessel_name)).filter(Boolean));
   let added = 0, updated = 0, unchanged = 0, protectedFields = 0;
@@ -2860,14 +2861,29 @@ function syncCSVVessels(newVessels) {
     else unchanged++;
   }
 
+  // Ships on the board but missing from this CSV.
+  // - autoWithdraw (feed): ships the SHEET manages (they have a csv_updated
+  //   stamp from an earlier sync) are auto-marked WITHDRAWN — the sheet
+  //   dropped them, so the board follows. Manually-added ships (WhatsApp /
+  //   manual entry — no csv stamp) are NEVER touched automatically.
+  // - manual paste: everything stays a candidate for the confirm button.
   const withdrawCandidates = [];
+  let autoWithdrawn = 0;
+  const nowIso = new Date().toISOString();
   for (const v of vessels) {
     if (v.status !== 'OPEN') continue;
     if (csvNames.has(norm(v.vessel_name))) continue;
-    withdrawCandidates.push({ vessel: v, name: v.vessel_name || '(unnamed)' });
+    if (autoWithdraw && v.csv_updated) {
+      v.status = 'WITHDRAWN';
+      v.withdrawn_reason = 'dropped from sheet feed';
+      v.last_updated = nowIso;
+      autoWithdrawn++;
+    } else {
+      withdrawCandidates.push({ vessel: v, name: v.vessel_name || '(unnamed)' });
+    }
   }
 
-  return { added, updated, unchanged, protectedFields, withdrawCandidates };
+  return { added, updated, unchanged, protectedFields, withdrawCandidates, autoWithdrawn };
 }
 
 // Pending withdrawal queue — populated by a CSV parse, applied by user click.
@@ -12779,11 +12795,13 @@ function applyEcsa(data) {
   if (typeof parseCSVVessels !== 'function') throw new Error('csv engine not loaded');
   const { vessels: parsed } = parseCSVVessels(tsv);
   if (!parsed.length) throw new Error('ecsa feed parsed 0 rows');
-  const r = syncCSVVessels(parsed);
+  // autoWithdraw: sheet-managed ships that vanished from the sheet get
+  // marked WITHDRAWN; manually-added ships are never auto-touched
+  const r = syncCSVVessels(parsed, { autoWithdraw: true });
   save();
   if (typeof renderTable === 'function') renderTable();
   if (typeof updateStats === 'function') updateStats();
-  return `${parsed.length} rows (${r.added} new, ${r.updated} updated)`;
+  return `${parsed.length} rows (${r.added} new, ${r.updated} updated${r.autoWithdrawn ? ', ' + r.autoWithdrawn + ' auto-withdrawn' : ''})`;
 }
 
 function applyCargo(data) {

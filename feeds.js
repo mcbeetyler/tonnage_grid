@@ -57,11 +57,13 @@ function applyEcsa(data) {
   if (typeof parseCSVVessels !== 'function') throw new Error('csv engine not loaded');
   const { vessels: parsed } = parseCSVVessels(tsv);
   if (!parsed.length) throw new Error('ecsa feed parsed 0 rows');
-  const r = syncCSVVessels(parsed);
+  // autoWithdraw: sheet-managed ships that vanished from the sheet get
+  // marked WITHDRAWN; manually-added ships are never auto-touched
+  const r = syncCSVVessels(parsed, { autoWithdraw: true });
   save();
   if (typeof renderTable === 'function') renderTable();
   if (typeof updateStats === 'function') updateStats();
-  return `${parsed.length} rows (${r.added} new, ${r.updated} updated)`;
+  return `${parsed.length} rows (${r.added} new, ${r.updated} updated${r.autoWithdrawn ? ', ' + r.autoWithdrawn + ' auto-withdrawn' : ''})`;
 }
 
 function applyCargo(data) {

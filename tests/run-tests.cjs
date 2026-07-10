@@ -144,6 +144,18 @@ section('csv-import + app');
     A(looksLikeCSV(junky), 'header found below junk rows');
     A(parseCSVVessels(junky).vessels.length === 2, 'parse with junk rows above header');
 
+    // Feed auto-withdrawal: sheet-managed ships missing from the CSV get
+    // withdrawn; manual ships stay candidates only
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'SHEET SHIP', status: 'OPEN', csv_updated: '2026-07-08T08:00:00Z' });
+    vessels.push({ vessel_name: 'WHATSAPP SHIP', status: 'OPEN' });
+    vessels.push({ vessel_name: 'FIXED SHEET SHIP', status: 'FIXED', csv_updated: '2026-07-08T08:00:00Z' });
+    const wr = syncCSVVessels(parseCSVVessels(TSV).vessels, { autoWithdraw: true });
+    A(vessels.find(v => v.vessel_name === 'SHEET SHIP').status === 'WITHDRAWN', 'sheet-managed auto-withdrawn');
+    A(vessels.find(v => v.vessel_name === 'WHATSAPP SHIP').status === 'OPEN', 'manual ship untouched');
+    A(vessels.find(v => v.vessel_name === 'FIXED SHEET SHIP').status === 'FIXED', 'fixed never auto-touched');
+    A(wr.autoWithdrawn === 1 && wr.withdrawCandidates.length === 1, 'counts: 1 auto, 1 candidate');
+
     const merged = mergeVesselArrays(
       [{ vessel_name: 'A', last_updated: '2026-07-08T10:00:00Z', dwt: 1 }, { vessel_name: 'B', last_updated: '2026-07-08T09:00:00Z', dwt: 2 }],
       [{ vessel_name: 'B', last_updated: '2026-07-08T11:00:00Z', dwt: 3 }, { vessel_name: 'C', dwt: 4 }]);
