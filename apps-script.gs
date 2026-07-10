@@ -24,6 +24,7 @@ const CONFIG = {
   sheets: {
     ecsa: {
       id: '1zyvCTNtsyahMjhdtshKjaDcww-9Y9HFlmh6hjyoYc24',
+      tabName: 'ECSA GRID',   // located by name — survives re-pastes; gid is fallback
       gid: 2067801444,
     },
     natl: {
@@ -79,8 +80,10 @@ function setupTrigger() {
 function pushSource_(source) {
   const cfg = CONFIG.sheets[source];
   const ss = SpreadsheetApp.openById(cfg.id);
-  const tab = cfg.tabName ? ss.getSheetByName(cfg.tabName) : findByGid_(ss, cfg.gid);
-  if (!tab) throw new Error('tab ' + (cfg.tabName || 'gid ' + cfg.gid) + ' not found');
+  // Prefer name (stable across script re-pastes), fall back to gid
+  let tab = cfg.tabName ? ss.getSheetByName(cfg.tabName) : null;
+  if (!tab && cfg.gid != null) tab = findByGid_(ss, cfg.gid);
+  if (!tab) throw new Error('tab ' + (cfg.tabName || '') + (cfg.gid != null ? ' / gid ' + cfg.gid : '') + ' not found');
 
   let data;
   if (source === 'ecsa' || source === 'fixtures') {
