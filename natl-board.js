@@ -17,6 +17,9 @@ const LS_UI = 'nb_ui';
 const LS_DATA = 'lm_data';                 // shared with laycan-matcher
 const EXCLUDED = ['GONE', 'FIXED', 'ONSUB'];
 const IS_BROWSER = typeof window !== 'undefined' && typeof document !== 'undefined';
+const ZN = (typeof Zones !== 'undefined') ? Zones
+  : (typeof require === 'function' ? require('./zones.js') : null);
+function vesselZone(v) { return ZN.zoneOfVessel(v) || '—'; }
 
 let NB = { initialised: false };
 let ui = Object.assign({
@@ -40,9 +43,13 @@ function computeRows() {
   const counts = {};
   const rows = [];
   for (const v of d.vessels) {
-    const region = (v.region || '—').toUpperCase();
+    const rawRegion = (v.region || '—').toUpperCase();
+    const isExcluded = EXCLUDED.includes(rawRegion);
+    // Geographic zone from the dely port (sheet tag fallback); excluded
+    // statuses stay grouped under their status label
+    const region = isExcluded ? rawRegion : vesselZone(v);
     counts[region] = (counts[region] || 0) + 1;
-    if (!ui.includeGone && EXCLUDED.includes(region)) continue;
+    if (!ui.includeGone && isExcluded) continue;
     if (ui.region !== 'ALL' && region !== ui.region) continue;
     if (ui.grainOnly && !v.grain_clean) continue;
     if (ui.scrubOnly && !v.scrubber) continue;
@@ -62,7 +69,7 @@ function computeRows() {
       case 'dwt': return v.dwt || 0;
       case 'built': return v.built || 0;
       case 'dely': return (v.dely_port || '').toLowerCase();
-      case 'region': return (v.region || '').toLowerCase();
+      case 'region': return displayZone(v).toLowerCase();
       case 'ta': return v.rate_ta != null ? v.rate_ta : Infinity;
       case 'fh': return v.rate_fh != null ? v.rate_fh : Infinity;
       default: return v.lay || '9999';
@@ -88,10 +95,17 @@ function fmtRate(rate, bb) {
   return '$' + Math.round(rate).toLocaleString() + (bb ? `<span style="color:var(--text-dim)" title="+ BB $${Math.round(bb).toLocaleString()}">+bb</span>` : '');
 }
 const REGION_COLORS = {
-  'ARAG/CONTI': 'var(--accent)', 'BALTIC': '#5B8DB8', 'WMED': 'var(--green)', 'EMED': '#6d8f11',
-  'RSEA': 'var(--amber)', 'NWA': '#8a6db8', 'ECCAN': '#b86d9e', 'NCSA': '#b8866d',
+  'N CONT': 'var(--accent)', 'ARAG/CONTI': 'var(--accent)', 'BALTIC': '#5B8DB8',
+  'W MED': 'var(--green)', 'WMED': 'var(--green)', 'E MED': '#6d8f11', 'EMED': '#6d8f11',
+  'RSEA': 'var(--amber)', 'NWA': '#8a6db8', 'EC CAN': '#b86d9e', 'ECCAN': '#b86d9e',
+  'NCSA': '#b8866d', 'ECSA': '#3d8f8a', 'USG': '#8f5f3d', 'USEC': '#5f3d8f',
+  'BSEA': '#8f3d5f', 'WAFR': '#3d5f8f',
   'GONE': 'var(--text-dim)', 'FIXED': 'var(--text-dim)', 'ONSUB': 'var(--amber)', 'IN HOUSE': 'var(--text-bright)',
 };
+function displayZone(v) {
+  const raw = (v.region || '').toUpperCase();
+  return EXCLUDED.includes(raw) ? raw : vesselZone(v);
+}
 
 function render() {
   const root = document.getElementById('nb_root');
@@ -118,7 +132,8 @@ function render() {
 
   const tb = document.getElementById('nb_tbody');
   tb.innerHTML = rows.length ? rows.map(v => {
-    const rc = REGION_COLORS[(v.region || '').toUpperCase()] || 'var(--text)';
+    const zone = displayZone(v);
+    const rc = REGION_COLORS[zone] || 'var(--text)';
     const openTxt = v.lay ? fmtD(v.lay) + (v.can ? '–' + fmtD(v.can) : '') : esc(v.laycan_str || '—');
     const flags = [
       v.grain_clean ? '<span class="nb-flag" title="Grain clean">G</span>' : '',
@@ -132,7 +147,7 @@ function render() {
       <td>${flags}</td>
       <td>${esc(v.dely_port || '—')}</td>
       <td style="font-family:var(--mono);font-size:12px;font-weight:600">${openTxt}</td>
-      <td><span style="color:${rc};font-weight:600;font-size:11px">${esc(v.region || '—')}</span></td>
+      <td><span style="color:${rc};font-weight:600;font-size:11px" title="${esc(v.region || '')}">${esc(zone)}</span></td>
       <td>${esc(v.owner || '—')}</td>
       <td style="text-align:right;font-family:var(--mono);font-size:12px">${fmtRate(v.rate_ta, v.bb_ta)}</td>
       <td style="text-align:right;font-family:var(--mono);font-size:12px">${fmtRate(v.rate_fh, v.bb_fh)}</td>

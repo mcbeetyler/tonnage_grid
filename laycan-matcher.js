@@ -25,6 +25,11 @@
 // Shared fit logic (fit-utils.js): browser global or CJS require in tests
 const FU = (typeof FitUtils !== 'undefined') ? FitUtils
   : (typeof require === 'function' ? require('./fit-utils.js') : null);
+// Port → zone mapping (zones.js): geography from the dely port itself,
+// sheet region tag as fallback
+const ZN = (typeof Zones !== 'undefined') ? Zones
+  : (typeof require === 'function' ? require('./zones.js') : null);
+function vesselZone(v) { return ZN.zoneOfVessel(v) || '—'; }
 
 const SEA_MARGIN = 1.08;
 const EXCLUDED_REGIONS = ['GONE', 'FIXED', 'ONSUB'];
@@ -86,8 +91,10 @@ function getArea(portKey) {
 function vesselZones() {
   const seen = new Map();
   if (LM.data) for (const v of LM.data.vessels) {
-    const r = (v.region || '').toUpperCase();
-    if (r && !NON_GEO_REGIONS.includes(r)) seen.set(r, (seen.get(r) || 0) + 1);
+    const raw = (v.region || '').toUpperCase();
+    if (NON_GEO_REGIONS.includes(raw)) continue;   // status, not geography
+    const z = vesselZone(v);
+    if (z && z !== '—') seen.set(z, (seen.get(z) || 0) + 1);
   }
   for (const a of customAreas) for (const z in (a.regionNm || {})) if (!seen.has(z)) seen.set(z, 0);
   return [...seen.entries()].sort((x, y) => y[1] - x[1]).map(e => e[0]);
@@ -275,7 +282,7 @@ function computeRows() {
   for (const v of d.vessels) {
     const region = (v.region || '').toUpperCase();
     if (!ui.includeGone && EXCLUDED_REGIONS.includes(region)) continue;
-    if (ui.regionFilter !== 'ALL' && region !== ui.regionFilter) continue;
+    if (ui.regionFilter !== 'ALL' && vesselZone(v) !== ui.regionFilter) continue;
     if (ui.grainOnly && !v.grain_clean) continue;
     if (ui.scrubOnly && !v.scrubber) continue;
     if (ui.fhOnly && !v.fh_candidate) continue;
@@ -292,7 +299,7 @@ function computeRows() {
     const area = getArea(ui.port);
     let dist = null, distSrc = 'matrix';
     if (area) {
-      const zone = (v.region || '').toUpperCase();
+      const zone = vesselZone(v);
       if (area.regionNm && area.regionNm[zone] != null) { dist = area.regionNm[zone]; distSrc = 'zone'; }
       else if (area.base) {
         const b = lookup(area.base);
@@ -443,7 +450,7 @@ function render() {
     const allRows = computeRows();
     ui.regionFilter = saveRegion;
     const counts = {};
-    allRows.forEach(r => { const g = (r.v.region || '—').toUpperCase(); counts[g] = (counts[g] || 0) + 1; });
+    allRows.forEach(r => { const g = vesselZone(r.v); counts[g] = (counts[g] || 0) + 1; });
     const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
     pillWrap.innerHTML = [['ALL', allRows.length]].concat(entries).map(([g, c]) =>
       `<button class="filter-pill ${ui.regionFilter === g ? 'active' : ''}" data-region="${esc(g)}">${esc(g)} <span class="filter-count">${c}</span></button>`).join('');

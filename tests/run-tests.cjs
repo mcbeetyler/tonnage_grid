@@ -65,6 +65,23 @@ const FU = load('fit-utils.js');
   A(FU.parseLaycanWindow('garbage') === null, 'garbage laycan null');
 }
 
+// ═══ 1b. zones ════════════════════════════════════════════════════════════════
+section('zones');
+{
+  const Z = load('zones.js');
+  A(Z.zoneOfPort('SANTOS') === 'ECSA', 'santos ECSA');
+  A(Z.zoneOfPort('LULEA') === 'N CONT', 'lulea N CONT');
+  A(Z.zoneOfPort('LIVERPOOL (UK)') === 'N CONT', 'liverpool (UK)');
+  A(Z.zoneOfPort('GIBRALTAR') === 'W MED', 'gibraltar W MED');
+  A(Z.zoneOfPort('PORT SAID') === 'E MED', 'port said E MED');
+  A(Z.zoneOfPort('BALBOA') === 'NCSA', 'balboa NCSA');
+  A(Z.zoneOfPort('nola') === 'USG', 'nola USG');
+  A(Z.zoneOfPort('Ust Luga') === 'BALTIC', 'ust luga BALTIC');
+  A(Z.zoneOfPort('unknownport xyz') === null, 'unknown null');
+  A(Z.zoneOfVessel({ dely_port: 'somewhere odd', region: 'EMED' }) === 'E MED', 'sheet-tag alias fallback');
+  A(Z.zoneOfVessel({ dely_port: 'Itaqui', region: 'GONE' }) === 'NCSA', 'port beats status tag');
+}
+
 // ═══ 2. csv-import + app (parse, sync, merge) ═════════════════════════════════
 section('csv-import + app');
 {
