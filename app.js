@@ -160,8 +160,10 @@ function applyInboxState() {
   panel.style.display = collapsed ? 'none' : '';
   if (divider) divider.style.display = collapsed ? 'none' : '';
   if (tab) tab.style.display = collapsed ? '' : 'none';
+  // Collapsed: only the slim expand tab + the grid remain visible (the
+  // hidden panel/divider don't occupy grid tracks), so two columns.
   layout.style.gridTemplateColumns = collapsed
-    ? 'auto 0 1fr'
+    ? 'auto 1fr'
     : 'var(--inbox-width, 380px) 6px 1fr';
 }
 function toggleInbox() {

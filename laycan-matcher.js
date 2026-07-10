@@ -542,8 +542,8 @@ function buildUI() {
     <div style="padding:20px 28px">
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap">
         <div>
-          <h2 style="font-size:16px;font-weight:700;color:var(--text-bright)">Laycan Matcher</h2>
-          <div style="font-size:12px;color:var(--text-dim)">Which North Atlantic ships make your cargo's laycan · ETA = open date + ballast time at chosen speed &amp; sea margin (sheet default: per-vessel speed, 8%)</div>
+          <h2 style="font-size:16px;font-weight:700;color:var(--text-bright)">NATL Matcher</h2>
+          <div style="font-size:12px;color:var(--text-dim)">North Atlantic list — no declared ETAs here, so arrival is <b>computed</b>: open date + ballast at chosen speed &amp; sea margin · for ECSA board ships (declared ETAs, priced) use ECSA Pairings</div>
         </div>
         <div class="spacer" style="flex:1"></div>
         <span id="lm_source" style="font-size:11px;color:var(--text-dim)"></span>
@@ -552,7 +552,10 @@ function buildUI() {
 
       <div class="lm-controls">
         <div class="lm-field"><label>Cargo (from Cargo Book)</label>
-          <select id="lm_cargoPick" style="max-width:260px"><option value="">— manual entry —</option></select></div>
+          <div style="display:flex;gap:4px">
+            <select id="lm_cargoPick" style="max-width:260px"><option value="">— manual entry —</option></select>
+            <button id="lm_toPairings" class="lm-mini" style="display:none;white-space:nowrap" title="Check the same cargo against ECSA board ships (declared ETAs, priced)">ECSA ⇢</button>
+          </div></div>
         <div class="lm-field"><label>Load port / area</label>
           <div style="display:flex;gap:4px">
             <select id="lm_port">${portOpts()}</select>
@@ -781,9 +784,18 @@ function populateCargoPicker() {
   const live = cargoHistory.filter(c => cargoCurrent.includes(c.id) && !c.fixed);
   sel.innerHTML = '<option value="">— manual entry —</option>' + live.map(c =>
     `<option value="${esc(c.id)}">${esc(c.charterer || '?')} · ${esc(c.load || '?')} · ${esc(c.laycan || 'no laycan')}</option>`).join('');
+  const toPairings = document.getElementById('lm_toPairings');
+  if (toPairings && !toPairings._wired) {
+    toPairings._wired = true;
+    toPairings.addEventListener('click', () => {
+      if (sel.value && window.PairingsSelectCargo) window.PairingsSelectCargo(sel.value);
+    });
+  }
+  if (toPairings) toPairings.style.display = sel.value ? '' : 'none';
   sel.onchange = () => {
     const note = document.getElementById('lm_pickNote');
     if (note) { note.style.display = 'none'; note.textContent = ''; }
+    if (toPairings) toPairings.style.display = sel.value ? '' : 'none';
     const c = live.find(x => x.id === sel.value);
     if (!c) return;
     const msgs = [];
@@ -826,6 +838,16 @@ if (IS_BROWSER) {
   window.switchTab = function (tab) {
     if (_origSwitchTabMatcher) _origSwitchTabMatcher(tab);
     if (tab === 'matcher') lmInit();
+  };
+
+  // Cross-link hook: ECSA Pairings hands a cargo over to check NATL ballasters
+  window.LaycanMatcherSelectCargo = function (cargoId) {
+    window.switchTab('matcher');       // ensures lmInit + picker populated
+    const sel = document.getElementById('lm_cargoPick');
+    if (sel) {
+      sel.value = cargoId;
+      if (typeof sel.onchange === 'function') sel.onchange();
+    }
   };
 
   // Public hook for the Google Sheets feed (feeds.js).

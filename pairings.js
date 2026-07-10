@@ -286,8 +286,8 @@ function buildUI() {
     <div style="padding:20px 28px">
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap">
         <div>
-          <h2 style="font-size:16px;font-weight:700;color:var(--text-bright)">Pairings</h2>
-          <div style="font-size:12px;color:var(--text-dim)">Tonnage Board ↔ Cargo Book · board ETAs are owner-declared, no distance math · same FIT/EARLY/TIGHT tiers as the Laycan Matcher</div>
+          <h2 style="font-size:16px;font-weight:700;color:var(--text-bright)">ECSA Pairings</h2>
+          <div style="font-size:12px;color:var(--text-dim)">ECSA board ↔ Cargo Book · ETAs are owner-<b>declared</b>, ranked by price — no distance math · for NATL positions (computed ETAs) use the NATL Matcher</div>
         </div>
       </div>
 
@@ -297,7 +297,10 @@ function buildUI() {
           <button data-mode="ship2cargo">Ship → Cargoes</button>
         </div>
         <div class="pr-field" id="pr_cargoField"><label>Cargo — type to search</label>
-          <input id="pr_cargoPick" list="pr_cargoList" placeholder="charterer / load / laycan…" style="width:300px" autocomplete="off">
+          <div style="display:flex;gap:4px">
+            <input id="pr_cargoPick" list="pr_cargoList" placeholder="charterer / load / laycan…" style="width:300px" autocomplete="off">
+            <button id="pr_toMatcher" style="display:none;white-space:nowrap;border:1px solid var(--border);background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;font-size:11px;padding:4px 10px" title="Check the same cargo against NATL positions (computed ETAs from dely port)">NATL ⇢</button>
+          </div>
           <datalist id="pr_cargoList"></datalist></div>
         <div class="pr-field" id="pr_shipField"><label>Ship — type to search</label>
           <input id="pr_shipPick" list="pr_shipList" placeholder="vessel name…" style="width:300px" autocomplete="off">
@@ -327,7 +330,13 @@ function buildUI() {
   on('pr_cargoPick', 'input', e => {
     const id = cargoLabelMap.get(e.target.value.toLowerCase().trim());
     if (id !== undefined || e.target.value === '') { ui.cargoId = id || ''; saveUi(); render(); }
+    const btn = document.getElementById('pr_toMatcher');
+    if (btn) btn.style.display = ui.cargoId ? '' : 'none';
   });
+  document.getElementById('pr_toMatcher').addEventListener('click', () => {
+    if (ui.cargoId && window.LaycanMatcherSelectCargo) window.LaycanMatcherSelectCargo(ui.cargoId);
+  });
+  if (ui.cargoId) { const b = document.getElementById('pr_toMatcher'); if (b) b.style.display = ''; }
   on('pr_shipPick', 'input', e => {
     const t = e.target.value.trim();
     const hit = openShips().find(v => (v.vessel_name || '').toLowerCase() === t.toLowerCase());
@@ -356,6 +365,19 @@ if (IS_BROWSER) {
   window.switchTab = function (tab) {
     if (_origSwitchTabPairings) _origSwitchTabPairings(tab);
     if (tab === 'pairings') prInit();
+  };
+
+  // Cross-link hook: NATL Matcher hands a cargo over to check ECSA board ships
+  window.PairingsSelectCargo = function (cargoId) {
+    window.switchTab('pairings');
+    ui.mode = 'cargo2ship';
+    ui.cargoId = cargoId;
+    saveUi();
+    const c = liveCargoes().find(x => x.id === cargoId);
+    const inp = document.getElementById('pr_cargoPick');
+    if (inp && c) inp.value = cargoLabel(c);
+    syncModeUI();
+    render();
   };
 }
 
