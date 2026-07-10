@@ -20,7 +20,6 @@ let cargoCurrent = JSON.parse(localStorage.getItem('pt_cargo_current') || '[]');
 let activeCargoStem = 'ALL';
 let activeCargoView = 'current'; // 'current' or 'trends'
 let trendGranularity = 'weekly';  // 'daily', 'weekly', 'monthly'
-let cargoChart = null;
 let trendChart = null;
 
 // Get the currently visible (non-departed) cargoes for the dashboard view
@@ -378,15 +377,6 @@ function renderCargo() {
       `<button class="filter-pill ${activeCargoStem === s ? 'active' : ''}" onclick="setCargoStem('${s}')">${s} (${stemCounts[s]})</button>`
     ).join('');
 
-  // Legend
-  const presentSlots = [...new Set(filtered.map(c => c.slot).filter(Boolean))].sort((a, b) => slotSortKey(a) - slotSortKey(b));
-  document.getElementById('cargoLegend').innerHTML =
-    presentSlots.map(s => `<span class="legend-item"><span class="legend-dot" style="background:${slotColor(s)}"></span>${s}</span>`).join('') +
-    `<span class="legend-item"><span class="legend-line"></span>Running total</span>`;
-
-  // Chart
-  renderCargoChart(filtered);
-
   // Table
   filtered.sort((a, b) => slotSortKey(a.slot) - slotSortKey(b.slot));
   const tbody = document.getElementById('cargoBody');
@@ -528,78 +518,6 @@ function markCargoDeparted(id) {
   renderCargo();
 }
 
-function renderCargoChart(filtered) {
-  // Group by updated date
-  const dateMap = {};
-  filtered.forEach(c => {
-    const d = c.updated || 'Unknown';
-    if (!dateMap[d]) dateMap[d] = [];
-    dateMap[d].push(c);
-  });
-
-  const dates = Object.keys(dateMap).sort((a, b) => {
-    const pa = a.replace(/\s/g, '').toLowerCase();
-    const pb = b.replace(/\s/g, '').toLowerCase();
-    return pa.localeCompare(pb);
-  });
-
-  const slots = [...new Set(filtered.map(c => c.slot).filter(Boolean))].sort((a, b) => slotSortKey(a) - slotSortKey(b));
-
-  const barDatasets = slots.map(slot => ({
-    label: slot,
-    data: dates.map(d => dateMap[d].filter(c => c.slot === slot).length),
-    backgroundColor: slotColor(slot),
-    stack: 'a',
-    order: 2,
-  }));
-
-  // Running total
-  let cumulative = 0;
-  const runningTotal = dates.map(d => {
-    cumulative += dateMap[d].length;
-    return cumulative;
-  });
-
-  const lineDataset = {
-    label: 'Running total',
-    data: runningTotal,
-    type: 'line',
-    borderColor: '#E24B4A',
-    backgroundColor: '#E24B4A',
-    pointRadius: 4,
-    pointBackgroundColor: '#E24B4A',
-    borderWidth: 2,
-    fill: false,
-    order: 1,
-    tension: 0.1,
-  };
-
-  const ctx = document.getElementById('cargoChart');
-  if (cargoChart) cargoChart.destroy();
-
-  cargoChart = new Chart(ctx, {
-    type: 'bar',
-    data: { labels: dates, datasets: [...barDatasets, lineDataset] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            title: ctx => 'Added: ' + ctx[0].label,
-            label: ctx => ctx.raw > 0 ? ` ${ctx.dataset.label}: ${ctx.raw}` : null,
-            filter: item => item.raw > 0,
-          }
-        }
-      },
-      scales: {
-        x: { stacked: true, grid: { display: false }, ticks: { autoSkip: false } },
-        y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } },
-      }
-    }
-  });
-}
 
 function setCargoStem(stem) {
   activeCargoStem = stem;
@@ -829,8 +747,6 @@ function clearCargo() {
   document.getElementById('cargoBody').innerHTML = '';
   document.getElementById('cargoStats').innerHTML = '';
   document.getElementById('cargoStemFilters').innerHTML = '';
-  document.getElementById('cargoLegend').innerHTML = '';
-  if (cargoChart) { cargoChart.destroy(); cargoChart = null; }
   if (trendChart) { trendChart.destroy(); trendChart = null; }
 }
 

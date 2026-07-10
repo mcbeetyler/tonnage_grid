@@ -3,10 +3,10 @@
    Which ships in the North Atlantic position list can make a
    cargo's laycan at a given load port?
 
-   Data source: NORTH ATLANTIC TONNAGE.xlsx ("NEW MAINVIEW" +
-   "Distances" sheets). Seed snapshot ships in na-seed.js;
-   drag-drop a fresh export of the sheet to refresh (stored in
-   localStorage, key lm_data).
+   Data source: the NORTH ATLANTIC TONNAGE sheet ("NEW MAINVIEW" +
+   "Distances"), delivered by the Google Sheets feed (feeds.js →
+   applyNatlFeed, stored in localStorage key lm_data). Seed snapshot
+   in na-seed.js for first boot.
 
    ETA convention (mirrors the master sheet):
      ballast days = distance / speed / 24 * 1.08   (8% sea margin)
@@ -138,20 +138,8 @@ function excelDate(v) {
 function s(v) { return (v == null) ? null : String(v).trim() || null; }
 function n(v) { const f = parseFloat(v); return isNaN(f) ? null : f; }
 
-function parseWorkbook(wb) {
-  const mv = wb.Sheets['NEW MAINVIEW'];
-  const di = wb.Sheets['Distances'];
-  if (!mv) throw new Error('Sheet "NEW MAINVIEW" not found in workbook');
-  if (!di) throw new Error('Sheet "Distances" not found in workbook');
-  return parseArrays(
-    XLSX.utils.sheet_to_json(mv, { header: 1, raw: true, cellDates: true }),
-    XLSX.utils.sheet_to_json(di, { header: 1, raw: true }),
-    'imported xlsx'
-  );
-}
-
-// Core parser over plain row arrays — used by both the xlsx drag-drop
-// (via parseWorkbook) and the Google Sheets feed (rows arrive as JSON).
+// Core parser over plain row arrays — fed by the Google Sheets feed
+// (rows arrive as JSON via feeds.js → LaycanMatcher.applyNatlFeed).
 function parseArrays(vrows, drows, sourceLabel) {
   // Distances: header on 2nd row, dely port in col B.
   // Destinations: main block C..AG, plus extra named columns further right
@@ -220,27 +208,6 @@ function parseArrays(vrows, drows, sourceLabel) {
     source: sourceLabel || 'imported xlsx', ports: ports.map(p => p[0]),
     distances, port_regions, vessels,
   };
-}
-
-function handleFile(file) {
-  const note = document.getElementById('lm_importNote');
-  if (typeof XLSX === 'undefined') {
-    if (note) { note.textContent = 'SheetJS failed to load — check network / CDN.'; note.style.color = 'var(--red)'; }
-    return;
-  }
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
-      const data = parseWorkbook(wb);
-      storeData(data);
-      if (note) { note.textContent = `Imported ${data.vessels.length} vessels · ${Object.keys(data.distances).length} dely ports · ${data.imported_at}`; note.style.color = 'var(--green)'; }
-      render();
-    } catch (err) {
-      if (note) { note.textContent = 'Import failed: ' + err.message; note.style.color = 'var(--red)'; }
-    }
-  };
-  reader.readAsArrayBuffer(file);
 }
 
 // ─── Laycan parsing (delegates to shared fit-utils) ──────────────────────────
@@ -581,10 +548,7 @@ function buildUI() {
         <div class="spacer" style="flex:1"></div>
         <span id="lm_source" style="font-size:11px;color:var(--text-dim)"></span>
         <button class="lm-mini" id="lm_copyFits" style="padding:7px 14px" title="Copy a share-ready shortlist of every FITS ship on screen — one line each, internal comments excluded">Copy fits 📋</button>
-        <div class="lm-drop" id="lm_drop">⬆ Drop / click to import fresh NORTH ATLANTIC TONNAGE.xlsx</div>
-        <input type="file" id="lm_file" accept=".xlsx,.xlsm" style="display:none">
       </div>
-      <div id="lm_importNote" style="font-size:11px;margin-bottom:8px"></div>
 
       <div class="lm-controls">
         <div class="lm-field"><label>Cargo (from Cargo Book)</label>
@@ -700,15 +664,6 @@ function buildUI() {
     if (p.style.display === 'none') { renderCustPanel(); p.style.display = ''; }
     else p.style.display = 'none';
   });
-
-  // Import: click + drag-drop
-  const drop = document.getElementById('lm_drop');
-  const file = document.getElementById('lm_file');
-  drop.addEventListener('click', () => file.click());
-  file.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); e.target.value = ''; });
-  ['dragover', 'dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
-  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
-  drop.addEventListener('drop', e => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
 
   populateCargoPicker();
 }
