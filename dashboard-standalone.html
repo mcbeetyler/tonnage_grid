@@ -754,8 +754,10 @@
   </div>
 </header>
 
-<div class="layout">
-  <aside class="panel-inbox">
+<div class="layout" id="boardLayout">
+  <button id="inboxExpandTab" onclick="toggleInbox()" title="Show the WhatsApp inbox"
+    style="display:none;writing-mode:vertical-rl;border:none;border-right:1px solid var(--border);background:var(--bg2);color:var(--text-dim);font-size:10px;font-weight:600;letter-spacing:.1em;cursor:pointer;padding:14px 4px">📥 INBOX</button>
+  <aside class="panel-inbox" id="inboxPanel">
     <div class="panel-title">
       <span class="dot"></span>
       <span id="panelTitleText">WhatsApp Inbox</span>
@@ -763,6 +765,8 @@
         <button class="mode-btn active" id="modeParseBtn" onclick="setMode('parse')">Parse</button>
         <button class="mode-btn" id="modeManualBtn" onclick="setMode('manual')">Manual</button>
       </div>
+      <button onclick="toggleInbox()" title="Collapse the inbox — everything arrives via the feed now; this stays available for one-off pastes"
+        style="margin-left:auto;border:1px solid var(--border);background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;font-size:11px;padding:2px 8px;color:var(--text-dim)">⇤</button>
     </div>
 
     <!-- Parse mode -->
@@ -3645,6 +3649,31 @@ function forceSync() {
   });
 }
 function touchVessel(idx) { vessels[idx].last_updated = new Date().toISOString(); }
+
+// ─── Inbox collapse ──────────────────────────────────────────────────────────
+// The feed made the WhatsApp paste panel a sometimes-tool: collapsible
+// (default collapsed once toggled), never deleted — still there for
+// one-off pastes and fixture messages.
+function applyInboxState() {
+  const collapsed = localStorage.getItem('pt_inbox_collapsed') === '1';
+  const layout = document.getElementById('boardLayout');
+  const panel = document.getElementById('inboxPanel');
+  const tab = document.getElementById('inboxExpandTab');
+  const divider = document.getElementById('divider');
+  if (!layout || !panel) return;
+  panel.style.display = collapsed ? 'none' : '';
+  if (divider) divider.style.display = collapsed ? 'none' : '';
+  if (tab) tab.style.display = collapsed ? '' : 'none';
+  layout.style.gridTemplateColumns = collapsed
+    ? 'auto 0 1fr'
+    : 'var(--inbox-width, 380px) 6px 1fr';
+}
+function toggleInbox() {
+  const collapsed = localStorage.getItem('pt_inbox_collapsed') === '1';
+  localStorage.setItem('pt_inbox_collapsed', collapsed ? '0' : '1');
+  applyInboxState();
+}
+document.addEventListener('DOMContentLoaded', applyInboxState);
 function saveColumns() {
   localStorage.setItem('pt_col_order', JSON.stringify(columnOrder));
   localStorage.setItem('pt_col_hidden', JSON.stringify([...hiddenColumns]));

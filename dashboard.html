@@ -753,8 +753,10 @@
   </div>
 </header>
 
-<div class="layout">
-  <aside class="panel-inbox">
+<div class="layout" id="boardLayout">
+  <button id="inboxExpandTab" onclick="toggleInbox()" title="Show the WhatsApp inbox"
+    style="display:none;writing-mode:vertical-rl;border:none;border-right:1px solid var(--border);background:var(--bg2);color:var(--text-dim);font-size:10px;font-weight:600;letter-spacing:.1em;cursor:pointer;padding:14px 4px">📥 INBOX</button>
+  <aside class="panel-inbox" id="inboxPanel">
     <div class="panel-title">
       <span class="dot"></span>
       <span id="panelTitleText">WhatsApp Inbox</span>
@@ -762,6 +764,8 @@
         <button class="mode-btn active" id="modeParseBtn" onclick="setMode('parse')">Parse</button>
         <button class="mode-btn" id="modeManualBtn" onclick="setMode('manual')">Manual</button>
       </div>
+      <button onclick="toggleInbox()" title="Collapse the inbox — everything arrives via the feed now; this stays available for one-off pastes"
+        style="margin-left:auto;border:1px solid var(--border);background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;font-size:11px;padding:2px 8px;color:var(--text-dim)">⇤</button>
     </div>
 
     <!-- Parse mode -->

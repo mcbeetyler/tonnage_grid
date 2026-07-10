@@ -145,6 +145,31 @@ function forceSync() {
   });
 }
 function touchVessel(idx) { vessels[idx].last_updated = new Date().toISOString(); }
+
+// ─── Inbox collapse ──────────────────────────────────────────────────────────
+// The feed made the WhatsApp paste panel a sometimes-tool: collapsible
+// (default collapsed once toggled), never deleted — still there for
+// one-off pastes and fixture messages.
+function applyInboxState() {
+  const collapsed = localStorage.getItem('pt_inbox_collapsed') === '1';
+  const layout = document.getElementById('boardLayout');
+  const panel = document.getElementById('inboxPanel');
+  const tab = document.getElementById('inboxExpandTab');
+  const divider = document.getElementById('divider');
+  if (!layout || !panel) return;
+  panel.style.display = collapsed ? 'none' : '';
+  if (divider) divider.style.display = collapsed ? 'none' : '';
+  if (tab) tab.style.display = collapsed ? '' : 'none';
+  layout.style.gridTemplateColumns = collapsed
+    ? 'auto 0 1fr'
+    : 'var(--inbox-width, 380px) 6px 1fr';
+}
+function toggleInbox() {
+  const collapsed = localStorage.getItem('pt_inbox_collapsed') === '1';
+  localStorage.setItem('pt_inbox_collapsed', collapsed ? '0' : '1');
+  applyInboxState();
+}
+document.addEventListener('DOMContentLoaded', applyInboxState);
 function saveColumns() {
   localStorage.setItem('pt_col_order', JSON.stringify(columnOrder));
   localStorage.setItem('pt_col_hidden', JSON.stringify([...hiddenColumns]));
