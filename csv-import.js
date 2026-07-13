@@ -513,7 +513,16 @@ function markFixturesFromCSV(parsed) {
   for (const f of parsed) {
     const v = vessels.find(x => norm(x.vessel_name) === norm(f.vessel_name));
     if (!v) { unmatched++; continue; }
-    if (v.status === 'FIXED') { already++; continue; }
+    if (v.status === 'FIXED') {
+      // Manually-fixed ship: never overwrite anything the user set, but
+      // backfill fixture details they left blank
+      const fixTs0 = f.csv_updated || null;
+      if (v.fixed_price == null && f.bki_eqvt != null) v.fixed_price = Math.round(f.bki_eqvt);
+      if (!v.date_fixed && fixTs0) v.date_fixed = fixTs0.slice(0, 10);
+      if (!v.fix_msg && (f.fix_msg || f.notes)) v.fix_msg = f.fix_msg || f.notes;
+      already++;
+      continue;
+    }
     if (v.status === 'FAILED') continue;                    // desk judgment stands
     const fixTs = f.csv_updated || new Date().toISOString();
     const o = v.field_overrides || {};

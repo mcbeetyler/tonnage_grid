@@ -174,6 +174,15 @@ section('csv-import + app');
     A(vessels.find(v => v.vessel_name === 'PEGASUS').status === 'FAILED', 'FAILED never overridden');
     A(vessels.length === 2 && fr.marked === 1 && fr.unmatched === 0, 'no new rows created; counts right');
 
+    // Manually-fixed ship: user's values stand, blanks get backfilled
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'MINOAN BAY', status: 'FIXED', fixed_price: 27500, date_fixed: null, fix_msg: null });
+    markFixturesFromCSV(parseCSVVessels([fxHdr, fxRow].join('\\n')).vessels);
+    const mf = vessels[0];
+    A(mf.fixed_price === 27500, 'manual fixed price never overwritten');
+    A(mf.date_fixed && mf.date_fixed.endsWith('-06-29'), 'blank date backfilled from sheet');
+    A(mf.fix_msg && /600gbb/.test(mf.fix_msg), 'blank fix msg backfilled');
+
     const merged = mergeVesselArrays(
       [{ vessel_name: 'A', last_updated: '2026-07-08T10:00:00Z', dwt: 1 }, { vessel_name: 'B', last_updated: '2026-07-08T09:00:00Z', dwt: 2 }],
       [{ vessel_name: 'B', last_updated: '2026-07-08T11:00:00Z', dwt: 3 }, { vessel_name: 'C', dwt: 4 }]);
