@@ -85,6 +85,8 @@ let PR = { initialised: false };
 let ui = Object.assign({
   mode: 'cargo2ship',       // or 'ship2cargo'
   cargoId: '', shipName: '',
+  manFrom: '', manTo: '',   // manual date window — search ships with no cargo attached
+  minDwt: '', maxDwt: '',
   waitTolDays: 2, tightTolDays: 2, etaAdjDays: 0, autoBasis: true,
   ecsaOnly: true, showAll: false,
 }, IS_BROWSER ? JSON.parse(localStorage.getItem(LS_UI) || '{}') : {});
@@ -135,10 +137,20 @@ function isEcsa(c) {
 
 function computeCargo2Ship() {
   const cargo = liveCargoes().find(c => c.id === ui.cargoId) || null;
-  const w = cargo ? cargoWindow(cargo) : null;
+  // No cargo? A manual date window works standalone — "who's around 5-15 Aug"
+  let w = cargo ? cargoWindow(cargo) : null;
+  if (!w && (ui.manFrom || ui.manTo)) {
+    w = {
+      from: ui.manFrom ? new Date(ui.manFrom + 'T00:00:00Z') : null,
+      to: ui.manTo ? new Date(ui.manTo + 'T23:59:59Z') : null,
+      manual: true,
+    };
+  }
   const basis = (ui.autoBasis && cargo) ? loadBasisAdj(cargo) : { days: 0, label: null };
   const opts = { waitTolDays: ui.waitTolDays, tightTolDays: ui.tightTolDays };
-  const rows = openShips().map(v => {
+  const minDwt = parseFloat(ui.minDwt) || 0;
+  const maxDwt = parseFloat(ui.maxDwt) || Infinity;
+  const rows = openShips().filter(v => (v.dwt || 0) >= minDwt && (v.dwt || 0) <= maxDwt).map(v => {
     const eta = shipEta(v, basis.days || 0);
     const fit = FU.fitStatus(eta, w && w.from, w && w.to, opts);
     const p6 = p6Of(v);
@@ -223,7 +235,12 @@ function render() {
 
   if (ui.mode === 'cargo2ship') {
     const { cargo, window: w, rows, basis } = computeCargo2Ship();
-    if (!cargo) note.textContent = 'Pick a cargo — open board ships will be tiered on her laycan and sorted cheapest-first.';
+    if (!cargo && w && w.manual) {
+      const f = w.from ? fmtD(w.from) : '…', t = w.to ? fmtD(w.to) : '…';
+      note.textContent = `Manual window ${f} – ${t}, no cargo attached — raw declared ETAs (no load-basis adjustment).`;
+      note.style.color = 'var(--text-dim)';
+    }
+    else if (!cargo) note.textContent = 'Pick a cargo — or just set a date window and/or DWT range to browse ships.';
     else if (!w) note.textContent = `Couldn't parse laycan "${cargo.laycan || '—'}" — fix it in the Cargo Book.`;
     else {
       const bits = [];
@@ -323,9 +340,12 @@ function populatePickers() {
 
 function syncModeUI() {
   document.querySelectorAll('#pr_modeSeg button').forEach(b => b.classList.toggle('active', b.dataset.mode === ui.mode));
-  document.getElementById('pr_cargoField').style.display = ui.mode === 'cargo2ship' ? '' : 'none';
-  document.getElementById('pr_shipField').style.display = ui.mode === 'ship2cargo' ? '' : 'none';
-  document.getElementById('pr_ecsaWrap').style.display = ui.mode === 'ship2cargo' ? '' : 'none';
+  const c2s = ui.mode === 'cargo2ship';
+  document.getElementById('pr_cargoField').style.display = c2s ? '' : 'none';
+  document.getElementById('pr_shipField').style.display = c2s ? 'none' : '';
+  document.getElementById('pr_ecsaWrap').style.display = c2s ? 'none' : '';
+  document.getElementById('pr_manWrap').style.display = c2s ? '' : 'none';
+  document.getElementById('pr_dwtWrap').style.display = c2s ? '' : 'none';
 }
 
 function buildUI() {
@@ -375,6 +395,17 @@ function buildUI() {
         <div class="pr-field" id="pr_shipField"><label>Ship — type to search</label>
           <input id="pr_shipPick" list="pr_shipList" placeholder="vessel name…" style="width:300px" autocomplete="off">
           <datalist id="pr_shipList"></datalist></div>
+        <div class="pr-field" id="pr_manWrap" title="Works without a cargo: show ships whose ETA falls in this window. A selected cargo's laycan takes precedence — clear the cargo box to use this.">
+          <label>ETA window (no cargo needed)</label>
+          <div style="display:flex;gap:4px">
+            <input type="date" id="pr_manFrom" value="${esc(ui.manFrom)}">
+            <input type="date" id="pr_manTo" value="${esc(ui.manTo)}">
+          </div></div>
+        <div class="pr-field" id="pr_dwtWrap"><label>DWT range</label>
+          <div style="display:flex;gap:4px">
+            <input type="number" id="pr_minDwt" placeholder="min" style="width:80px" value="${esc(ui.minDwt)}">
+            <input type="number" id="pr_maxDwt" placeholder="max" style="width:80px" value="${esc(ui.maxDwt)}">
+          </div></div>
         <div class="pr-field"><label title="Max idle days before layfrom to still count as FITS">Max wait (d)</label>
           <input type="number" id="pr_waitTol" step="0.5" min="0" style="width:70px" value="${ui.waitTolDays}"></div>
         <div class="pr-field"><label>Tight tolerance (d)</label>
@@ -413,6 +444,10 @@ function buildUI() {
     const hit = openShips().find(v => (v.vessel_name || '').toLowerCase() === t.toLowerCase());
     if (hit || t === '') { ui.shipName = hit ? hit.vessel_name : ''; saveUi(); render(); }
   });
+  on('pr_manFrom', 'change', e => { ui.manFrom = e.target.value; saveUi(); render(); });
+  on('pr_manTo', 'change', e => { ui.manTo = e.target.value; saveUi(); render(); });
+  on('pr_minDwt', 'input', e => { ui.minDwt = e.target.value; saveUi(); render(); });
+  on('pr_maxDwt', 'input', e => { ui.maxDwt = e.target.value; saveUi(); render(); });
   on('pr_waitTol', 'input', e => { ui.waitTolDays = e.target.value; saveUi(); render(); });
   on('pr_tightTol', 'input', e => { ui.tightTolDays = e.target.value; saveUi(); render(); });
   on('pr_etaAdj', 'input', e => { ui.etaAdjDays = e.target.value; saveUi(); render(); });

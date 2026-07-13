@@ -261,6 +261,23 @@ section('pairings');
   A(p._test.computeCargo2Ship().rows[0].status !== 'FIT', 'basis adj pushes 27Jul+6.5d past 29Jul cancelling');
   p._test.setUi({ autoBasis: false });
   A(p._test.computeCargo2Ship().rows[0].status === 'FIT', 'without adj it would (misleadingly) fit');
+
+  // Manual window + DWT range, no cargo attached
+  p._test.setGlobals({
+    vessels: [
+      { vessel_name: 'IN WINDOW', status: 'OPEN', dwt: 82000, eta_ecsa: '2026-08-10', market_colour: [{}] },
+      { vessel_name: 'OUT WINDOW', status: 'OPEN', dwt: 82000, eta_ecsa: '2026-09-20', market_colour: [{}] },
+      { vessel_name: 'TOO SMALL', status: 'OPEN', dwt: 63000, eta_ecsa: '2026-08-11', market_colour: [{}] },
+    ],
+    cargoHistory: [], cargoCurrent: [],
+  });
+  p._test.setUi({ mode: 'cargo2ship', cargoId: '', manFrom: '2026-08-05', manTo: '2026-08-15', minDwt: '75000', maxDwt: '90000', autoBasis: true, etaAdjDays: 0 });
+  const mw = p._test.computeCargo2Ship();
+  A(mw.window && mw.window.manual, 'manual window active without cargo');
+  A(mw.rows.length === 2, 'dwt filter drops the 63k');
+  A(mw.rows.find(r => r.v.vessel_name === 'IN WINDOW').status === 'FIT', 'in-window FIT');
+  A(mw.rows.find(r => r.v.vessel_name === 'OUT WINDOW').status === 'MISSES', 'out-window MISSES');
+  p._test.setUi({ manFrom: '', manTo: '', minDwt: '', maxDwt: '' });
 }
 
 // ═══ 5. supply + feeds ════════════════════════════════════════════════════════
