@@ -351,11 +351,16 @@ function renderFixtureCard(v, rank) {
   const fixedPx = v.fixed_price ? '$' + v.fixed_price.toLocaleString() : '—';
   const dateFixed = v.date_fixed ? fmtDateReport(v.date_fixed) : '';
   const charterer = v.charterer || '—';
+  const etaStr = v.eta_ecsa ? 'ETA ' + fmtDateReport(String(v.eta_ecsa).slice(0, 10)) : '';
+  // Fixture message from the sheet — hover to read, click for the whole thing
+  const fm = v.fix_msg
+    ? `<span class="fixmsg-chip" title="${_escHtml(v.fix_msg)}" onclick="alert(${JSON.stringify(String(v.fix_msg)).replace(/"/g, '&quot;')})">💬</span>`
+    : '';
   const safeName = (v.vessel_name || '').replace(/'/g, "\\'");
   return `<div class="report-card">
     <span class="report-rank">${rank}</span>
     <span class="report-vessel-name">${v.vessel_name || '—'} <span class="report-specs">${specs}</span></span>
-    <span class="report-chips" title="${charterer.replace(/"/g,'&quot;')}">${charterer}</span>
+    <span class="report-chips" title="${charterer.replace(/"/g,'&quot;')}">${charterer}${etaStr ? ' · ' + etaStr : ''} ${fm}</span>
     <span class="report-fixture-date">${dateFixed}</span>
     <span class="report-p6 fixed">${fixedPx}</span>
     <button class="btn-remove" onclick="excludeFromReport('${safeName}')" title="Remove" style="padding:2px 6px">x</button>
