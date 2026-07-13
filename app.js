@@ -2135,7 +2135,10 @@ function renderTable() {
         // "who fixed what" colour. Shown beside the charterer so the user
         // can read it and fill the proper name; click 💬 to see it whole.
         const fm = v.fix_msg ? `<span class="fixmsg-chip" title="${_escHtml(v.fix_msg)}" onclick="event.stopPropagation();alert(${JSON.stringify(String(v.fix_msg)).replace(/"/g, '&quot;')})">💬</span>` : '';
-        return `<td class="td-owner"><span class="editable" onclick="startEdit(this,${gi},'charterer',false)">${v.charterer || '—'}</span> ${fm}</td>`;
+        // ETA beside the charterer for fixed ships — reads as "who took her, arriving when"
+        const fixEta = (v.status === 'FIXED' && v.eta_ecsa)
+          ? `<span style="font-family:var(--mono);font-size:11px;color:var(--text-dim)" title="ETA ECSA">${fmtDate(String(v.eta_ecsa).slice(0, 10))}</span>` : '';
+        return `<td class="td-owner"><span class="editable" onclick="startEdit(this,${gi},'charterer',false)">${v.charterer || '—'}</span> ${fixEta} ${fm}</td>`;
       }
       case 'date_fixed': return `<td class="td-date editable" onclick="startEdit(this,${gi},'date_fixed',true)">${v.date_fixed ? fmtDate(v.date_fixed) : '—'}</td>`;
       case 'last_updated': return `<td class="td-source">${fmtTimestamp(v.last_updated)}</td>`;
