@@ -2130,7 +2130,13 @@ function renderTable() {
         return `<td><span class="td-spread ${cls}">${spread > 0 ? '+' : ''}${fmtNum(spread)}</span></td>`;
       }
       case 'fixed': return `<td class="td-fixed editable" onclick="startEdit(this,${gi},'fixed_price',true)">${v.fixed_price ? fmtNum(v.fixed_price) : '—'}</td>`;
-      case 'charterer': return `<td class="td-owner editable" onclick="startEdit(this,${gi},'charterer',false)">${v.charterer || '—'}</td>`;
+      case 'charterer': {
+        // Fixture message from the sheet's Fixtures tab — the free-text
+        // "who fixed what" colour. Shown beside the charterer so the user
+        // can read it and fill the proper name; click 💬 to see it whole.
+        const fm = v.fix_msg ? `<span class="fixmsg-chip" title="${_escHtml(v.fix_msg)}" onclick="event.stopPropagation();alert(${JSON.stringify(String(v.fix_msg)).replace(/"/g, '&quot;')})">💬</span>` : '';
+        return `<td class="td-owner"><span class="editable" onclick="startEdit(this,${gi},'charterer',false)">${v.charterer || '—'}</span> ${fm}</td>`;
+      }
       case 'date_fixed': return `<td class="td-date editable" onclick="startEdit(this,${gi},'date_fixed',true)">${v.date_fixed ? fmtDate(v.date_fixed) : '—'}</td>`;
       case 'last_updated': return `<td class="td-source">${fmtTimestamp(v.last_updated)}</td>`;
       case 'notes': return `<td class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>`;
