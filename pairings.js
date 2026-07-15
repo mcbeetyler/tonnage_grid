@@ -241,6 +241,12 @@ function render() {
 
   if (ui.mode === 'cargo2ship') {
     const { cargo, window: w, rows, basis, isTa } = computeCargo2Ship();
+    // A selected cargo's laycan outranks the manual window — grey the manual
+    // inputs so a leftover window can't look like it's still driving
+    for (const id of ['pr_manFrom', 'pr_manTo']) {
+      const el = document.getElementById(id);
+      if (el) { el.style.opacity = cargo ? '.4' : '1'; el.title = cargo ? 'Inactive — the selected cargo’s laycan is driving. Clear the cargo to use this window.' : ''; }
+    }
     if (!cargo && w && w.manual) {
       const f = w.from ? fmtD(w.from) : '…', t = w.to ? fmtD(w.to) : '…';
       note.textContent = `Manual window ${f} – ${t}, no cargo attached — raw declared ETAs (no load-basis adjustment).`;
@@ -415,6 +421,8 @@ function buildUI() {
             <input type="number" id="pr_minDwt" placeholder="min" style="width:80px" value="${esc(ui.minDwt)}">
             <input type="number" id="pr_maxDwt" placeholder="max" style="width:80px" value="${esc(ui.maxDwt)}">
           </div></div>
+        <button id="pr_clear" title="Clear the cargo, ETA window, DWT range and ± adj — back to a blank search"
+          style="align-self:flex-end;border:1px solid var(--border);background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;padding:7px 14px;color:var(--text-dim)">Clear</button>
         <div class="pr-field"><label title="Max idle days before layfrom to still count as FITS">Max wait (d)</label>
           <input type="number" id="pr_waitTol" step="0.5" min="0" style="width:70px" value="${ui.waitTolDays}"></div>
         <div class="pr-field"><label>Tight tolerance (d)</label>
@@ -446,6 +454,17 @@ function buildUI() {
   });
   document.getElementById('pr_toMatcher').addEventListener('click', () => {
     if (ui.cargoId && window.LaycanMatcherSelectCargo) window.LaycanMatcherSelectCargo(ui.cargoId);
+  });
+  document.getElementById('pr_clear').addEventListener('click', () => {
+    ui.cargoId = ''; ui.manFrom = ''; ui.manTo = ''; ui.minDwt = ''; ui.maxDwt = ''; ui.etaAdjDays = 0;
+    saveUi();
+    for (const [id, val] of [['pr_cargoPick', ''], ['pr_manFrom', ''], ['pr_manTo', ''], ['pr_minDwt', ''], ['pr_maxDwt', ''], ['pr_etaAdj', 0]]) {
+      const el = document.getElementById(id);
+      if (el) el.value = val;
+    }
+    const b = document.getElementById('pr_toMatcher');
+    if (b) b.style.display = 'none';
+    render();
   });
   if (ui.cargoId) { const b = document.getElementById('pr_toMatcher'); if (b) b.style.display = ''; }
   on('pr_shipPick', 'input', e => {
