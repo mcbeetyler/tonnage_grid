@@ -11659,22 +11659,28 @@ function computeCargo2Ship() {
   const opts = { waitTolDays: ui.waitTolDays, tightTolDays: ui.tightTolDays };
   const minDwt = parseFloat(ui.minDwt) || 0;
   const maxDwt = parseFloat(ui.maxDwt) || Infinity;
+  // TA cargo? Then the TA quote is the price that matters — a ship quoting
+  // TA is declaring interest in going that way.
+  const isTa = !!(cargo && /\bta\b/i.test(cargo.stem || ''));
   const rows = openShips().filter(v => (v.dwt || 0) >= minDwt && (v.dwt || 0) <= maxDwt).map(v => {
     const eta = shipEta(v, basis.days || 0);
     const fit = FU.fitStatus(eta, w && w.from, w && w.to, opts);
     const p6 = p6Of(v);
     return { v, eta, p6offer: p6.offer, p6bid: p6.bid, rawOffer: rawOfferOf(v),
+      hireTa: v.hire_ta != null ? v.hire_ta : null,
       spread: (p6.offer != null && p6.bid != null) ? p6.offer - p6.bid : null,
       reason: !v.eta_ecsa ? 'no ETA on board' : (!w && cargo ? 'laycan unparsed' : null),
       ...fit };
   });
-  // tier → priced before unpriced → cheapest P6 offer → earliest ETA
+  // tier → priced before unpriced → cheapest → earliest ETA.
+  // Price basis: TA quote for TA cargoes, P6 offer otherwise.
+  const px = r => isTa ? r.hireTa : r.p6offer;
   rows.sort((a, b) =>
     (FU.FIT_ORDER[a.status] - FU.FIT_ORDER[b.status])
-    || ((a.p6offer == null) - (b.p6offer == null))
-    || ((a.p6offer ?? 0) - (b.p6offer ?? 0))
+    || ((px(a) == null) - (px(b) == null))
+    || ((px(a) ?? 0) - (px(b) ?? 0))
     || ((a.eta ? a.eta.getTime() : Infinity) - (b.eta ? b.eta.getTime() : Infinity)));
-  return { cargo, window: w, rows, basis };
+  return { cargo, window: w, rows, basis, isTa };
 }
 
 function computeShip2Cargo() {
@@ -11743,7 +11749,7 @@ function render() {
     || r.status === 'ETA' || r.status === 'NODATA' && false;
 
   if (ui.mode === 'cargo2ship') {
-    const { cargo, window: w, rows, basis } = computeCargo2Ship();
+    const { cargo, window: w, rows, basis, isTa } = computeCargo2Ship();
     if (!cargo && w && w.manual) {
       const f = w.from ? fmtD(w.from) : '…', t = w.to ? fmtD(w.to) : '…';
       note.textContent = `Manual window ${f} – ${t}, no cargo attached — raw declared ETAs (no load-basis adjustment).`;
@@ -11760,8 +11766,10 @@ function render() {
       note.style.color = basis && basis.warn ? 'var(--amber)' : 'var(--text-dim)';
     }
     const shown = rows.filter(r => !w ? true : visible(r));
+    const taHot = !!isTa;
     thead.innerHTML = `<tr><th>Status</th><th>Vessel</th><th>DWT/Blt</th><th>Dely</th><th>ETA ECSA</th><th>Owner</th>
       <th style="text-align:right" title="P6-equivalent offer — the universal comparator">Offer P6</th>
+      <th style="text-align:right${taHot ? ';color:var(--accent)' : ''}" title="TA offer from the grid — a ship quoting TA has declared interest in going that way${taHot ? '. TA cargo selected: sorted on this column' : ''}">Hire TA${taHot ? ' ▾' : ''}</th>
       <th style="text-align:right">Bid P6</th><th style="text-align:right">Spread</th><th style="text-align:right">vs Canc.</th></tr>`;
     tb.innerHTML = shown.length ? shown.map(r => {
       const v = r.v;
@@ -11775,11 +11783,12 @@ function render() {
         <td style="font-family:var(--mono);font-size:12px;font-weight:600">${v.eta_ecsa ? fmtD(shipEta(v)) : '—'}${onw}</td>
         <td>${esc(v.owner || v.source || '—')}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:600">${fmtK(r.p6offer)}${r.rawOffer != null && r.p6offer != null ? `<span style="color:var(--text-dim);font-weight:400" title="raw offer"> (${fmtK(r.rawOffer)})</span>` : ''}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:12px${taHot ? ';font-weight:700;color:var(--accent)' : ''}">${fmtK(r.hireTa)}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px">${fmtK(r.p6bid)}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px;color:${r.spread != null && r.spread <= 1000 ? 'var(--green)' : 'var(--text)'}"
             title="Offer minus bid — how far apart the two sides are">${r.spread == null ? '—' : fmtK(r.spread)}</td>
         ${fitCells(r)}</tr>`;
-    }).join('') : `<tr><td colspan="10" style="padding:18px;color:var(--text-dim)">${cargo ? 'No ships fit — toggle "Show all" to see the misses.' : 'No open ships on the board.'}</td></tr>`;
+    }).join('') : `<tr><td colspan="11" style="padding:18px;color:var(--text-dim)">${cargo ? 'No ships fit — toggle "Show all" to see the misses.' : 'No open ships on the board.'}</td></tr>`;
     renderStats(w ? rows : []);
   } else {
     const { ship, eta, rows } = computeShip2Cargo();
