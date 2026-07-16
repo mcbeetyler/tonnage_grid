@@ -10599,6 +10599,29 @@ function renderParticipants() {
     }
   }
 
+  // Finer clusters for DISTANCE ESTIMATION only — some zones (NCSA) span
+  // 3,000nm+, so a zone-wide median would mislead. Ports not listed here
+  // just use their zone.
+  const EST_CLUSTERS = {
+    'PANAMA': ['balboa', 'cristobal', 'colon', 'panama'],
+    'N BRAZIL': ['itaqui', 'sao luis', 'ponta da madeira', 'pecem', 'fortaleza', 'belem',
+      'vila do conde', 'barcarena', 'santarem', 'macapa', 'salvador', 'aratu', 'suape', 'recife'],
+    'CARIB RIM': ['puerto drummond', 'santa marta', 'barranquilla', 'cartagena (col)', 'puerto bolivar',
+      'rio orinoco', 'puerto ordaz', 'palua', 'matanzas', 'guanta', 'jose', 'la guaira',
+      'puerto cabello', 'maracaibo', 'amuay', 'port of spain', 'point lisas', 'point a pierre',
+      'georgetown', 'paramaribo', 'new amsterdam'],
+  };
+  const CLUSTER_LOOKUP = {};
+  for (const [cl, ports] of Object.entries(EST_CLUSTERS)) {
+    for (const p of ports) CLUSTER_LOOKUP[norm(p)] = cl;
+  }
+  /** Estimation cluster: finer than zone where zones are geographically wide. */
+  function estClusterOfPort(port) {
+    const n = norm(port);
+    if (CLUSTER_LOOKUP[n]) return CLUSTER_LOOKUP[n];
+    return zoneOfPort(port);
+  }
+
   /** Zone for a port name, or null if unknown. */
   function zoneOfPort(port) {
     if (!port) return null;
@@ -10626,7 +10649,7 @@ function renderParticipants() {
     return REGION_ALIASES[raw] || raw;
   }
 
-  return { zoneOfPort, zoneOfVessel, PORT_ZONES, ZONE_LIST: Object.keys(PORT_ZONES) };
+  return { zoneOfPort, zoneOfVessel, estClusterOfPort, PORT_ZONES, ZONE_LIST: Object.keys(PORT_ZONES) };
 });
 
 </script>
@@ -10749,6 +10772,49 @@ function parseNmInput(raw) {
   if (m) return Math.round(parseFloat(m[1]) * 24 * DAYS_TO_NM_SPEED);
   const f = parseFloat(t.replace(/,/g, ''));
   return isNaN(f) ? null : Math.round(f);
+}
+
+// ─── Zone-median distance estimate ───────────────────────────────────────────
+// Dely port not in the matrix? Estimate: median distance of KNOWN same-zone
+// ports to the target. Cristobal borrows from the NCSA cluster, Mississippi
+// river from USG. Honest rough guide (±1-2 days) — always marked ~.
+const _zoneEstCache = new Map();
+function medianOfGroup(groupOf, groupKey, targetPort) {
+  const samples = [];
+  for (const [dp, dists] of Object.entries(LM.data.distances)) {
+    if (groupOf(dp) !== groupKey) continue;
+    const d = dists[targetPort];
+    if (d && d > 0) samples.push(d);
+  }
+  if (samples.length < 3) return null;   // thinner than 3 ports = too rough even for us
+  samples.sort((a, b) => a - b);
+  return { d: samples[Math.floor(samples.length / 2)], n: samples.length,
+    lo: samples[0], hi: samples[samples.length - 1] };
+}
+function zoneEstimate(v, targetPort) {
+  if (!LM.data || !ZN) return null;
+  const key = (LM.data.imported_at || '') + '|' + (v.dely_port || v.region || '') + '|' + targetPort;
+  if (_zoneEstCache.has(key)) return _zoneEstCache.get(key);
+  let out = null;
+  // 1. Fine cluster first (PANAMA / N BRAZIL / CARIB RIM / normal zones) —
+  //    tight geography, trustworthy median
+  const cluster = v.dely_port ? ZN.estClusterOfPort(v.dely_port) : null;
+  if (cluster && !EXCLUDED_REGIONS.includes(cluster)) {
+    const m = medianOfGroup(dp => ZN.estClusterOfPort(dp), cluster, targetPort);
+    if (m) out = { d: m.d, n: m.n, zone: cluster, wide: false };
+  }
+  // 2. Zone-wide fallback — kept visible but flagged low-confidence when the
+  //    zone's spread is big (a wide zone median can be days off)
+  if (!out) {
+    const zone = ZN.zoneOfVessel(v);
+    if (zone && !EXCLUDED_REGIONS.includes(zone)) {
+      const m = medianOfGroup(dp => ZN.zoneOfPort(dp), zone, targetPort);
+      if (m) out = { d: m.d, n: m.n, zone, lo: m.lo, hi: m.hi,
+        wide: (m.hi - m.lo) > Math.max(600, m.d * 0.5) };
+    }
+  }
+  _zoneEstCache.set(key, out);
+  return out;
 }
 
 // ─── Data loading ────────────────────────────────────────────────────────────
@@ -10907,7 +10973,7 @@ function computeRows() {
     const key = (v.dely_port || '').toLowerCase();
     const lookup = p => (d.distances[key] && d.distances[key][p]) || (v.pre_dist && v.pre_dist[p]) || null;
     const area = getArea(ui.port);
-    let dist = null, distSrc = 'matrix';
+    let dist = null, distSrc = 'matrix', estN = null, estZone = null, estWide = false, estLo = null, estHi = null;
     if (area) {
       const zone = vesselZone(v);
       if (area.regionNm && area.regionNm[zone] != null) { dist = area.regionNm[zone]; distSrc = 'zone'; }
@@ -10917,6 +10983,11 @@ function computeRows() {
       }
     } else {
       dist = lookup(ui.port);
+      if (dist == null) {
+        // Unknown dely port — zone-median estimate keeps the ship in play
+        const est = zoneEstimate(v, ui.port);
+        if (est) { dist = est.d; distSrc = 'zoneest'; estN = est.n; estZone = est.zone; estWide = !!est.wide; estLo = est.lo || null; estHi = est.hi || null; }
+      }
     }
     const speed = (parseFloat(ui.fixedSpeed) > 0) ? parseFloat(ui.fixedSpeed) : (v.ballast_speed || 13);
     const margin = 1 + (parseFloat(ui.seaMarginPct) >= 0 ? parseFloat(ui.seaMarginPct) : 8) / 100;
@@ -10933,7 +11004,7 @@ function computeRows() {
       { waitTolDays: ui.waitTolDays, tightTolDays: ui.tolDays });
 
     const offer = offerOf(v);
-    rows.push({ v, dist, distSrc, speed, ballastDays, eta, clamped, status, marginDays, waitDays, offer });
+    rows.push({ v, dist, distSrc, speed, ballastDays, eta, clamped, status, marginDays, waitDays, offer, estN, estZone, estWide, estLo, estHi });
   }
 
   const dir = ui.sortDir;
@@ -11121,7 +11192,7 @@ function render() {
         <td>${esc(r.v.dely_port || '—')}</td>
         <td style="font-family:var(--mono);font-size:12px">${openTxt}${r.clamped ? ' <span title="Open date in the past — departure assumed today" style="color:var(--amber)">▸today</span>' : ''}</td>
         <td>${esc(r.v.owner || '—')}</td>
-        <td style="text-align:right;font-family:var(--mono);font-size:12px" title="${r.distSrc === 'zone' ? 'From your zone constant (' + esc(r.v.region || '') + ')' : r.distSrc === 'offset' ? 'Base port + offset — rough guide' : 'Distances matrix'}">${r.dist ? (r.distSrc !== 'matrix' ? '~' : '') + r.dist.toLocaleString() : '—'}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:12px" title="${r.distSrc === 'zone' ? 'From your zone constant (' + esc(r.v.region || '') + ')' : r.distSrc === 'offset' ? 'Base port + offset — rough guide' : r.distSrc === 'zoneest' ? 'Dely port not in the distances matrix — estimated as the median of ' + r.estN + ' known ' + esc(r.estZone || '') + ' ports' + (r.estWide ? '. WIDE SPREAD (' + r.estLo.toLocaleString() + '–' + r.estHi.toLocaleString() + 'nm) — verify before relying on this ETA' : ' (±1-2d)') : 'Distances matrix'}">${r.dist ? (r.distSrc !== 'matrix' ? '~' : '') + r.dist.toLocaleString() + (r.estWide ? '<span style="color:var(--amber)" title="wide-spread estimate">⚠</span>' : '') : '—'}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px">${r.speed ? r.speed.toFixed(1) : '—'}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px;${r.cheap ? 'color:var(--green);font-weight:700' : ''}">${r.cheap ? '<span title="Top-3 shortest ballast among fixable ships — cheapest delivery for the charterer">$</span> ' : ''}${r.ballastDays != null ? r.ballastDays.toFixed(1) : '—'}</td>
         <td style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text-bright)">${fmtD(r.eta)}</td>

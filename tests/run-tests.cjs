@@ -257,6 +257,23 @@ section('laycan-matcher');
 
   // Custom-area constants are keyed on canonical zones (zones.js): the test
   // ship opens Gibraltar → zone 'W MED' (derived from the port itself)
+  // Zone-median fallback: unknown dely port borrows from same-zone matrix ports
+  const estRows = [new Array(40).fill(''), dHdr2];
+  const wmPorts = ['Gibraltar', 'Ceuta', 'Safi', 'Jorf Lasfar'];
+  wmPorts.forEach((p, i) => { const r = dRow.slice(); r[1] = p; r[4] = 3100 + i * 100; estRows.push(r); });
+  for (let i = 0; i < 22; i++) { const r = dRow.slice(); r[1] = 'filler' + i; r[4] = 5000; estRows.push(r); }
+  const vUnknown = v1.slice(); vUnknown[4] = 'Mystery Ship'; vUnknown[6] = 'Tangier'; vUnknown[17] = 'WMED';
+  // Tangier is in zones (W MED) but NOT in this matrix — median of Gib/Ceuta/Safi/Jorf = between 3200 and 3300
+  const estData = lm._test.parseArrays([mvHdr, vUnknown], estRows, 'test');
+  lm._test.setData(estData);
+  lm._test.setCustom([]);
+  lm._test.setUi({ port: 'Itaqui', layFrom: '', layTo: '', regionFilter: 'ALL', tierFilter: 'ALL' });
+  const er = lm._test.computeRows();
+  A(er[0].distSrc === 'zoneest' && er[0].dist >= 3200 && er[0].dist <= 3300, 'zone-median estimate applied: ' + er[0].dist);
+  A(er[0].status !== 'NODATA' && er[0].eta != null, 'estimated ship flows into tiers');
+  A(er[0].estN === 4 && er[0].estZone === 'W MED', 'estimate metadata');
+  lm._test.setData(data);
+
   lm._test.setCustom([{ name: 'NCSA', base: 'Itaqui', offsetNm: -300, regionNm: { 'W MED': 4400 } }]);
   lm._test.setUi({ port: 'custom:NCSA' });
   const cr = lm._test.computeRows();

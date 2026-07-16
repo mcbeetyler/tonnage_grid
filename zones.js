@@ -143,6 +143,29 @@
     }
   }
 
+  // Finer clusters for DISTANCE ESTIMATION only — some zones (NCSA) span
+  // 3,000nm+, so a zone-wide median would mislead. Ports not listed here
+  // just use their zone.
+  const EST_CLUSTERS = {
+    'PANAMA': ['balboa', 'cristobal', 'colon', 'panama'],
+    'N BRAZIL': ['itaqui', 'sao luis', 'ponta da madeira', 'pecem', 'fortaleza', 'belem',
+      'vila do conde', 'barcarena', 'santarem', 'macapa', 'salvador', 'aratu', 'suape', 'recife'],
+    'CARIB RIM': ['puerto drummond', 'santa marta', 'barranquilla', 'cartagena (col)', 'puerto bolivar',
+      'rio orinoco', 'puerto ordaz', 'palua', 'matanzas', 'guanta', 'jose', 'la guaira',
+      'puerto cabello', 'maracaibo', 'amuay', 'port of spain', 'point lisas', 'point a pierre',
+      'georgetown', 'paramaribo', 'new amsterdam'],
+  };
+  const CLUSTER_LOOKUP = {};
+  for (const [cl, ports] of Object.entries(EST_CLUSTERS)) {
+    for (const p of ports) CLUSTER_LOOKUP[norm(p)] = cl;
+  }
+  /** Estimation cluster: finer than zone where zones are geographically wide. */
+  function estClusterOfPort(port) {
+    const n = norm(port);
+    if (CLUSTER_LOOKUP[n]) return CLUSTER_LOOKUP[n];
+    return zoneOfPort(port);
+  }
+
   /** Zone for a port name, or null if unknown. */
   function zoneOfPort(port) {
     if (!port) return null;
@@ -170,5 +193,5 @@
     return REGION_ALIASES[raw] || raw;
   }
 
-  return { zoneOfPort, zoneOfVessel, PORT_ZONES, ZONE_LIST: Object.keys(PORT_ZONES) };
+  return { zoneOfPort, zoneOfVessel, estClusterOfPort, PORT_ZONES, ZONE_LIST: Object.keys(PORT_ZONES) };
 });
