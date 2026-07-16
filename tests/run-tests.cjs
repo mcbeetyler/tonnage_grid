@@ -274,6 +274,18 @@ section('laycan-matcher');
   A(er[0].estN === 4 && er[0].estZone === 'W MED', 'estimate metadata');
   lm._test.setData(data);
 
+  // Offer columns located by header name, even when the layout drifts,
+  // and money strings parse ("$24,000" / "24,000")
+  const shiftHdr = new Array(84).fill('');
+  shiftHdr[75] = 'Rate TA'; shiftHdr[76] = 'BB TA'; shiftHdr[77] = 'Rate FH'; shiftHdr[78] = 'BB FH';
+  const vShift = v1.slice(0, 80).concat(new Array(4).fill(''));
+  vShift[75] = '$24,000'; vShift[76] = '350,000'; vShift[77] = 29500; vShift[78] = '';
+  const shiftData = lm._test.parseArrays([shiftHdr, vShift], drows, 'test');
+  A(shiftData.vessels[0].rate_ta === 24000, 'Rate TA by header name + $ string: ' + shiftData.vessels[0].rate_ta);
+  A(shiftData.vessels[0].bb_ta === 350000, 'BB TA comma string');
+  A(shiftData.vessels[0].rate_fh === 29500, 'Rate FH numeric');
+  A(shiftData.vessels[0].bb_fh === null, 'empty BB null');
+
   // Desk corrections: PDM ≡ Itaqui alias; Cristobal→Itaqui desk constant
   const vPdm = v1.slice(); vPdm[4] = 'Pdm Ship'; vPdm[6] = 'PDM';
   const vCri = v1.slice(); vCri[4] = 'Canal Ship'; vCri[6] = 'Cristobal'; vCri[48] = 13;

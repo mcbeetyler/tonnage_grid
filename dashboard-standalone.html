@@ -10867,6 +10867,13 @@ function excelDate(v) {
 }
 function s(v) { return (v == null) ? null : String(v).trim() || null; }
 function n(v) { const f = parseFloat(v); return isNaN(f) ? null : f; }
+// Money-tolerant: "$24,000" / "24,000" / 24000 all → 24000
+function money(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return isNaN(v) ? null : v;
+  const f = parseFloat(String(v).replace(/[$,\s]/g, ''));
+  return isNaN(f) ? null : f;
+}
 
 // Core parser over plain row arrays — fed by the Google Sheets feed
 // (rows arrive as JSON via feeds.js → LaycanMatcher.applyNatlFeed).
@@ -10911,7 +10918,19 @@ function parseArrays(vrows, drows, sourceLabel) {
     port_regions[key] = s(r[0]);
   }
 
-  // NEW MAINVIEW: fixed column positions (0-based), header on row 1
+  // NEW MAINVIEW: fixed column positions (0-based), header on row 1.
+  // The OFFER columns are located by header name (with the snapshot's
+  // positions as fallback) — the live sheet's layout can drift and rates
+  // silently vanishing is exactly the failure we can't have.
+  const mvHdrRow = (vrows[0] || []).map(c => String(c == null ? '' : c).trim().toLowerCase());
+  const hdrIdx = (name, fallback) => {
+    const i = mvHdrRow.indexOf(name);
+    return i >= 0 ? i : fallback;
+  };
+  const CI_RATE_TA = hdrIdx('rate ta', 71);
+  const CI_BB_TA = hdrIdx('bb ta', 72);
+  const CI_RATE_FH = hdrIdx('rate fh', 73);
+  const CI_BB_FH = hdrIdx('bb fh', 74);
   const PRE = [['Rouen', 49], ['Ust Luga', 52], ['NORFOLK', 55], ['Itaqui', 58], ['Nola', 61], ['Yuzhny', 64], ['San Lorenzo', 67]];
   const vessels = [];
   for (let ri = 1; ri < vrows.length; ri++) {
@@ -10929,8 +10948,10 @@ function parseArrays(vrows, drows, sourceLabel) {
       built: n(r[21]) ? Math.round(n(r[21])) : null, cubic: n(r[23]),
       ballast_speed: n(r[48]), pre_dist: pre,
       imo: s(r[70]), updated: excelDate(r[1]), user: s(r[2]),
-      // Offers (phase 2): TA and FH rates + ballast bonuses where quoted
-      rate_ta: n(r[71]), bb_ta: n(r[72]), rate_fh: n(r[73]), bb_fh: n(r[74]),
+      // Offers: TA and FH rates + ballast bonuses where quoted — header-located
+      // columns, money-tolerant parsing ("$24,000" and "24,000" both work)
+      rate_ta: money(r[CI_RATE_TA]), bb_ta: money(r[CI_BB_TA]),
+      rate_fh: money(r[CI_RATE_FH]), bb_fh: money(r[CI_BB_FH]),
     });
   }
   return {
