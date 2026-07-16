@@ -274,6 +274,21 @@ section('laycan-matcher');
   A(er[0].estN === 4 && er[0].estZone === 'W MED', 'estimate metadata');
   lm._test.setData(data);
 
+  // Desk corrections: PDM ≡ Itaqui alias; Cristobal→Itaqui desk constant
+  const vPdm = v1.slice(); vPdm[4] = 'Pdm Ship'; vPdm[6] = 'PDM';
+  const vCri = v1.slice(); vCri[4] = 'Canal Ship'; vCri[6] = 'Cristobal'; vCri[48] = 13;
+  const dItaqui = dRow.slice(); dItaqui[1] = 'Itaqui'; dItaqui[2] = 4400; dItaqui[4] = 1;
+  const deskData = lm._test.parseArrays([mvHdr, vPdm, vCri], [new Array(40).fill(''), dHdr2, dItaqui].concat(drows.slice(2)), 'test');
+  lm._test.setData(deskData);
+  lm._test.setUi({ port: 'Santos', regionFilter: 'ALL', tierFilter: 'ALL' });
+  const dr1 = lm._test.computeRows().find(r => r.v.name === 'Pdm Ship');
+  A(dr1.dist === 4400 && dr1.distSrc === 'matrix', 'PDM aliased to Itaqui matrix row');
+  lm._test.setUi({ port: 'Itaqui' });
+  const dr2 = lm._test.computeRows().find(r => r.v.name === 'Canal Ship');
+  A(dr2.dist === 2600, 'Cristobal desk constant used: ' + dr2.dist);
+  A(Math.abs(dr2.ballastDays - (2600 / 13 / 24 * 1.08)) < 1e-9 && Math.abs(dr2.ballastDays - 9) < 0.05, 'shows ~9.0d at 13kn');
+  lm._test.setData(data);
+
   lm._test.setCustom([{ name: 'NCSA', base: 'Itaqui', offsetNm: -300, regionNm: { 'W MED': 4400 } }]);
   lm._test.setUi({ port: 'custom:NCSA' });
   const cr = lm._test.computeRows();

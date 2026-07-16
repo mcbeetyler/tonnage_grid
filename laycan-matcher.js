@@ -108,6 +108,27 @@ function parseNmInput(raw) {
   return isNaN(f) ? null : Math.round(f);
 }
 
+// ─── Desk corrections ────────────────────────────────────────────────────────
+// Tyler-supplied facts that beat estimates. Add lines here as they come up.
+//
+// Dely-port aliases: same water, different label — resolve to the matrix's
+// name so all its distances apply.
+const DELY_ALIASES = {
+  'pdm': 'itaqui', 'ponta da madeira': 'itaqui',   // PDM ≡ Itaqui (same complex)
+  'colon': 'cristobal', 'panama': 'cristobal',
+};
+// Known distances the matrix lacks, in NM. Convention: desk quotes in days
+// are expected passage incl weather at ~13 kn, so NM = days × 13 × 24 / 1.08
+// (the engine re-applies its 8% margin).
+const DESK_DISTANCES = {
+  'cristobal': { 'Itaqui': 2600 },     // "Cristobal→Itaqui is 9 days" — Tyler
+  'balboa': { 'Itaqui': 2650 },        // Cristobal + canal transit
+};
+function resolveDelyKey(delyPort) {
+  const k = (delyPort || '').toLowerCase().trim();
+  return DELY_ALIASES[k] || k;
+}
+
 // ─── Zone-median distance estimate ───────────────────────────────────────────
 // Dely port not in the matrix? Estimate: median distance of KNOWN same-zone
 // ports to the target. Cristobal borrows from the NCSA cluster, Mississippi
@@ -262,7 +283,8 @@ function matchPortName(text) {
   const aliases = {
     'rouen': 'Rouen', 'ust luga': 'Ust Luga', 'ustluga': 'Ust Luga',
     'norfolk': 'NORFOLK', 'hampton': 'NORFOLK', 'nola': 'Nola', 'new orleans': 'Nola', 'mississippi': 'Nola', 'usg': 'Nola', 'miss river': 'Nola',
-    'yuzhny': 'Yuzhny', 'pivdennyi': 'Yuzhny', 'itaqui': 'Itaqui', 'san lorenzo': 'San Lorenzo', 'up river': 'San Lorenzo', 'upriver': 'San Lorenzo',
+    'yuzhny': 'Yuzhny', 'pivdennyi': 'Yuzhny', 'itaqui': 'Itaqui', 'pdm': 'Itaqui', 'ponta da madeira': 'Itaqui',
+    'san lorenzo': 'San Lorenzo', 'up river': 'San Lorenzo', 'upriver': 'San Lorenzo',
     'santos': 'Santos', 'rio grande': 'Rio grande', 'kamsar': 'Kamsar', 'gibraltar': 'Gibraltar', 'passero': 'PASSERO', 'port said': 'PORT SAID', 'rbct': 'RBCT', 'richards bay': 'RBCT',
   };
   const available = (LM.data.ports || []);
@@ -304,8 +326,9 @@ function computeRows() {
       if (!hay.includes(ui.search.toLowerCase())) continue;
     }
 
-    const key = (v.dely_port || '').toLowerCase();
-    const lookup = p => (d.distances[key] && d.distances[key][p]) || (v.pre_dist && v.pre_dist[p]) || null;
+    const key = resolveDelyKey(v.dely_port);
+    const lookup = p => (d.distances[key] && d.distances[key][p]) || (v.pre_dist && v.pre_dist[p])
+      || (DESK_DISTANCES[key] && DESK_DISTANCES[key][p]) || null;
     const area = getArea(ui.port);
     let dist = null, distSrc = 'matrix', estN = null, estZone = null, estWide = false, estLo = null, estHi = null;
     if (area) {
