@@ -43,17 +43,19 @@ const LS_CUSTOM = 'lm_custom';
 const PORT_ORDER = ['Rouen', 'Ust Luga', 'NORFOLK', 'Nola', 'Yuzhny', 'Itaqui', 'San Lorenzo',
   'Santos', 'Rio grande', 'Kamsar', 'Gibraltar', 'PASSERO', 'PORT SAID', 'RBCT', 'ASTORIA', 'SEATTLE', 'VANCOUVER'];
 
-// Loads at these ports are fronthaul business (via ECSA) → show the FH offer;
-// everything else on this desk is transatlantic → show the TA offer.
+// Both offer sides are always shown — an Itaqui load can be FH or TA business
+// depending on the discharge, so hiding one side hides real quotes. The port
+// only decides which side SORTS first when both exist.
 const FH_PORTS = ['Itaqui', 'Santos', 'San Lorenzo', 'Rio grande', 'Kamsar', 'RBCT', 'Qingdao'];
 function offerSide() {
   const p = ui.port.startsWith('custom:') ? '' : ui.port;
   return FH_PORTS.includes(p) ? 'FH' : 'TA';
 }
 function offerOf(v) {
-  return offerSide() === 'FH'
-    ? { rate: v.rate_fh, bb: v.bb_fh, other: v.rate_ta }
-    : { rate: v.rate_ta, bb: v.bb_ta, other: v.rate_fh };
+  const ta = { rate: v.rate_ta != null ? v.rate_ta : null, bb: v.bb_ta != null ? v.bb_ta : null };
+  const fh = { rate: v.rate_fh != null ? v.rate_fh : null, bb: v.bb_fh != null ? v.bb_fh : null };
+  const primary = offerSide() === 'FH' ? (fh.rate ?? ta.rate) : (ta.rate ?? fh.rate);
+  return { ta, fh, rate: primary };   // .rate = sort key (kept name for compat)
 }
 
 // Destination columns with fewer dely-port rows than this are dropped (empty Capesize stubs)
@@ -433,9 +435,10 @@ function describeRow(r, oneLine) {
   const portLbl = portLabel(ui.port).replace(' ~', '');
   const etaTxt = r.eta ? fmtD(r.eta) : 'n/a';
   const speedTxt = r.speed ? `${r.speed.toFixed(1)}kn` : '';
-  const offer = r.offer && r.offer.rate != null
-    ? `$${r.offer.rate.toLocaleString()}${r.offer.bb ? ' + $' + r.offer.bb.toLocaleString() + ' bb' : ''} ${offerSide()}`
-    : null;
+  const offerParts = [];
+  if (r.offer && r.offer.ta.rate != null) offerParts.push(`$${r.offer.ta.rate.toLocaleString()}${r.offer.ta.bb ? ' + $' + r.offer.ta.bb.toLocaleString() + ' bb' : ''} TA`);
+  if (r.offer && r.offer.fh.rate != null) offerParts.push(`$${r.offer.fh.rate.toLocaleString()}${r.offer.fh.bb ? ' + $' + r.offer.fh.bb.toLocaleString() + ' bb' : ''} FH`);
+  const offer = offerParts.length ? offerParts.join(' / ') : null;
   let fitTxt = '';
   if (ui.layTo && r.marginDays != null) {
     if (r.status === 'FIT' || r.status === 'EARLY') fitTxt = `makes ${fmtDStr(ui.layFrom)}-${fmtDStr(ui.layTo)} laycan (${r.marginDays.toFixed(1)}d spare${r.waitDays ? `, arrives ${r.waitDays.toFixed(1)}d early` : ''})`;
@@ -574,7 +577,10 @@ function render() {
         <td style="text-align:right;font-family:var(--mono);font-size:12px">${r.speed ? r.speed.toFixed(1) : '—'}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px;${r.cheap ? 'color:var(--green);font-weight:700' : ''}">${r.cheap ? '<span title="Top-3 shortest ballast among fixable ships — cheapest delivery for the charterer">$</span> ' : ''}${r.ballastDays != null ? r.ballastDays.toFixed(1) : '—'}</td>
         <td style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text-bright)">${fmtD(r.eta)}</td>
-        <td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:600" title="${r.offer.rate != null ? offerSide() + ' offer' + (r.offer.bb ? ' + BB $' + r.offer.bb.toLocaleString() : '') + (r.offer.other != null ? ' · other side $' + r.offer.other.toLocaleString() : '') : 'no offer on the sheet'}">${r.offer.rate != null ? '$' + r.offer.rate.toLocaleString() + (r.offer.bb ? '<span style="color:var(--text-dim);font-weight:400">+bb</span>' : '') : '—'}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:11px;line-height:1.5" title="${[r.offer.ta.rate != null ? 'TA $' + r.offer.ta.rate.toLocaleString() + (r.offer.ta.bb ? ' + BB $' + r.offer.ta.bb.toLocaleString() : '') : '', r.offer.fh.rate != null ? 'FH $' + r.offer.fh.rate.toLocaleString() + (r.offer.fh.bb ? ' + BB $' + r.offer.fh.bb.toLocaleString() : '') : ''].filter(Boolean).join(' · ') || 'no offer on the sheet'}">${[
+          r.offer.ta.rate != null ? `<div><span style="color:var(--text-dim)">TA</span> <b>$${r.offer.ta.rate.toLocaleString()}</b>${r.offer.ta.bb ? '<span style="color:var(--text-dim)">+bb</span>' : ''}</div>` : '',
+          r.offer.fh.rate != null ? `<div><span style="color:var(--text-dim)">FH</span> <b>$${r.offer.fh.rate.toLocaleString()}</b>${r.offer.fh.bb ? '<span style="color:var(--text-dim)">+bb</span>' : ''}</div>` : '',
+        ].filter(Boolean).join('') || '—'}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px;color:${marginColor}">${marginTxt} ${waitTxt}</td>
         <td><button class="lm-mini lm-copy" data-copy="${i}" title="Copy a share-ready description for the principal (internal comments excluded)">📋</button></td>
       </tr>`;
@@ -694,7 +700,7 @@ function buildUI() {
             <th data-sort="fit" title="Sort: best fit first, shortest ballast within each tier">Status ▾</th><th data-sort="name">Vessel</th><th data-sort="dwt">DWT/Blt</th><th></th>
             <th>Dely port</th><th data-sort="open">Open</th><th>Owner</th>
             <th style="text-align:right">Dist NM</th><th style="text-align:right">Spd</th>
-            <th data-sort="ballast" style="text-align:right" title="$ = top-3 shortest ballast among fixable ships — cheapest delivery">Ballast d</th><th data-sort="eta">ETA</th><th data-sort="offer" style="text-align:right" title="Sheet offer for the relevant direction: FH for ECSA-bound loads, TA otherwise. Hover a value for BB and the other side">Offer</th><th data-sort="margin" style="text-align:right">vs Canc.</th><th></th>
+            <th data-sort="ballast" style="text-align:right" title="$ = top-3 shortest ballast among fixable ships — cheapest delivery">Ballast d</th><th data-sort="eta">ETA</th><th data-sort="offer" style="text-align:right" title="TA and FH quotes from the sheet — both always shown. Sorting prefers the side matching the load direction; hover for ballast bonuses">Offer</th><th data-sort="margin" style="text-align:right">vs Canc.</th><th></th>
           </tr></thead>
           <tbody id="lm_tbody"></tbody>
         </table>
