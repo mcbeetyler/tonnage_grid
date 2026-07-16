@@ -174,6 +174,31 @@ section('csv-import + app');
     A(vessels.find(v => v.vessel_name === 'PEGASUS').status === 'FAILED', 'FAILED never overridden');
     A(vessels.length === 2 && fr.marked === 1 && fr.unmatched === 0, 'no new rows created; counts right');
 
+    // Reopen cycle: fixed ship reappears with a clearly-later layday
+    const roHdr = ['UPDATE', 'VESSEL', 'DWT', 'AGE', 'LAYDAY', 'ETA', 'OWNER', 'STATUS'].join('\\t');
+    const roRow = ['08-Jul 10:00', 'Pacific Runner', '82,000', 'Jan-2018', '05-Sep', '03-Oct', 'OWNERCO', '1'].join('\\t');
+    const roLag = ['08-Jul 10:00', 'Just Fixed', '82,000', 'Jan-2018', '12-Jul', '10-Aug', 'OWNERCO', '1'].join('\\t');
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'PACIFIC RUNNER', status: 'FIXED', date_fixed: '2026-05-01', fixed_price: 21000, charterer: 'KOCH', csv_updated: '2026-05-01T00:00:00Z' });
+    vessels.push({ vessel_name: 'JUST FIXED', status: 'FIXED', date_fixed: '2026-07-06', fixed_price: 22000, csv_updated: '2026-07-06T00:00:00Z' });
+    const ro = syncCSVVessels(parseCSVVessels([roHdr, roRow, roLag].join('\\n')).vessels);
+    const pr2 = vessels.find(v => v.vessel_name === 'PACIFIC RUNNER');
+    A(pr2.status === 'OPEN' && ro.reopened === 1, 'reopened: layday 4 months after fixture');
+    A(pr2.fixture_history.length === 1 && pr2.fixture_history[0].fixed_price === 21000 && pr2.fixture_history[0].charterer === 'KOCH', 'old fixture archived');
+    A(pr2.fixed_price === null && pr2.charterer === null, 'fixture fields cleared for the new position');
+    A(vessels.find(v => v.vessel_name === 'JUST FIXED').status === 'FIXED', 'sheet lag (6d gap) does NOT reopen');
+
+    // Stale-fixture guard: her OLD fixture in the tab history must not re-fix her
+    const roFx = ['29-Apr 09:00', 'Pacific Runner', '82,000', 'Jan-2018', '', '', 'OWNERCO', ''].join('\\t');
+    const roFxHdr = ['LAST UPDATE', 'VESSEL', 'DWT', 'AGE', 'LAYDAY', 'ETA', 'OWNER', 'STATUS'].join('\\t');
+    markFixturesFromCSV(parseCSVVessels([roFxHdr, roFx].join('\\n')).vessels);
+    A(pr2.status === 'OPEN', 'old fixture (pre-reopen) does not re-fix her');
+    // ...but a genuinely fresh fixture after the new opening does
+    pr2.open_date = '2026-07-01';
+    const freshFx = ['10-Jul 09:00', 'Pacific Runner', '82,000', 'Jan-2018', '', '', 'OWNERCO', ''].join('\\t');
+    markFixturesFromCSV(parseCSVVessels([roFxHdr, freshFx].join('\\n')).vessels);
+    A(pr2.status === 'FIXED', 'fresh fixture after reopening marks her again');
+
     // Manually-fixed ship: user's values stand, blanks get backfilled
     vessels.length = 0;
     vessels.push({ vessel_name: 'MINOAN BAY', status: 'FIXED', fixed_price: 27500, date_fixed: null, fix_msg: null });

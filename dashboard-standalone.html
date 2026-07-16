@@ -2807,7 +2807,7 @@ function syncCSVVessels(newVessels, opts) {
   const autoWithdraw = !!(opts && opts.autoWithdraw);
   const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const csvNames = new Set(newVessels.map(v => norm(v.vessel_name)).filter(Boolean));
-  let added = 0, updated = 0, unchanged = 0, protectedFields = 0;
+  let added = 0, updated = 0, unchanged = 0, protectedFields = 0, reopened = 0;
 
   for (const nv of newVessels) {
     const existing = vessels.find(v => norm(v.vessel_name) === norm(nv.vessel_name));
@@ -2854,12 +2854,35 @@ function syncCSVVessels(newVessels, opts) {
       }
     }
 
-    // Status: '1' = active. Only ever (re)opens ships that are already OPEN
-    // or WITHDRAWN — never resurrects FIXED/FAILED.
+    // Status: '1' = active.
     if (nv.csv_status === '0' && existing.status === 'OPEN' && !isProtected('status')) {
       existing.status = 'WITHDRAWN'; changed = true;
     } else if (nv.csv_status === '1' && existing.status === 'WITHDRAWN' && !isProtected('status')) {
       existing.status = 'OPEN'; changed = true;
+    } else if (nv.csv_status === '1' && existing.status === 'FIXED' && !isProtected('status')) {
+      // A fixed ship back on the grid: reopen ONLY if her new layday is
+      // clearly after the fixture (Pacific round done, ballasting back) —
+      // not when the sheet is just lagging behind a fresh fixture.
+      // The old fixture is archived, never destroyed: it's rate history.
+      const REOPEN_GAP_DAYS = 21;
+      const newOpen = nv.open_date || null;
+      const fixedOn = existing.date_fixed || null;
+      const gap = (newOpen && fixedOn)
+        ? (new Date(newOpen + 'T00:00:00Z') - new Date(fixedOn + 'T00:00:00Z')) / 86400000
+        : null;
+      if (gap != null && gap >= REOPEN_GAP_DAYS) {
+        existing.fixture_history = existing.fixture_history || [];
+        existing.fixture_history.push({
+          date_fixed: existing.date_fixed, fixed_price: existing.fixed_price ?? null,
+          charterer: existing.charterer ?? null, fix_msg: existing.fix_msg ?? null,
+        });
+        existing.status = 'OPEN';
+        existing.date_fixed = null; existing.fixed_price = null;
+        existing.fix_msg = null; existing.charterer = null;
+        existing.reopened_at = rowTs;
+        reopened++;
+        changed = true;
+      }
     }
 
     if (changed) { existing.last_updated = rowTs; updated++; }
@@ -2888,7 +2911,7 @@ function syncCSVVessels(newVessels, opts) {
     }
   }
 
-  return { added, updated, unchanged, protectedFields, withdrawCandidates, autoWithdrawn };
+  return { added, updated, unchanged, protectedFields, withdrawCandidates, autoWithdrawn, reopened };
 }
 
 // Mark board ships FIXED from the Fixtures-tab feed. Only touches ships
@@ -2914,6 +2937,12 @@ function markFixturesFromCSV(parsed) {
     const fixTs = f.csv_updated || new Date().toISOString();
     const o = v.field_overrides || {};
     if (o.status && o.status > fixTs) continue;             // manual status is newer
+    // Stale fixture guard: a ship that reopened after a Pacific round would
+    // otherwise be instantly re-fixed by her OLD fixture still sitting in
+    // the tab's history. A fixture dated before her current opening is
+    // about the previous employment — skip it.
+    const openRef = v.open_date || (v.reopened_at ? String(v.reopened_at).slice(0, 10) : null);
+    if (openRef && fixTs.slice(0, 10) < openRef) continue;
     v.status = 'FIXED';
     v.date_fixed = fixTs.slice(0, 10);
     if (f.bki_eqvt != null) v.fixed_price = Math.round(f.bki_eqvt);
@@ -12916,7 +12945,7 @@ function applyEcsa(data) {
   save();
   if (typeof renderTable === 'function') renderTable();
   if (typeof updateStats === 'function') updateStats();
-  return `${parsed.length} rows (${r.added} new, ${r.updated} updated${r.autoWithdrawn ? ', ' + r.autoWithdrawn + ' auto-withdrawn' : ''})`;
+  return `${parsed.length} rows (${r.added} new, ${r.updated} updated${r.autoWithdrawn ? ', ' + r.autoWithdrawn + ' auto-withdrawn' : ''}${r.reopened ? ', ' + r.reopened + ' reopened after fixture' : ''})`;
 }
 
 function applyCargo(data) {

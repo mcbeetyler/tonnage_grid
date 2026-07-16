@@ -63,7 +63,7 @@ function applyEcsa(data) {
   save();
   if (typeof renderTable === 'function') renderTable();
   if (typeof updateStats === 'function') updateStats();
-  return `${parsed.length} rows (${r.added} new, ${r.updated} updated${r.autoWithdrawn ? ', ' + r.autoWithdrawn + ' auto-withdrawn' : ''})`;
+  return `${parsed.length} rows (${r.added} new, ${r.updated} updated${r.autoWithdrawn ? ', ' + r.autoWithdrawn + ' auto-withdrawn' : ''}${r.reopened ? ', ' + r.reopened + ' reopened after fixture' : ''})`;
 }
 
 function applyCargo(data) {
