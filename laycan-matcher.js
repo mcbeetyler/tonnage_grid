@@ -445,7 +445,7 @@ function describeRow(r, oneLine) {
     else if (r.status === 'TIGHT') fitTxt = `tight for ${fmtDStr(ui.layFrom)}-${fmtDStr(ui.layTo)} (misses cancelling by ${(-r.marginDays).toFixed(1)}d)`;
   }
   if (oneLine) {
-    return `${(v.name || '').toUpperCase()} ${dwtBlt} — open ${v.dely_port || '?'} ${openTxt}` +
+    return `${(v.name || '').toUpperCase()} ${dwtBlt}${v.owner ? ' — ' + v.owner.toUpperCase() : ''} — open ${v.dely_port || '?'} ${openTxt}` +
       ` — ETA ${portLbl} ${etaTxt}${offer ? ` — ${offer}` : ''}`;
   }
   const lines = [
