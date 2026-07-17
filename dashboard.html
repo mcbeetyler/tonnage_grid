@@ -321,6 +321,10 @@
   /* Tab system */
   .tab-bar{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0;background:var(--bg2);padding:0 28px}
   .scr-pill{display:inline-block;font-size:8.5px;font-weight:700;letter-spacing:.05em;padding:1px 5px;border-radius:8px;background:var(--green-light);color:var(--green);border:1px solid var(--green-border);margin-left:5px;vertical-align:1px}
+  .depth-badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.05em;padding:2px 7px;border-radius:9px}
+  .depth-badge.deep{background:var(--accent-light);color:var(--accent);border:1px solid var(--blue-border)}
+  .depth-badge.dark{background:#2c2c2c;color:#fff}
+  .depth-badge.requote{background:var(--amber-light);color:var(--amber);border:1px solid var(--amber-border)}
   .fixmsg-chip{cursor:pointer;font-size:11px;opacity:.7;margin-left:2px}
   .fixmsg-chip:hover{opacity:1}
   .tab-bar-grouped{gap:22px;align-items:stretch}
@@ -1022,6 +1026,11 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
       <span id="balanceNote" style="font-size:11px;color:var(--text-dim)"></span>
     </div>
     <div class="cargo-chart-wrap" style="height:280px"><canvas id="balanceChart"></canvas></div>
+    <div style="padding:14px 28px 4px;display:flex;align-items:baseline;gap:10px">
+      <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim)">Demand depth by charterer</span>
+      <span style="font-size:11px;color:var(--text-dim)">last 8 weeks · shown = quoted in the book, fixed = ships taken on the board — the gap is the dark program · all stems</span>
+    </div>
+    <div id="demandDepth" style="padding:0 28px 20px"></div>
     <div class="cargo-table-wrap">
       <h3 style="font-size:12px;text-transform:uppercase;color:var(--text-dim);letter-spacing:.5px;margin-bottom:4px">Stem Velocity</h3>
       <div id="stemVelocityWrap"></div>

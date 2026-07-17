@@ -219,6 +219,47 @@ section('csv-import + app');
   eval(csvSrc + '\n' + appSrc.replace(/\ninit\(\);\s*$/, '\n') + '\n;(function(){' + testBody + '})();');
 }
 
+// ═══ 2b. demand depth (cargo.js) ══════════════════════════════════════════════
+section('demand depth');
+{
+  const cargoSrc = fs.readFileSync(path.join(ROOT, 'cargo.js'), 'utf8');
+  const iso = d => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+  const testBody = `
+    cargoHistory = [
+      // KOCH: showed 2 in-window
+      { charterer: 'Koch', stem: 'ECSA Fronthaul', load: 'santos', entered_market: '${'${A20}'}' },
+      { charterer: 'koch', stem: 'ECSA TA', load: 'santos', entered_market: '${'${A10}'}' },
+      // BUNGE re-quote: departed then re-entered 3d later
+      { charterer: 'bunge', stem: 'NCSA TA', load: 'ncsa', entered_market: '${'${A30}'}', departed_at: '${'${A15}'}' },
+      { charterer: 'bunge', stem: 'NCSA TA', load: 'ncsa', entered_market: '${'${A12}'}' },
+      // stale (outside window)
+      { charterer: 'Koch', stem: 'ECSA Fronthaul', load: 'itaqui', entered_market: '2025-01-01' },
+    ];
+    cargoCurrent = [];
+    vessels.length = 0;
+    // KOCH fixed 5 (2 live FIXED + 3 archived) vs 2 shown → dark 3, mult 2.5
+    vessels.push({ vessel_name: 'A', status: 'FIXED', charterer: 'KOCH', date_fixed: '${'${A5}'}' });
+    vessels.push({ vessel_name: 'B', status: 'FIXED', charterer: 'Koch Shipping', date_fixed: '${'${A8}'}' });
+    vessels.push({ vessel_name: 'C', status: 'OPEN', fixture_history: [
+      { charterer: 'KOCH', date_fixed: '${'${A18}'}' }, { charterer: 'KOCH', date_fixed: '${'${A25}'}' }, { charterer: 'KOCH', date_fixed: '${'${A40}'}' } ] });
+    // CARGILL: dark bidder — never quoted, bids on an open ship
+    vessels.push({ vessel_name: 'D', status: 'OPEN', bids: [{ charterer: 'Cargill', p6_bid: 19000 }] });
+    global.getAllBids = v => v.bids || [];
+    const depth = computeDemandDepth(56);
+    const koch = depth.find(r => r.key === 'KOCH');
+    A(koch && koch.shown === 2 && koch.fixed === 5, 'koch shown/fixed incl aliases + archive: ' + JSON.stringify(koch));
+    A(koch.dark === 3 && Math.abs(koch.mult - 2.5) < 1e-9, 'koch dark 3, mult 2.5');
+    const bunge = depth.find(r => r.key === 'BUNGE');
+    A(bunge && bunge.requotes === 1, 'bunge re-quote detected');
+    const cargill = depth.find(r => r.key === 'CARGILL');
+    A(cargill && cargill.shown === 0 && cargill.bids === 1, 'cargill dark bidder');
+  `.replace(/\$\{A(\d+)\}/g, (_, d) => iso(parseInt(d, 10)));
+  // eslint-disable-next-line no-eval
+  eval(fs.readFileSync(path.join(ROOT, 'csv-import.js'), 'utf8') + '\n'
+    + fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8').replace(/\ninit\(\);\s*$/, '\n') + '\n'
+    + cargoSrc + '\n;(function(){' + testBody + '})();');
+}
+
 // ═══ 3. laycan-matcher ════════════════════════════════════════════════════════
 section('laycan-matcher');
 {

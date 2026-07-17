@@ -888,6 +888,121 @@ function renderBalanceChart(hist) {
   });
 }
 
+// ─── Demand depth by charterer ───────────────────────────────────────────────
+// The cargo book shows QUOTED demand — houses run programs behind it. This
+// measures the gap per charterer: ships they fixed vs cargoes they showed.
+// A house fixing 5 against 2 shown moved 3 dark; their visible book should
+// be read with that multiplier.
+function normCharterer(name) {
+  if (!name) return null;
+  const t = String(name).toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!t) return null;
+  const first = t.split(' ')[0];
+  return first.length >= 3 ? first : t;   // COFCO INT ≡ COFCO; JERA GM ≡ JERA
+}
+
+function computeDemandDepth(days) {
+  const cut = Date.now() - (days || 56) * 86400000;
+  const inWin = d => {
+    if (!d) return false;
+    const t = new Date(String(d).slice(0, 10)).getTime();
+    return !isNaN(t) && t >= cut;
+  };
+  const H = {};
+  const get = (k, label) => {
+    if (!H[k]) H[k] = { key: k, label: label || k, shown: 0, fixed: 0, bids: 0, requotes: 0 };
+    return H[k];
+  };
+
+  cargoHistory.forEach(c => {
+    const k = normCharterer(c.charterer);
+    if (!k || !inWin(c.entered_market || c.first_seen)) return;
+    get(k, c.charterer).shown++;
+  });
+
+  // Re-quotes: same charterer+stem+load re-entering within 10 days of a
+  // departure — failed on subs or re-let. Distress marker.
+  const groups = {};
+  cargoHistory.forEach(c => {
+    const k = normCharterer(c.charterer);
+    if (!k) return;
+    const g = k + '|' + (c.stem || '') + '|' + String(c.load || '').toLowerCase().trim();
+    (groups[g] = groups[g] || []).push(c);
+  });
+  Object.values(groups).forEach(list => {
+    if (list.length < 2) return;
+    list.sort((a, b) => String(a.entered_market || a.first_seen || '').localeCompare(String(b.entered_market || b.first_seen || '')));
+    for (let i = 1; i < list.length; i++) {
+      const prev = list[i - 1], cur = list[i];
+      if (!prev.departed_at || !cur.entered_market) continue;
+      const gap = (new Date(cur.entered_market) - new Date(prev.departed_at)) / 86400000;
+      if (gap >= 0 && gap <= 10 && inWin(cur.entered_market)) get(normCharterer(cur.charterer)).requotes++;
+    }
+  });
+
+  // Fixtures from the board (incl archived fixtures from reopened ships)
+  // and live bid appetite
+  if (typeof vessels !== 'undefined' && Array.isArray(vessels)) {
+    vessels.forEach(v => {
+      if (v.status === 'FIXED' && inWin(v.date_fixed)) {
+        const k = normCharterer(v.charterer);
+        if (k) get(k, v.charterer).fixed++;
+      }
+      (v.fixture_history || []).forEach(f => {
+        if (inWin(f.date_fixed)) {
+          const k = normCharterer(f.charterer);
+          if (k) get(k, f.charterer).fixed++;
+        }
+      });
+      if (v.status === 'OPEN' && typeof getAllBids === 'function') {
+        getAllBids(v).forEach(b => {
+          const k = normCharterer(b.charterer);
+          if (k) get(k, b.charterer).bids++;
+        });
+      }
+    });
+  }
+
+  return Object.values(H)
+    .map(e => ({ ...e, dark: Math.max(0, e.fixed - e.shown),
+      mult: e.shown > 0 ? e.fixed / e.shown : null }))
+    .filter(r => r.shown + r.fixed + r.bids > 0)
+    .sort((a, b) => (b.fixed + b.shown + b.bids) - (a.fixed + a.shown + a.bids));
+}
+
+function renderDemandDepth() {
+  const el = document.getElementById('demandDepth');
+  if (!el) return;
+  const rows = computeDemandDepth(56);
+  if (!rows.length) {
+    el.innerHTML = '<div style="padding:14px;color:var(--text-dim);font-size:12px">No charterer activity yet — fixtures need charterer names (use the 💬 hints on the board) for the depth read to work.</div>';
+    return;
+  }
+  const badge = r => {
+    if (r.mult != null && r.mult >= 1.5) return '<span class="depth-badge deep" title="Fixing well beyond the visible book — read their quotes as a fraction of the real program">DEEP</span>';
+    if (r.shown === 0 && (r.fixed > 0 || r.bids > 0)) return '<span class="depth-badge dark" title="Active (fixing/bidding) without ever quoting — fully dark book">DARK</span>';
+    if (r.requotes > 0) return '<span class="depth-badge requote" title="Cargoes failing/re-entering — possible distress">RE-Q</span>';
+    return '';
+  };
+  el.innerHTML = `<table class="cargo-table" style="font-size:12px">
+    <thead><tr><th>Charterer</th><th style="text-align:right" title="Cargoes quoted in the book, last 8 weeks">Shown</th>
+    <th style="text-align:right" title="Ships fixed on the board (incl archived fixtures), last 8 weeks">Fixed</th>
+    <th style="text-align:right" title="Fixed minus shown — cargoes that never hit the book">Dark</th>
+    <th style="text-align:right" title="Fixed ÷ shown — multiply their visible book by this">×</th>
+    <th style="text-align:right" title="Bids on open ships right now">Live bids</th>
+    <th style="text-align:right" title="Cargoes re-entering within 10d of departing">Re-quotes</th><th></th></tr></thead>
+    <tbody>${rows.slice(0, 15).map(r => `<tr>
+      <td style="font-weight:600">${r.label || r.key}</td>
+      <td style="text-align:right;font-family:var(--mono)">${r.shown}</td>
+      <td style="text-align:right;font-family:var(--mono)">${r.fixed}</td>
+      <td style="text-align:right;font-family:var(--mono);${r.dark ? 'color:var(--accent);font-weight:700' : ''}">${r.dark || ''}</td>
+      <td style="text-align:right;font-family:var(--mono)">${r.mult != null ? r.mult.toFixed(1) : '—'}</td>
+      <td style="text-align:right;font-family:var(--mono)">${r.bids || ''}</td>
+      <td style="text-align:right;font-family:var(--mono);${r.requotes ? 'color:var(--amber)' : ''}">${r.requotes || ''}</td>
+      <td>${badge(r)}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
 function renderTrends() {
   renderTrendStemPills();
   // Trends respect the stem pills — pick ECSA Fronthaul and everything below
@@ -1016,6 +1131,9 @@ function renderTrends() {
 
   // Demand vs supply balance for the filtered stem(s)
   renderBalanceChart(hist);
+
+  // Depth read is charterer-level, all stems (fixtures aren't stem-tagged)
+  renderDemandDepth();
 }
 
 function renderStemVelocity() {
