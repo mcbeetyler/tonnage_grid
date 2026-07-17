@@ -810,7 +810,89 @@ function fmtBucket(bucket, granularity) {
 // Palette for trend lines (distinct colors that look decent on white)
 const TREND_COLORS = ['#185FA5','#0F6E56','#854F0B','#993C1D','#533AB7','#B91C56','#0E7490','#A16207','#4F46E5','#0B7A5F','#D97706','#BE185D','#1D4ED8','#047857','#C2410C','#6D28D9'];
 
+// Half-month laycan slot for a board ship's ETA ("Aug FH" / "Aug LH") —
+// same buckets as the cargo book's slots, for the demand/supply balance
+function etaSlot(iso) {
+  if (!iso) return null;
+  const d = new Date(String(iso).slice(0, 10) + 'T00:00:00Z');
+  if (isNaN(d)) return null;
+  return MONTH_FULL[d.getUTCMonth() + 1] + (d.getUTCDate() <= 15 ? ' FH' : ' LH');
+}
+function renderTrendStemPills() {
+  const wrap = document.getElementById('trendStemFilters');
+  if (!wrap) return;
+  const counts = {};
+  cargoHistory.forEach(c => { if (c.stem) counts[c.stem] = (counts[c.stem] || 0) + 1; });
+  const stems = STEM_ORDER.filter(s => counts[s]);
+  wrap.innerHTML =
+    `<button class="filter-pill ${activeCargoStem === 'ALL' ? 'active' : ''}" onclick="setCargoStem('ALL')">All (${cargoHistory.length})</button>` +
+    stems.map(s =>
+      `<button class="filter-pill ${activeCargoStem === s ? 'active' : ''}" onclick="setCargoStem('${s}')">${s} (${counts[s]})</button>`).join('');
+}
+
+// Demand (live cargoes by laycan slot) vs supply (OPEN board ships by ETA
+// slot). Ship series only means something for ECSA-loading stems — the board
+// is the ECSA book — so it hides for e.g. a USG-only stem selection.
+let balanceChart = null;
+function renderBalanceChart(hist) {
+  const canvas = document.getElementById('balanceChart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  const live = hist.filter(c => cargoCurrent.includes(c.id) && !c.fixed);
+  const demand = {};
+  live.forEach(c => { const s = c.slot || parseLaycanSlot(c.laycan); if (s) demand[s] = (demand[s] || 0) + 1; });
+
+  const stemIsEcsa = activeCargoStem === 'ALL' || /ecsa/i.test(activeCargoStem);
+  const supply = {};
+  if (stemIsEcsa && typeof vessels !== 'undefined' && Array.isArray(vessels)) {
+    vessels.forEach(v => {
+      if (v.status !== 'OPEN' || !v.eta_ecsa) return;
+      const s = etaSlot(v.eta_ecsa);
+      if (s) supply[s] = (supply[s] || 0) + 1;
+    });
+  }
+
+  const slots = [...new Set([...Object.keys(demand), ...Object.keys(supply)])]
+    .sort((a, b) => slotSortKey(a) - slotSortKey(b)).slice(0, 8);
+  const note = document.getElementById('balanceNote');
+  if (!slots.length) {
+    if (balanceChart) { balanceChart.destroy(); balanceChart = null; }
+    if (note) note.textContent = 'No live laycans to compare.';
+    return;
+  }
+  // Tightness read: slots where demand outstrips arriving ships
+  const tight = slots.filter(s => (demand[s] || 0) > (supply[s] || 0));
+  if (note) {
+    note.textContent = stemIsEcsa
+      ? (tight.length ? `Tight slots (more stems than arriving ships): ${tight.join(', ')}` : 'Supply covers demand in every slot shown.')
+      : 'Ship series hidden — the board covers ECSA arrivals only.';
+  }
+
+  const datasets = [{
+    label: 'Live cargoes', data: slots.map(s => demand[s] || 0),
+    backgroundColor: '#185FA5', borderRadius: 3,
+  }];
+  if (stemIsEcsa) datasets.push({
+    label: 'Open ships arriving (ETA slot)', data: slots.map(s => supply[s] || 0),
+    backgroundColor: '#B6D98A', borderRadius: 3,
+  });
+
+  if (balanceChart) balanceChart.destroy();
+  balanceChart = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: slots, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+      plugins: { legend: { position: 'top', labels: { boxWidth: 14 } } },
+    },
+  });
+}
+
 function renderTrends() {
+  renderTrendStemPills();
+  // Trends respect the stem pills — pick ECSA Fronthaul and everything below
+  // (stats, activity chart, balance) is that stem only
+  const hist = activeCargoStem === 'ALL' ? cargoHistory : cargoHistory.filter(c => c.stem === activeCargoStem);
   if (cargoHistory.length === 0) {
     document.getElementById('trendStats').innerHTML = '<div style="padding:40px;color:var(--text-dim);font-size:13px">No cargo history yet. Paste cargo data to start building trends.</div>';
     document.getElementById('trendLegend').innerHTML = '';
@@ -822,9 +904,9 @@ function renderTrends() {
   const topN = parseInt(document.getElementById('trendTopN').value || '10', 10);
 
   // Time in market stats
-  const withBothDates = cargoHistory.filter(c => c.first_seen && c.last_seen);
-  const departedCargoes = cargoHistory.filter(c => c.departed_at);
-  const stillLive = cargoHistory.filter(c => cargoCurrent.includes(c.id));
+  const withBothDates = hist.filter(c => c.first_seen && c.last_seen);
+  const departedCargoes = hist.filter(c => c.departed_at);
+  const stillLive = hist.filter(c => cargoCurrent.includes(c.id));
 
   const avgTimeInMarket = (() => {
     const days = departedCargoes.map(c => {
@@ -839,8 +921,8 @@ function renderTrends() {
     return (days.reduce((a, b) => a + b, 0) / days.length).toFixed(1) + ' d';
   })();
 
-  const totalEverSeen = cargoHistory.length;
-  const fixedCount = cargoHistory.filter(c => c.fixed).length;
+  const totalEverSeen = hist.length;
+  const fixedCount = hist.filter(c => c.fixed).length;
   const fixRate = totalEverSeen > 0 ? ((fixedCount / totalEverSeen) * 100).toFixed(0) + '%' : '—';
 
   document.getElementById('trendStats').innerHTML = [
@@ -856,7 +938,7 @@ function renderTrends() {
   const seriesMap = {}; // category -> bucket -> count
   const totalByCategory = {}; // for top-N sorting
 
-  cargoHistory.forEach(c => {
+  hist.forEach(c => {
     const bucket = getBucket(c.first_seen, trendGranularity);
     if (!bucket) return;
     bucketSet.add(bucket);
@@ -931,6 +1013,9 @@ function renderTrends() {
 
   // Stem velocity table (only show for 'stem' view)
   renderStemVelocity();
+
+  // Demand vs supply balance for the filtered stem(s)
+  renderBalanceChart(hist);
 }
 
 function renderStemVelocity() {
