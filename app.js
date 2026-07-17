@@ -2075,7 +2075,9 @@ function renderTable() {
         const histChip = histCount > 0
           ? `<span class="history-chip" title="View ${histCount} rate update${histCount===1?'':'s'} over time" onclick="event.stopPropagation();openHistoryModal(${gi})">↗</span>`
           : '';
-        return `<td class="td-vessel editable" onclick="startEdit(this,${gi},'vessel_name',true)">${v.vessel_name || '—'}${warnDot}${quietBadge}${histChip}</td>`;
+        const scrPill = v.scrubber === true
+          ? '<span class="scr-pill" title="Scrubber fitted">SCR</span>' : '';
+        return `<td class="td-vessel editable" onclick="startEdit(this,${gi},'vessel_name',true)">${v.vessel_name || '—'}${scrPill}${warnDot}${quietBadge}${histChip}</td>`;
       }
       case 'owner': return `<td class="td-owner editable" onclick="startEdit(this,${gi},'owner',false)">${v.owner || '—'}</td>`;
       case 'dwt': return `<td class="td-specs editable" onclick="startEdit(this,${gi},'dwt',true)">${v.dwt ? (v.dwt/1000).toFixed(0)+'K' : '—'}</td>`;

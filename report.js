@@ -338,7 +338,7 @@ function renderReportCard(v, rank, type) {
 
   return `<div class="report-card${stale ? ' report-card-stale' : ''}${isQuiet ? ' report-card-quiet' : ''}">
     <span class="report-rank">${rank}</span>
-    <span class="report-vessel-name">${v.vessel_name || '—'} <span class="report-specs">${specs}</span></span>
+    <span class="report-vessel-name">${v.vessel_name || '—'} <span class="report-specs">${specs}</span>${v.scrubber === true ? '<span class="scr-pill" title="Scrubber fitted">SCR</span>' : ''}</span>
     <span class="report-owner">${v.owner || '—'}</span>
     <span class="report-chips">${chips.join(' · ')}</span>
     <span class="report-p6 ${type}">${val != null ? '$' + val.toLocaleString() : '—'}${stale}</span>
@@ -359,7 +359,7 @@ function renderFixtureCard(v, rank) {
   const safeName = (v.vessel_name || '').replace(/'/g, "\\'");
   return `<div class="report-card">
     <span class="report-rank">${rank}</span>
-    <span class="report-vessel-name">${v.vessel_name || '—'} <span class="report-specs">${specs}</span></span>
+    <span class="report-vessel-name">${v.vessel_name || '—'} <span class="report-specs">${specs}</span>${v.scrubber === true ? '<span class="scr-pill" title="Scrubber fitted">SCR</span>' : ''}</span>
     <span class="report-chips" title="${charterer.replace(/"/g,'&quot;')}">${charterer}${etaStr ? ' · ' + etaStr : ''} ${fm}</span>
     <span class="report-fixture-date">${dateFixed}</span>
     <span class="report-p6 fixed">${fixedPx}</span>
@@ -388,7 +388,7 @@ function vesselToWhatsApp(v, type) {
   const etaType = v.eta_type === 'ONW' ? ' (ONW)' : '';
   const typeLabel = type === 'bid' ? ' [BID]' : '';
 
-  let line1 = `*${v.vessel_name || '?'} ${specs}*${typeLabel}`;
+  let line1 = `*${v.vessel_name || '?'} ${specs}${v.scrubber === true ? ' SCR' : ''}*${typeLabel}`;
   if (v.owner) line1 += ` — ${v.owner.toUpperCase()}`;
   if (delivery) line1 += ` — ${delivery}`;
   if (etaStr) line1 += ` — ETA: ${etaStr}${etaType}`;
@@ -417,7 +417,7 @@ function fixtureToWhatsApp(v) {
   const dateFixed = v.date_fixed ? fmtDateReport(v.date_fixed) : '';
   const charterer = v.charterer || '';
 
-  let line1 = `*${v.vessel_name || '?'} ${specs}* [FIXED]`;
+  let line1 = `*${v.vessel_name || '?'} ${specs}${v.scrubber === true ? ' SCR' : ''}* [FIXED]`;
   if (v.owner) line1 += ` — ${v.owner.toUpperCase()}`;
   if (etaStr) line1 += ` — ETA: ${etaStr}${etaType}`;
 
