@@ -708,6 +708,7 @@
     <span class="tab-group-label">Tools</span>
     <button class="tab-btn" onclick="switchTab('voyages')">Voyages</button>
     <button class="tab-btn" onclick="switchTab('estimator')">Estimator</button>
+    <button class="tab-btn" onclick="switchTab('scrubber')" title="Honest scrubber-ship benefit: M/E-only quotes + G/E + parasitic load, scenario vs scenario">Scrubber</button>
     <button class="tab-btn" onclick="switchTab('participants')">Participants</button>
   </div>
 </div>
@@ -1053,6 +1054,10 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 <div id="tab-supply" class="tab-panel">
   <div id="sp_root"></div>
 </div><!-- end tab-supply -->
+
+<div id="tab-scrubber" class="tab-panel">
+  <div id="sc_root"></div>
+</div><!-- end tab-scrubber -->
 
 <div id="tab-voyages" class="tab-panel">
   <!-- Bunker prices: drives TCE conversion for Market scatter voyage layer -->
@@ -1501,6 +1506,7 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 <script src="pairings.js"></script>
 <script src="supply.js"></script>
 <script src="natl-board.js"></script>
+<script src="scrubber-calc.js"></script>
 <script src="overview.js"></script>
 <script src="feeds.js"></script>
 </body>

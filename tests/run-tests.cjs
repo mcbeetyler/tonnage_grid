@@ -422,6 +422,52 @@ section('supply + feeds');
   A(fd._test.rowsToTsv([['HIRE\n(offer)', 'x']]) === 'HIRE (offer)\tx', 'rowsToTsv flattens newlines');
 }
 
+// ═══ 6. scrubber calc ═════════════════════════════════════════════════════════
+section('scrubber calc');
+{
+  const sc = load('scrubber-calc.js');
+  // Hand-checked case: 10d ballast at sea only (dist 3360nm @ 14kn, 0% margin),
+  // Zhen May figures, HSFO 453 / VLSFO 647 / MGO 925
+  const r = sc.computeScrubber({
+    ballastDist: 3360, ballastKn: 14, ballastMe: 25,
+    ladenDist: 0, ladenKn: 0, ladenMe: 28,
+    geBase: 2.5, geScrub: 3.25, mdoSea: 0.1,
+    portIdleDays: 0, portIdleCons: 4.5, portWorkDays: 0, portWorkCons: 6,
+    seaMarginPct: 0, ecaPct: 0,
+    pxHSFO: 453, pxVLSFO: 647, pxMGO: 925, hire: 20000, split: 'chtr',
+  });
+  A(Math.abs(r.daysB - 10) < 1e-9, 'ballast days 10');
+  // scrub: 10 × 28.25 = 282.5t HSFO = $127,972.5 (+1t MGO $925)
+  // comp:  10 × 27.5  = 275t VLSFO = $177,925  (+1t MGO $925)
+  A(Math.abs(r.scrubCost - (282.5 * 453 + 1 * 925)) < 1e-6, 'scrub cost');
+  A(Math.abs(r.compCost - (275 * 647 + 1 * 925)) < 1e-6, 'comp cost');
+  A(Math.abs(r.benefitTotal - (275 * 647 - 282.5 * 453)) < 1e-6, 'benefit total');
+  A(Math.abs(r.benefitPerDay - r.benefitTotal / 10) < 1e-6, 'benefit per day');
+  // naive: spread 194 × 275t all-in compliant = $53,350 → 5,335/day; always
+  // overstates the true number by extraTonnes × HSFO (7.5t × 453 = $3,397.5)
+  A(Math.abs(r.naivePerDay - 5335) < 1e-6, 'naive per day 5335');
+  A(r.naivePerDay > r.benefitPerDay, 'naive overstates');
+  A(Math.abs(r.parasiticPenaltyPerDay - 7.5 * 453 / 10) < 1e-6, 'overstatement = parasitic × HSFO');
+  A(Math.abs(r.effectiveHire - (20000 - r.benefitPerDay)) < 1e-6, 'chtr account hire equivalence');
+  // ECA share washes out sea benefit: 100% ECA → benefit only from... no port, so ≈0
+  const r2 = sc.computeScrubber({ ...{
+    ballastDist: 3360, ballastKn: 14, ballastMe: 25,
+    ladenDist: 0, ladenKn: 0, ladenMe: 28,
+    geBase: 2.5, geScrub: 3.25, mdoSea: 0.1,
+    portIdleDays: 0, portIdleCons: 4.5, portWorkDays: 0, portWorkCons: 6,
+    seaMarginPct: 0, pxHSFO: 453, pxVLSFO: 647, pxMGO: 925, hire: 20000, split: 'chtr',
+  }, ecaPct: 100 });
+  A(Math.abs(r2.benefitTotal) < 1e-6, 'full-ECA voyage: no benefit');
+  // port-only: benefit = tonnes × spread exactly
+  const r3 = sc.computeScrubber({
+    ballastDist: 0, ballastKn: 0, ballastMe: 0, ladenDist: 0, ladenKn: 0, ladenMe: 0,
+    geBase: 2.5, geScrub: 3.25, mdoSea: 0, portIdleDays: 2, portIdleCons: 4.5,
+    portWorkDays: 8, portWorkCons: 6, seaMarginPct: 0, ecaPct: 0,
+    pxHSFO: 453, pxVLSFO: 647, pxMGO: 925, hire: 0, split: 'owner',
+  });
+  A(Math.abs(r3.benefitTotal - 57 * 194) < 1e-6, 'port benefit = tonnes × spread');
+}
+
 // ═══ result ═══════════════════════════════════════════════════════════════════
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
