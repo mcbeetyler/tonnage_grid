@@ -23,10 +23,15 @@ function vesselZone(v) { return ZN.zoneOfVessel(v) || '—'; }
 
 let NB = { initialised: false };
 let ui = Object.assign({
-  region: 'ALL', search: '', includeGone: false,
+  regions: [],   // multi-select basins; empty = all
+  search: '', includeGone: false,
   grainOnly: false, scrubOnly: false, offersOnly: false,
   sortKey: 'open', sortDir: 1,
 }, IS_BROWSER ? JSON.parse(localStorage.getItem(LS_UI) || '{}') : {});
+// Migrate old single-select
+if (ui.region && ui.region !== 'ALL' && (!ui.regions || !ui.regions.length)) ui.regions = [ui.region];
+if (!Array.isArray(ui.regions)) ui.regions = [];
+delete ui.region;
 function saveUi() { if (IS_BROWSER) localStorage.setItem(LS_UI, JSON.stringify(ui)); }
 
 function data() {
@@ -50,7 +55,7 @@ function computeRows() {
     const region = isExcluded ? rawRegion : vesselZone(v);
     counts[region] = (counts[region] || 0) + 1;
     if (!ui.includeGone && isExcluded) continue;
-    if (ui.region !== 'ALL' && region !== ui.region) continue;
+    if (ui.regions.length && !ui.regions.includes(region)) continue;
     if (ui.grainOnly && !v.grain_clean) continue;
     if (ui.scrubOnly && !v.scrubber) continue;
     if (ui.offersOnly && v.rate_ta == null && v.rate_fh == null) continue;
@@ -112,12 +117,16 @@ function render() {
   if (!root || !NB.initialised) return;
   const { rows, regions, imported, source } = computeRows();
 
-  // Region pills
+  // Region pills — MULTI-select: click to toggle basins in/out (e.g. just the
+  // basins feeding Vale's load ports), ALL clears. Exports follow selection.
   const pills = document.getElementById('nb_regions');
   pills.innerHTML = [['ALL', rows.length]].concat(regions.filter(([r]) => ui.includeGone || !EXCLUDED.includes(r)))
-    .map(([r, c]) => `<button class="filter-pill ${ui.region === r ? 'active' : ''}" data-region="${esc(r)}">${esc(r)} <span class="filter-count">${c}</span></button>`).join('');
+    .map(([r, c]) => `<button class="filter-pill ${r === 'ALL' ? (ui.regions.length ? '' : 'active') : (ui.regions.includes(r) ? 'active' : '')}" data-region="${esc(r)}">${esc(r)} <span class="filter-count">${c}</span></button>`).join('');
   pills.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
-    ui.region = ui.region === b.dataset.region ? 'ALL' : b.dataset.region;
+    const r = b.dataset.region;
+    if (r === 'ALL') ui.regions = [];
+    else if (ui.regions.includes(r)) ui.regions = ui.regions.filter(x => x !== r);
+    else ui.regions.push(r);
     saveUi(); render();
   }));
 
@@ -314,11 +323,14 @@ function buildMarketText(offersOnly) {
   const d = data();
   if (!d) return 'No data.';
   const counts = basinCounts();
-  const zones = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const selected = ui.regions.length ? ui.regions : null;   // export follows pill selection
+  let zones = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (selected) zones = zones.filter(([z]) => selected.includes(z));
   const total = zones.reduce((s, [, c]) => s + c, 0);
   const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-  let text = `NORTH ATLANTIC PANAMAX TONNAGE — ${today}\n`;
+  let text = `NORTH ATLANTIC PANAMAX TONNAGE — ${today}` +
+    (selected ? ` — ${selected.join(' / ')}` : '') + '\n';
   text += 'Open ships by basin: ' + zones.map(([z, c]) => {
     const dl = basinDelta(z, counts);
     return `${z} ${c}${dl != null && dl !== 0 ? ` (${dl > 0 ? '+' : ''}${dl} w/w)` : ''}`;
@@ -327,6 +339,7 @@ function buildMarketText(offersOnly) {
   const live = d.vessels.filter(v => {
     const raw = (v.region || '').toUpperCase();
     if (EXCLUDED.includes(raw)) return false;
+    if (selected && !selected.includes(vesselZone(v))) return false;
     return offersOnly ? (v.rate_ta != null || v.rate_fh != null) : true;
   });
   const byZone = {};
