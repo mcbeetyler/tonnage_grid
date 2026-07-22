@@ -329,9 +329,12 @@ function buildMarketText(offersOnly) {
   const total = zones.reduce((s, [, c]) => s + c, 0);
   const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-  let text = `*NORTH ATLANTIC PANAMAX TONNAGE — ${today}` +
-    (selected ? ` — ${selected.join(' / ')}` : '') + '*\n';
-  text += 'Open ships by basin: ' + zones.map(([z, c]) => {
+  // WhatsApp formatting hierarchy, kept deliberately quiet:
+  //   bold  = title, section, ship name blocks (what the eye scans for)
+  //   italic = date/selection, basin sub-headers, labels (orientation)
+  //   plain = everything else
+  let text = `*NORTH ATLANTIC PANAMAX TONNAGE*\n_${today}${selected ? ' — ' + selected.join(' / ') : ''}_\n`;
+  text += '_Open ships by basin:_ ' + zones.map(([z, c]) => {
     const dl = basinDelta(z, counts);
     return `${z} ${c}${dl != null && dl !== 0 ? ` (${dl > 0 ? '+' : ''}${dl} w/w)` : ''}`;
   }).join(' · ') + ` — total ${total}\n`;
@@ -345,17 +348,16 @@ function buildMarketText(offersOnly) {
   const byZone = {};
   live.forEach(v => { const z = vesselZone(v); (byZone[z] = byZone[z] || []).push(v); });
 
-  text += offersOnly ? '\n*SHIPS WITH OFFERS:*\n' : '\n*OPEN SHIPS:*\n';
+  text += offersOnly ? '\n*SHIPS WITH OFFERS*\n' : '\n*OPEN SHIPS*\n';
   for (const [z] of zones) {
     const ships = (byZone[z] || []).sort((a, b) => String(a.lay || '9').localeCompare(String(b.lay || '9')));
     if (!ships.length) continue;
-    text += `\n${z}\n`;
+    text += `\n_${z}_\n`;
     for (const v of ships) {
       const openTxt = v.lay ? fmtD(v.lay) + (v.can ? '-' + fmtD(v.can) : '') : (v.laycan_str || '?');
       const offers = fmtOffers(v);
-      // *bold* renders in WhatsApp — name/dwt/built jump out per line
       text += `· *${(v.name || '').toUpperCase()} ${v.dwt_yr || ''}${v.scrubber ? ' SCR' : ''}*` +
-        `${v.owner ? ' — ' + v.owner.toUpperCase() : ''} — open ${v.dely_port || '?'} ${openTxt}` +
+        `${v.owner ? ' — ' + v.owner : ''} — open ${v.dely_port || '?'} ${openTxt}` +
         `${offers ? ' — ' + offers : ''}\n`;
     }
   }
