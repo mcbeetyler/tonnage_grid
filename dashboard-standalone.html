@@ -12996,6 +12996,22 @@ function render() {
   ].map(([l, v]) => `<div class="stat" style="min-width:86px;padding:8px 14px"><div class="stat-label">${l}</div><div class="stat-value" style="font-size:22px">${v}</div></div>`).join('');
   document.getElementById('nb_source').textContent = `data as of ${imported || '?'}${/feed/.test(source || '') ? ' (live feed)' : ''}`;
 
+  // Basin strip: today's open count per basin + week-over-week change
+  const strip = document.getElementById('nb_basinStrip');
+  if (strip) {
+    const counts = basinCounts();
+    const zones = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    strip.innerHTML = zones.map(([z, c]) => {
+      const dl = basinDelta(z, counts);
+      const dTxt = dl == null ? '<span style="color:var(--text-dim)" title="No snapshot ~7 days back yet — history builds daily from today">·</span>'
+        : dl === 0 ? '<span style="color:var(--text-dim)">=</span>'
+        : `<span style="color:${dl > 0 ? 'var(--red)' : 'var(--green)'}" title="vs ~7 days ago — more ships = softer basin">${dl > 0 ? '+' : ''}${dl}</span>`;
+      return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);padding:5px 12px;font-size:12px">
+        <span style="color:${REGION_COLORS[z] || 'var(--text)'};font-weight:700">${esc(z)}</span>
+        <b style="font-family:var(--mono);margin-left:5px">${c}</b> <span style="margin-left:3px">${dTxt}</span></div>`;
+    }).join('');
+  }
+
   const tb = document.getElementById('nb_tbody');
   tb.innerHTML = rows.length ? rows.map(v => {
     const zone = displayZone(v);
@@ -13063,7 +13079,11 @@ function buildUI() {
         </div>
         <div style="flex:1"></div>
         <span id="nb_source" style="font-size:11px;color:var(--text-dim)"></span>
+        <button class="nb-mini" id="nb_copyOffers" style="padding:7px 14px;font-size:12px;color:var(--text)" title="Principal-ready: basin counts + every open ship with a TA/FH offer, grouped by basin. No internal comments.">Copy offers 📋</button>
+        <button class="nb-mini" id="nb_copyAll" style="padding:7px 14px;font-size:12px" title="Same format, all open ships (offers shown where quoted)">Copy full list</button>
       </div>
+
+      <div id="nb_basinStrip" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
 
       <div id="nb_regions" class="filter-row" style="margin-bottom:8px"></div>
 
@@ -13103,10 +13123,106 @@ function buildUI() {
     if (ui.sortKey === k) ui.sortDir = -ui.sortDir; else { ui.sortKey = k; ui.sortDir = 1; }
     saveUi(); render();
   }));
+
+  document.getElementById('nb_copyOffers').addEventListener('click', e => nbCopy(buildMarketText(true), e.target));
+  document.getElementById('nb_copyAll').addEventListener('click', e => nbCopy(buildMarketText(false), e.target));
+}
+
+// ─── Basin counts, history, principal export ─────────────────────────────────
+const LS_BASINS = 'nb_basin_history';
+
+function basinCounts() {
+  const d = data();
+  if (!d) return {};
+  const counts = {};
+  for (const v of d.vessels) {
+    const raw = (v.region || '').toUpperCase();
+    if (EXCLUDED.includes(raw)) continue;
+    const z = vesselZone(v);
+    if (z && z !== '—') counts[z] = (counts[z] || 0) + 1;
+  }
+  return counts;
+}
+
+// One snapshot per day — the history that becomes valuable in a month
+function snapshotBasins(counts) {
+  if (!IS_BROWSER) return;
+  if (!Object.keys(counts).length) return;
+  const day = new Date().toISOString().slice(0, 10);
+  const hist = JSON.parse(localStorage.getItem(LS_BASINS) || '{}');
+  hist[day] = counts;
+  localStorage.setItem(LS_BASINS, JSON.stringify(hist));
+}
+
+// Week-over-week delta: nearest snapshot 6-9 days back
+function basinDelta(zone, counts) {
+  if (!IS_BROWSER) return null;
+  const hist = JSON.parse(localStorage.getItem(LS_BASINS) || '{}');
+  for (let back = 7; back <= 9; back++) {
+    for (const sign of [0, 1, -1]) {
+      const d = new Date(Date.now() - (back + sign) * 86400000).toISOString().slice(0, 10);
+      if (hist[d]) return (counts[zone] || 0) - (hist[d][zone] || 0);
+    }
+  }
+  return null;
+}
+
+function fmtOffers(v) {
+  const parts = [];
+  if (v.rate_ta != null) parts.push(`$${Math.round(v.rate_ta).toLocaleString()}${v.bb_ta ? ' + $' + Math.round(v.bb_ta).toLocaleString() + ' bb' : ''} TA`);
+  if (v.rate_fh != null) parts.push(`$${Math.round(v.rate_fh).toLocaleString()}${v.bb_fh ? ' + $' + Math.round(v.bb_fh).toLocaleString() + ' bb' : ''} FH`);
+  return parts.join(' / ');
+}
+
+// Principal-ready market text. Deliberately excluded: internal comments,
+// desk user initials, FH-candidate flags — position facts and offers only.
+function buildMarketText(offersOnly) {
+  const d = data();
+  if (!d) return 'No data.';
+  const counts = basinCounts();
+  const zones = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const total = zones.reduce((s, [, c]) => s + c, 0);
+  const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  let text = `NORTH ATLANTIC PANAMAX TONNAGE — ${today}\n`;
+  text += 'Open ships by basin: ' + zones.map(([z, c]) => {
+    const dl = basinDelta(z, counts);
+    return `${z} ${c}${dl != null && dl !== 0 ? ` (${dl > 0 ? '+' : ''}${dl} w/w)` : ''}`;
+  }).join(' · ') + ` — total ${total}\n`;
+
+  const live = d.vessels.filter(v => {
+    const raw = (v.region || '').toUpperCase();
+    if (EXCLUDED.includes(raw)) return false;
+    return offersOnly ? (v.rate_ta != null || v.rate_fh != null) : true;
+  });
+  const byZone = {};
+  live.forEach(v => { const z = vesselZone(v); (byZone[z] = byZone[z] || []).push(v); });
+
+  text += offersOnly ? '\nSHIPS WITH OFFERS:\n' : '\nOPEN SHIPS:\n';
+  for (const [z] of zones) {
+    const ships = (byZone[z] || []).sort((a, b) => String(a.lay || '9').localeCompare(String(b.lay || '9')));
+    if (!ships.length) continue;
+    text += `\n${z}\n`;
+    for (const v of ships) {
+      const openTxt = v.lay ? fmtD(v.lay) + (v.can ? '-' + fmtD(v.can) : '') : (v.laycan_str || '?');
+      const offers = fmtOffers(v);
+      text += `· ${(v.name || '').toUpperCase()} ${v.dwt_yr || ''}${v.scrubber ? ' SCR' : ''}` +
+        `${v.owner ? ' — ' + v.owner.toUpperCase() : ''} — open ${v.dely_port || '?'} ${openTxt}` +
+        `${offers ? ' — ' + offers : ''}\n`;
+    }
+  }
+  return text.trim();
+}
+
+function nbCopy(text, btn) {
+  const done = () => { if (btn) { const t = btn.textContent; btn.textContent = '✓ copied'; setTimeout(() => { btn.textContent = t; }, 1400); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(done);
+  else done();
 }
 
 function nbInit() {
   if (!NB.initialised) { buildUI(); NB.initialised = true; }
+  snapshotBasins(basinCounts());
   render();
 }
 
@@ -13119,7 +13235,7 @@ if (IS_BROWSER) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { _test: { setUi: u => Object.assign(ui, u), computeRows } };
+  module.exports = { _test: { setUi: u => Object.assign(ui, u), computeRows, basinCounts, buildMarketText } };
 }
 
 })();
