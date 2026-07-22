@@ -353,7 +353,8 @@ function buildMarketText(offersOnly) {
     for (const v of ships) {
       const openTxt = v.lay ? fmtD(v.lay) + (v.can ? '-' + fmtD(v.can) : '') : (v.laycan_str || '?');
       const offers = fmtOffers(v);
-      text += `· ${(v.name || '').toUpperCase()} ${v.dwt_yr || ''}${v.scrubber ? ' SCR' : ''}` +
+      // *bold* renders in WhatsApp — name/dwt/built jump out per line
+      text += `· *${(v.name || '').toUpperCase()} ${v.dwt_yr || ''}${v.scrubber ? ' SCR' : ''}*` +
         `${v.owner ? ' — ' + v.owner.toUpperCase() : ''} — open ${v.dely_port || '?'} ${openTxt}` +
         `${offers ? ' — ' + offers : ''}\n`;
     }
