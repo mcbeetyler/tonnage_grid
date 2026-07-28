@@ -13712,14 +13712,64 @@ async function refreshFeeds(manual) {
   }
 }
 
+// ─── On-demand fresh read ────────────────────────────────────────────────────
+// The badge used to re-apply the last payload the robot POSTED — it couldn't
+// make the robot re-READ the sheets. With the Apps Script deployed as a web
+// app, a click now pings it (fire-and-forget; the response is CORS-opaque
+// but the run happens), then polls for fresher payloads and applies them.
+const LS_WEBAPP = 'feeds_webapp_url';
+
+function webappUrl() {
+  const v = localStorage.getItem(LS_WEBAPP);
+  return v === null ? undefined : v;   // '' = user declined, don't nag
+}
+
+function promptWebappUrl() {
+  const v = prompt(
+    'Optional — enable TRUE fresh reads:\n\n' +
+    'In the Apps Script editor: Deploy → New deployment → Web app → ' +
+    'execute as Me, access "Anyone with the link". Paste the /exec URL here.\n\n' +
+    'Leave empty to skip (the button will keep applying the last 30-min feed).');
+  localStorage.setItem(LS_WEBAPP, (v || '').trim());
+  return (v || '').trim();
+}
+
+async function freshRead() {
+  let url = webappUrl();
+  if (url === undefined) url = promptWebappUrl();
+  if (!url) { refreshFeeds(true); return; }   // not configured — old behaviour
+
+  const clickTs = new Date().toISOString();
+  setBadge('Reading sheets…', 'pend', 'Asked the Apps Script for a fresh read — applying as soon as new payloads land');
+  try {
+    // CORS-opaque by design: the GET still executes the script server-side
+    await fetch(url, { mode: 'no-cors' });
+  } catch (e) { /* opaque failures are expected; the poll decides */ }
+
+  // Poll for payloads newer than the click, up to ~90s (4 sheets take a while)
+  for (let i = 0; i < 18; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    try {
+      const stamps = await fetch('/api/import').then(r => r.json());
+      if (Object.values(stamps).some(ts => ts && ts > clickTs)) {
+        await refreshFeeds(true);
+        return;
+      }
+    } catch (e) { /* keep polling */ }
+  }
+  setBadge('Feeds: no fresh data', 'err',
+    'The web-app ping produced nothing new within 90s. Check the Apps Script executions panel — or the sheets simply have not changed.');
+}
+
 function injectBadge() {
   const syncBadge = document.getElementById('syncBadge');
   if (!syncBadge || document.getElementById('feedsBadge')) return;
   const el = document.createElement('span');
   el.id = 'feedsBadge';
-  el.addEventListener('click', () => refreshFeeds(true));
+  el.addEventListener('click', () => freshRead());
+  el.addEventListener('contextmenu', e => { e.preventDefault(); localStorage.removeItem(LS_WEBAPP); promptWebappUrl(); });
   syncBadge.parentNode.insertBefore(el, syncBadge.nextSibling);
-  setBadge('Feeds', 'pend', 'Click to pull the Google Sheets feeds now');
+  setBadge('Feeds', 'pend', 'Click: fresh sheet read (if web app configured) · right-click: set the web-app URL');
 }
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {

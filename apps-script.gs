@@ -66,6 +66,22 @@ function syncAll() {
   }
 }
 
+/**
+ * Web-app entry: lets the dashboard's Feeds button trigger a FRESH sheet
+ * read on demand (instead of re-pulling the last posted payload).
+ * Deploy: Deploy → New deployment → Web app → execute as Me, access:
+ * "Anyone with the link". The long deployment URL acts as the secret —
+ * paste it into the dashboard when the Feeds button asks.
+ */
+function doGet() {
+  try {
+    syncAll();
+    return ContentService.createTextOutput('ok');
+  } catch (e) {
+    return ContentService.createTextOutput('error: ' + e.message);
+  }
+}
+
 /** One-time: installs the every-30-minutes trigger (replaces old ones). */
 function setupTrigger() {
   ScriptApp.getProjectTriggers()

@@ -32,6 +32,21 @@ the same as you opening the sheets in a browser tab.
    That installs the every-30-minutes schedule. Done — you never need to
    open this again.
 
+## Optional: true fresh reads from the Feeds button
+
+By default the Feeds button applies the last payload the script POSTED
+(up to 30 minutes old). To make a click trigger a fresh sheet READ:
+
+1. Script editor → **Deploy → New deployment → Web app**
+   - Execute as: **Me**
+   - Who has access: **Anyone with the link**
+2. Copy the long `/exec` URL. It's effectively a secret — don't share it.
+3. In the dashboard, click the Feeds badge — it asks for the URL once.
+   (Right-click the badge to change it later.)
+
+From then on: click = script re-reads all four sheets → dashboard applies
+the fresh payloads, usually within 15–30 seconds.
+
 ## Checking it works
 
 Open the dashboard: next to the sync badge there's now a **Feeds** badge
