@@ -1755,6 +1755,17 @@ function setVesselStatus(idx, next) {
   if (v.status === next) return;
   v.status = next;
   touchVessel(idx);
+  // Manual status changes outrank the feeds until fresher sheet data —
+  // without this stamp the fixtures feed could re-mark a ship you just
+  // reopened (the Darya Lachmi bug)
+  v.field_overrides = v.field_overrides || {};
+  v.field_overrides.status = new Date().toISOString();
+
+  // Reopening a previously-fixed ship = a NEW position: archive the old
+  // fixture (date/price/charterer move to fixture_history, fields clear)
+  if (next === 'OPEN' && typeof archiveFixtureResidue === 'function') {
+    archiveFixtureResidue(v);
+  }
 
   // Prompt for fixed price and charterer when moving to FIXED
   if (next === 'FIXED' && !v.fixed_price) {

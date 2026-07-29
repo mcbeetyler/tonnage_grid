@@ -103,6 +103,25 @@ section('csv-import + app');
     A(parseAgeField('Oct-24') === 2024, 'age Oct-24');
     A(parseAgeField('Jun-98') === 1998, 'age pivot');
     A(parseAgeField('1-Jan') === null, 'age reject 1-digit');
+    A(parseLaydayDate('21+ Aug') !== null && parseLaydayDate('21+ Aug').endsWith('-08-21'), "layday '21+ Aug' parses");
+    A(parseLaydayDate('21+Aug') !== null && parseLaydayDate('21+Aug').endsWith('-08-21'), "layday '21+Aug' parses");
+
+    // Darya Lachmi scenario: OPEN ship with stale April fixture residue,
+    // ETA late Aug, no parseable open_date on the vessel record — the
+    // Fixtures tab still lists her April fixture. Must NOT re-fix her.
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'DARYA LACHMI', status: 'OPEN', eta_ecsa: '2026-08-25' });
+    const dlHdr = ['LAST UPDATE', 'VESSEL', 'DWT', 'AGE', 'ETA', 'OWNER', 'BKI EQVT'].join('\\t');
+    const dlFx = ['14-Apr 09:00', 'Darya Lachmi', '82,000', 'Jan-2022', '10-May', 'CHELLARAM', '$21,000'].join('\\t');
+    markFixturesFromCSV(parseCSVVessels([dlHdr, dlFx].join('\\n')).vessels);
+    A(vessels[0].status === 'OPEN', 'months-old fixture does not re-fix a ship with a far ETA');
+
+    // archiveFixtureResidue: manual reopen clears the old fixture into history
+    const dl = vessels[0];
+    dl.date_fixed = '2026-04-14'; dl.fixed_price = 21000; dl.charterer = 'COFCO';
+    A(archiveFixtureResidue(dl) === true, 'residue archived');
+    A(dl.date_fixed === null && dl.charterer === null && dl.fixture_history.length === 1
+      && dl.fixture_history[0].charterer === 'COFCO', 'fields cleared, history kept');
     A(parseAgeField('2010-01-01 00:00') === 2010, 'age iso');
     A(looksLikeCSV(TSV), 'looksLikeCSV');
     const { vessels: parsed } = parseCSVVessels(TSV);

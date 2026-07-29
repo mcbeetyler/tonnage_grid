@@ -224,9 +224,10 @@ function parseCsvUpdateTs(s) {
 
 function parseLaydayDate(s) {
   if (!s) return null;
-  // Accept "15-Apr", "15 Apr", "15-Apr-26", "2026-04-15"
+  // Accept "15-Apr", "15 Apr", "15-Apr-26", "2026-04-15", "21+ Aug" / "21+Aug"
+  // (the '+' means onwards — the date part still parses)
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const m = s.match(/(\d{1,2})[\s-]+([A-Za-z]{3,})/);
+  const m = s.match(/(\d{1,2})\+?[\s-]*([A-Za-z]{3,})/);
   if (!m) return null;
   const day = parseInt(m[1], 10);
   const monthMap = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
@@ -471,7 +472,13 @@ function syncCSVVessels(newVessels, opts) {
     if (nv.csv_status === '0' && existing.status === 'OPEN' && !isProtected('status')) {
       existing.status = 'WITHDRAWN'; changed = true;
     } else if (nv.csv_status === '1' && existing.status === 'WITHDRAWN' && !isProtected('status')) {
-      existing.status = 'OPEN'; changed = true;
+      existing.status = 'OPEN';
+      // Back on the sheet as a live position: old fixture residue (she may
+      // have gone FIXED → withdrawn-from-grid → returned) is history now
+      if (existing.date_fixed && nv.open_date && nv.open_date > existing.date_fixed) {
+        archiveFixtureResidue(existing);
+      }
+      changed = true;
     } else if (nv.csv_status === '1' && existing.status === 'FIXED' && !isProtected('status')) {
       // A fixed ship back on the grid: reopen ONLY if her new layday is
       // clearly after the fixture (Pacific round done, ballasting back) —
@@ -527,6 +534,20 @@ function syncCSVVessels(newVessels, opts) {
   return { added, updated, unchanged, protectedFields, withdrawCandidates, autoWithdrawn, reopened };
 }
 
+// Archive a previous fixture's residue when a ship comes back as a fresh
+// position — date_fixed/price/charterer move to fixture_history, the live
+// fields clear. Shared by the CSV reopen paths and the manual status flip.
+function archiveFixtureResidue(v) {
+  if (!v.date_fixed && v.fixed_price == null && !v.charterer && !v.fix_msg) return false;
+  v.fixture_history = v.fixture_history || [];
+  v.fixture_history.push({
+    date_fixed: v.date_fixed || null, fixed_price: v.fixed_price ?? null,
+    charterer: v.charterer ?? null, fix_msg: v.fix_msg ?? null,
+  });
+  v.date_fixed = null; v.fixed_price = null; v.charterer = null; v.fix_msg = null;
+  return true;
+}
+
 // Mark board ships FIXED from the Fixtures-tab feed. Only touches ships
 // already on the board (149 rows of fixture history shouldn't flood the
 // grid); never overrides FAILED or a manual status edit newer than the fix.
@@ -556,6 +577,13 @@ function markFixturesFromCSV(parsed) {
     // about the previous employment — skip it.
     const openRef = v.open_date || (v.reopened_at ? String(v.reopened_at).slice(0, 10) : null);
     if (openRef && fixTs.slice(0, 10) < openRef) continue;
+    // Second guard when open_date is missing: a fixture months older than
+    // the ship's current ETA is plainly the previous voyage (Darya Lachmi:
+    // Apr fixture vs 25 Aug ETA)
+    if (!openRef && v.eta_ecsa) {
+      const gapDays = (new Date(String(v.eta_ecsa).slice(0, 10)) - new Date(fixTs.slice(0, 10))) / 86400000;
+      if (gapDays > 60) continue;
+    }
     v.status = 'FIXED';
     v.date_fixed = fixTs.slice(0, 10);
     if (f.bki_eqvt != null) v.fixed_price = Math.round(f.bki_eqvt);
