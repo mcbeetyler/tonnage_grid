@@ -3871,7 +3871,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-07-29.1';
+const APP_REV = '2026-07-29.2';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');
@@ -4026,6 +4026,13 @@ function openHistoryModal(globalIdx) {
     </div>
     <div style="color:var(--text-dim);font-size:12px;margin-bottom:12px">
       ${offerHist.length} offer update${offerHist.length === 1 ? '' : 's'} · ${bidHist.length} bid update${bidHist.length === 1 ? '' : 's'}
+    </div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;margin-bottom:12px;word-break:break-all"
+      title="Raw record — for debugging why a ship shows (or doesn't) in reports">
+      rev ${typeof APP_REV !== 'undefined' ? APP_REV : '?'} · status=${v.status} · route=${v.route ?? '∅'} · mc.route=${v.market_colour?.[0]?.route ?? '∅'} ·
+      eta=${v.eta_ecsa ?? '∅'} · open=${v.open_date ?? '∅'} · date_fixed=${v.date_fixed ?? '∅'} · fixed_px=${v.fixed_price ?? '∅'} ·
+      charterer=${v.charterer ?? '∅'} · p6_offer=${v.market_colour?.[0]?.p6_offer ?? '∅'} ·
+      overrides=${JSON.stringify(v.field_overrides || {})} · fixture_hist=${(v.fixture_history || []).length}
     </div>
     ${renderHistoryChart(offerHist, bidHist)}
     <table class="history-table" style="margin-top:14px;width:100%">
