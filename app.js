@@ -2324,6 +2324,12 @@ async function init() {
   }
   // Seed offer/bid history for vessels that pre-date history tracking
   backfillHistory(vessels);
+  // Un-stick ships that reopened before residue-archiving existed
+  // (OPEN + months-old fixture residue → archived, ship re-enters reports)
+  if (typeof sweepStaleFixtureResidue === 'function') {
+    const swept = sweepStaleFixtureResidue();
+    if (swept) { console.log('[board] archived stale fixture residue on ' + swept + ' reopened ship(s)'); save(); }
+  }
   // Restore persisted filter toggle states
   const p6Btn = document.getElementById('p6OfferToggle');
   if (p6Btn && p6OfferOnly) p6Btn.classList.add('active');

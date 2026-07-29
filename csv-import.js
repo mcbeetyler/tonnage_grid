@@ -543,9 +543,27 @@ function archiveFixtureResidue(v) {
   v.fixture_history.push({
     date_fixed: v.date_fixed || null, fixed_price: v.fixed_price ?? null,
     charterer: v.charterer ?? null, fix_msg: v.fix_msg ?? null,
+    route: v.route ?? null,
   });
   v.date_fixed = null; v.fixed_price = null; v.charterer = null; v.fix_msg = null;
+  // Stale route hides the ship from the Report tab (ECSA FH-only filter) —
+  // a reopened ship's route is unknown until quoted again
+  v.route = null; v.fixed_route = null;
   return true;
+}
+
+// Self-healing sweep, run on every load: OPEN ships still wearing a fixture
+// from months ago (fixture >60d older than the current ETA) get their
+// residue archived automatically — no clicking required. This is what
+// un-sticks ships that reopened BEFORE the archive logic existed.
+function sweepStaleFixtureResidue() {
+  let swept = 0;
+  for (const v of vessels) {
+    if (v.status !== 'OPEN' || !v.date_fixed || !v.eta_ecsa) continue;
+    const gap = (new Date(String(v.eta_ecsa).slice(0, 10)) - new Date(String(v.date_fixed).slice(0, 10))) / 86400000;
+    if (gap > 60 && archiveFixtureResidue(v)) swept++;
+  }
+  return swept;
 }
 
 // Mark board ships FIXED from the Fixtures-tab feed. Only touches ships

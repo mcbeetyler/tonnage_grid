@@ -122,6 +122,23 @@ section('csv-import + app');
     A(archiveFixtureResidue(dl) === true, 'residue archived');
     A(dl.date_fixed === null && dl.charterer === null && dl.fixture_history.length === 1
       && dl.fixture_history[0].charterer === 'COFCO', 'fields cleared, history kept');
+
+    // Self-healing sweep: already-OPEN ships wearing months-old fixtures
+    // get cleaned on load; recent fixtures and non-OPEN ships untouched
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'STUCK SHIP', status: 'OPEN', eta_ecsa: '2026-08-25',
+      date_fixed: '2026-04-14', fixed_price: 21000, charterer: 'COFCO', route: 'ECSA TA' });
+    vessels.push({ vessel_name: 'FRESH FIX', status: 'OPEN', eta_ecsa: '2026-08-25',
+      date_fixed: '2026-07-20', fixed_price: 22000, charterer: 'BUNGE' });
+    vessels.push({ vessel_name: 'STILL FIXED', status: 'FIXED', eta_ecsa: '2026-08-25',
+      date_fixed: '2026-04-01', fixed_price: 20000 });
+    const swept = sweepStaleFixtureResidue();
+    A(swept === 1, 'sweep count: ' + swept);
+    const stuck = vessels[0];
+    A(stuck.date_fixed === null && stuck.charterer === null && stuck.route === null, 'stuck ship cleaned incl route');
+    A(stuck.fixture_history[0].route === 'ECSA TA', 'old route archived');
+    A(vessels[1].date_fixed === '2026-07-20', 'recent fixture residue untouched (could be sheet lag)');
+    A(vessels[2].status === 'FIXED' && vessels[2].date_fixed === '2026-04-01', 'FIXED ships never swept');
     A(parseAgeField('2010-01-01 00:00') === 2010, 'age iso');
     A(looksLikeCSV(TSV), 'looksLikeCSV');
     const { vessels: parsed } = parseCSVVessels(TSV);
