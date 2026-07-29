@@ -2900,8 +2900,8 @@ function syncCSVVessels(newVessels, opts) {
         archiveFixtureResidue(existing);
       }
       changed = true;
-    } else if (nv.csv_status === '1' && existing.status === 'FIXED' && !isProtected('status')) {
-      // A fixed ship back on the grid: reopen ONLY if her new layday is
+    } else if (nv.csv_status === '1' && (existing.status === 'FIXED' || existing.status === 'ON SUBS') && !isProtected('status')) {
+      // A fixed (or long-stuck on-subs) ship back on the grid: reopen ONLY if her new layday is
       // clearly after the fixture (Pacific round done, ballasting back) —
       // not when the sheet is just lagging behind a fresh fixture.
       // The old fixture is archived, never destroyed: it's rate history.
@@ -2980,9 +2980,16 @@ function archiveFixtureResidue(v) {
 function sweepStaleFixtureResidue() {
   let swept = 0;
   for (const v of vessels) {
-    if (v.status !== 'OPEN' || !v.date_fixed || !v.eta_ecsa) continue;
+    // OPEN ships wearing an old fixture, AND ships stuck ON SUBS from months
+    // ago (nobody is on subs for 60+ days — that fixture either happened or
+    // failed; either way the current position is a fresh opening)
+    if (v.status !== 'OPEN' && v.status !== 'ON SUBS') continue;
+    if (!v.date_fixed || !v.eta_ecsa) continue;
     const gap = (new Date(String(v.eta_ecsa).slice(0, 10)) - new Date(String(v.date_fixed).slice(0, 10))) / 86400000;
-    if (gap > 60 && archiveFixtureResidue(v)) swept++;
+    if (gap > 60 && archiveFixtureResidue(v)) {
+      if (v.status === 'ON SUBS') v.status = 'OPEN';
+      swept++;
+    }
   }
   return swept;
 }
@@ -3871,7 +3878,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-07-29.2';
+const APP_REV = '2026-07-29.3';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');
@@ -5408,7 +5415,11 @@ function getSortValue(v, key) {
 
 // ─── Status & Actions ────────────────────────────────────────────────────────
 
-const VESSEL_STATUSES = ['OPEN', 'FIXED', 'IN HOUSE', 'FAILED', 'WITHDRAWN'];
+// ON SUBS is a real desk status (the WhatsApp parser emits it) — it was
+// missing here, so ships carrying it hit an HTML-select trap: the dropdown
+// silently displayed 'OPEN' while the stored status excluded them from every
+// report (the Darya Lachmi bug, round two).
+const VESSEL_STATUSES = ['OPEN', 'ON SUBS', 'FIXED', 'IN HOUSE', 'FAILED', 'WITHDRAWN'];
 
 // Routes vessels can be marketed on. ECSA FH is the desk's primary book; the
 // Reports tab filters to ECSA FH only. Add to this list to extend the dropdown.
@@ -5841,7 +5852,10 @@ function renderTable() {
       case 'notes': return `<td class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>`;
       case 'status': {
         const cur = v.status || 'OPEN';
-        const opts = VESSEL_STATUSES.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}</option>`).join('');
+        // Unknown statuses render as themselves — a select faced with a value
+        // not in its options silently shows the first one, i.e. it lies
+        const list = VESSEL_STATUSES.includes(cur) ? VESSEL_STATUSES : [cur].concat(VESSEL_STATUSES);
+        const opts = list.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}</option>`).join('');
         return `<td><select class="status-select status-${statusCls}" onclick="event.stopPropagation()" onchange="setVesselStatus(${gi}, this.value)">${opts}</select></td>`;
       }
       case 'actions': {

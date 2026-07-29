@@ -132,8 +132,15 @@ section('csv-import + app');
       date_fixed: '2026-07-20', fixed_price: 22000, charterer: 'BUNGE' });
     vessels.push({ vessel_name: 'STILL FIXED', status: 'FIXED', eta_ecsa: '2026-08-25',
       date_fixed: '2026-04-01', fixed_price: 20000 });
+    // The actual Darya state: ON SUBS since April, ETA late Aug — the select
+    // displayed 'OPEN' while the stored status excluded her everywhere
+    vessels.push({ vessel_name: 'DARYA REAL', status: 'ON SUBS', eta_ecsa: '2026-08-25',
+      date_fixed: '2026-04-14', charterer: 'COFCO' });
     const swept = sweepStaleFixtureResidue();
-    A(swept === 1, 'sweep count: ' + swept);
+    A(swept === 2, 'sweep count incl stale ON SUBS: ' + swept);
+    const dreal = vessels.find(v => v.vessel_name === 'DARYA REAL');
+    A(dreal.status === 'OPEN' && dreal.date_fixed === null && dreal.charterer === null, 'stale ON SUBS reopened + cleaned');
+    A(dreal.fixture_history[0].charterer === 'COFCO', 'April subs archived');
     const stuck = vessels[0];
     A(stuck.date_fixed === null && stuck.charterer === null && stuck.route === null, 'stuck ship cleaned incl route');
     A(stuck.fixture_history[0].route === 'ECSA TA', 'old route archived');

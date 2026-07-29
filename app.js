@@ -204,7 +204,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-07-29.2';
+const APP_REV = '2026-07-29.3';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');
@@ -1741,7 +1741,11 @@ function getSortValue(v, key) {
 
 // ─── Status & Actions ────────────────────────────────────────────────────────
 
-const VESSEL_STATUSES = ['OPEN', 'FIXED', 'IN HOUSE', 'FAILED', 'WITHDRAWN'];
+// ON SUBS is a real desk status (the WhatsApp parser emits it) — it was
+// missing here, so ships carrying it hit an HTML-select trap: the dropdown
+// silently displayed 'OPEN' while the stored status excluded them from every
+// report (the Darya Lachmi bug, round two).
+const VESSEL_STATUSES = ['OPEN', 'ON SUBS', 'FIXED', 'IN HOUSE', 'FAILED', 'WITHDRAWN'];
 
 // Routes vessels can be marketed on. ECSA FH is the desk's primary book; the
 // Reports tab filters to ECSA FH only. Add to this list to extend the dropdown.
@@ -2174,7 +2178,10 @@ function renderTable() {
       case 'notes': return `<td class="td-source editable" onclick="startEdit(this,${gi},'notes',false)" title="${notesText.replace(/"/g,'&quot;')}">${notesTrunc || '—'}</td>`;
       case 'status': {
         const cur = v.status || 'OPEN';
-        const opts = VESSEL_STATUSES.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}</option>`).join('');
+        // Unknown statuses render as themselves — a select faced with a value
+        // not in its options silently shows the first one, i.e. it lies
+        const list = VESSEL_STATUSES.includes(cur) ? VESSEL_STATUSES : [cur].concat(VESSEL_STATUSES);
+        const opts = list.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}</option>`).join('');
         return `<td><select class="status-select status-${statusCls}" onclick="event.stopPropagation()" onchange="setVesselStatus(${gi}, this.value)">${opts}</select></td>`;
       }
       case 'actions': {

@@ -479,8 +479,8 @@ function syncCSVVessels(newVessels, opts) {
         archiveFixtureResidue(existing);
       }
       changed = true;
-    } else if (nv.csv_status === '1' && existing.status === 'FIXED' && !isProtected('status')) {
-      // A fixed ship back on the grid: reopen ONLY if her new layday is
+    } else if (nv.csv_status === '1' && (existing.status === 'FIXED' || existing.status === 'ON SUBS') && !isProtected('status')) {
+      // A fixed (or long-stuck on-subs) ship back on the grid: reopen ONLY if her new layday is
       // clearly after the fixture (Pacific round done, ballasting back) —
       // not when the sheet is just lagging behind a fresh fixture.
       // The old fixture is archived, never destroyed: it's rate history.
@@ -559,9 +559,16 @@ function archiveFixtureResidue(v) {
 function sweepStaleFixtureResidue() {
   let swept = 0;
   for (const v of vessels) {
-    if (v.status !== 'OPEN' || !v.date_fixed || !v.eta_ecsa) continue;
+    // OPEN ships wearing an old fixture, AND ships stuck ON SUBS from months
+    // ago (nobody is on subs for 60+ days — that fixture either happened or
+    // failed; either way the current position is a fresh opening)
+    if (v.status !== 'OPEN' && v.status !== 'ON SUBS') continue;
+    if (!v.date_fixed || !v.eta_ecsa) continue;
     const gap = (new Date(String(v.eta_ecsa).slice(0, 10)) - new Date(String(v.date_fixed).slice(0, 10))) / 86400000;
-    if (gap > 60 && archiveFixtureResidue(v)) swept++;
+    if (gap > 60 && archiveFixtureResidue(v)) {
+      if (v.status === 'ON SUBS') v.status = 'OPEN';
+      swept++;
+    }
   }
   return swept;
 }
