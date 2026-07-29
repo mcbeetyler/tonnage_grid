@@ -908,8 +908,13 @@ function computeDemandPulse(hist, windowDays) {
     if (!start) return;
     const live = typeof cargoCurrent !== 'undefined' && cargoCurrent.includes(c.id) && !c.fixed;
     const end = live ? dayStr(today) : (c.departed_at || c.last_seen || start);
-    const key = [c.charterer, c.stem, c.load, c.disch, c.laycan]
-      .map(x => String(x || '').toLowerCase().replace(/\s+/g, '')).join('|');
+    // Merge needs substance: without load/laycan/disch to match on, two
+    // bare entries from one charterer could be genuinely different cargoes
+    const hasSubstance = c.load || c.laycan || c.disch || c.cargo;
+    const key = hasSubstance
+      ? [c.charterer, c.stem, c.load, c.disch, c.laycan]
+        .map(x => String(x || '').toLowerCase().replace(/\s+/g, '')).join('|')
+      : 'id:' + c.id;
     const s = String(start).slice(0, 10), e = String(end).slice(0, 10);
     if (!phys[key]) phys[key] = { start: s, end: e };
     else {
