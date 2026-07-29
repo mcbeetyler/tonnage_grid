@@ -888,6 +888,101 @@ function renderBalanceChart(hist) {
   });
 }
 
+// ─── Demand Pulse ────────────────────────────────────────────────────────────
+// "Are there more or fewer cargoes than typical?" Reconstructed daily from
+// history: a cargo is live on day D if entered_market <= D <= departure.
+// Baseline = trailing 28-day mean. Index 100 = normal.
+function computeDemandPulse(hist, windowDays) {
+  const W = windowDays || 84;
+  const DAY = 86400000;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const dayStr = t => new Date(t).toISOString().slice(0, 10);
+
+  const spans = hist.map(c => {
+    const start = c.entered_market || c.first_seen;
+    if (!start) return null;
+    // still live if in the current list; else ended at departure/last sighting
+    const live = typeof cargoCurrent !== 'undefined' && cargoCurrent.includes(c.id) && !c.fixed;
+    const end = live ? dayStr(today) : (c.departed_at || c.last_seen || start);
+    return { start: String(start).slice(0, 10), end: String(end).slice(0, 10) };
+  }).filter(Boolean);
+
+  const days = [];
+  for (let i = W - 1; i >= 0; i--) {
+    const d = dayStr(today.getTime() - i * DAY);
+    let live = 0, inflow = 0;
+    for (const s of spans) {
+      if (s.start <= d && d <= s.end) live++;
+      if (s.start === d) inflow++;
+    }
+    days.push({ date: d, live, inflow });
+  }
+  // Trailing 28d mean per day (over available lookback)
+  days.forEach((d, i) => {
+    const from = Math.max(0, i - 27);
+    const slice = days.slice(from, i + 1);
+    d.avg28 = slice.reduce((s, x) => s + x.live, 0) / slice.length;
+  });
+
+  const t = days[days.length - 1];
+  const yd = days[days.length - 2];
+  const wk = days[days.length - 8];
+  return {
+    days,
+    today: t ? t.live : 0,
+    avg28: t ? t.avg28 : 0,
+    index: t && t.avg28 > 0 ? Math.round(t.live / t.avg28 * 100) : null,
+    dd: t && yd ? t.live - yd.live : null,
+    ww: t && wk ? t.live - wk.live : null,
+  };
+}
+
+let pulseChart = null;
+function renderDemandPulse(hist) {
+  const stats = document.getElementById('pulseStats');
+  const canvas = document.getElementById('pulseChart');
+  if (!stats || !canvas) return;
+  const p = computeDemandPulse(hist);
+  const sign = n => n == null ? '—' : (n > 0 ? '+' : '') + n;
+  const idxColor = p.index == null ? 'var(--text-dim)' : p.index >= 115 ? 'var(--green)' : p.index <= 85 ? 'var(--red)' : 'var(--text-bright)';
+  stats.innerHTML = [
+    ['Live cargoes', p.today, ''],
+    ['4-week norm', p.avg28 ? p.avg28.toFixed(1) : '—', ''],
+    ['Demand index', p.index != null ? p.index : '—', `color:${idxColor}`, 'today ÷ trailing 28d avg × 100 — >100 = more cargoes than typical'],
+    ['Day / day', sign(p.dd), p.dd > 0 ? 'color:var(--green)' : p.dd < 0 ? 'color:var(--red)' : ''],
+    ['Week / week', sign(p.ww), p.ww > 0 ? 'color:var(--green)' : p.ww < 0 ? 'color:var(--red)' : ''],
+  ].map(([l, v, style, tip]) => `<div class="stat" ${tip ? `title="${tip}"` : ''}><div class="stat-label">${l}</div><div class="stat-value" style="${style || ''}">${v}</div></div>`).join('');
+
+  if (typeof Chart === 'undefined') return;
+  if (pulseChart) pulseChart.destroy();
+  pulseChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: p.days.map(d => d.date),
+      datasets: [
+        { label: 'Live cargoes', data: p.days.map(d => d.live),
+          borderColor: '#185FA5', backgroundColor: '#185FA51a', fill: true,
+          borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: .25 },
+        { label: '4-week average', data: p.days.map(d => Math.round(d.avg28 * 10) / 10),
+          borderColor: '#888780', borderDash: [6, 4], borderWidth: 1.5,
+          pointRadius: 0, pointHoverRadius: 3, tension: .25 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { ticks: { maxTicksLimit: 10, callback(v) {
+          const d = new Date(this.getLabelForValue(v) + 'T00:00:00Z');
+          return isNaN(d) ? '' : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+        } } },
+        y: { beginAtZero: true, ticks: { stepSize: 1 } },
+      },
+      plugins: { legend: { position: 'top', labels: { boxWidth: 14 } } },
+    },
+  });
+}
+
 // ─── Demand depth by charterer ───────────────────────────────────────────────
 // The cargo book shows QUOTED demand — houses run programs behind it. This
 // measures the gap per charterer: ships they fixed vs cargoes they showed.
@@ -1128,6 +1223,9 @@ function renderTrends() {
 
   // Stem velocity table (only show for 'stem' view)
   renderStemVelocity();
+
+  // Demand pulse first — the headline read
+  renderDemandPulse(hist);
 
   // Demand vs supply balance for the filtered stem(s)
   renderBalanceChart(hist);

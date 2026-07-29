@@ -253,6 +253,20 @@ section('demand depth');
     A(bunge && bunge.requotes === 1, 'bunge re-quote detected');
     const cargill = depth.find(r => r.key === 'CARGILL');
     A(cargill && cargill.shown === 0 && cargill.bids === 1, 'cargill dark bidder');
+
+    // Demand pulse: reconstructed daily live counts
+    cargoCurrent = ['live1'];
+    cargoHistory = [
+      { id: 'old', charterer: 'x', entered_market: '${'${A10}'}', departed_at: '${'${A3}'}' },
+      { id: 'live1', charterer: 'x', entered_market: '${'${A5}'}' },
+      { id: 'ancient', charterer: 'x', entered_market: '${'${A80}'}', departed_at: '${'${A70}'}' },
+    ];
+    const pulse = computeDemandPulse(cargoHistory, 84);
+    A(pulse.today === 1, 'pulse today: only the live cargo');
+    const d4 = pulse.days[pulse.days.length - 5];   // 4 days ago: old + live1 both live
+    A(d4.live === 2, 'pulse 4 days ago both live: ' + d4.live);
+    A(pulse.days.length === 84 && pulse.avg28 > 0 && pulse.index != null, 'pulse series + index');
+    A(pulse.dd === 0 && typeof pulse.ww === 'number', 'pulse deltas');
   `.replace(/\$\{A(\d+)\}/g, (_, d) => iso(parseInt(d, 10)));
   // eslint-disable-next-line no-eval
   eval(fs.readFileSync(path.join(ROOT, 'csv-import.js'), 'utf8') + '\n'
