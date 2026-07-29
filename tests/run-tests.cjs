@@ -263,6 +263,17 @@ section('demand depth');
     ];
     const pulse = computeDemandPulse(cargoHistory, 84);
     A(pulse.today === 1, 'pulse today: only the live cargo');
+
+    // Re-touched cargo = several history entries for ONE physical cargo —
+    // must count once (id includes the sheet's updated stamp)
+    cargoCurrent = ['v2'];
+    cargoHistory = [
+      { id: 'v1', charterer: 'koch', stem: 'ECSA Fronthaul', load: 'santos', laycan: '1-10aug', entered_market: '${'${A9}'}', departed_at: '${'${A4}'}', fixed: true },
+      { id: 'v2', charterer: 'koch', stem: 'ECSA Fronthaul', load: 'santos', laycan: '1-10aug', entered_market: '${'${A4}'}' },
+    ];
+    const dedup = computeDemandPulse(cargoHistory, 84);
+    A(dedup.today === 1, 'retouched cargo counts once today');
+    A(dedup.days[dedup.days.length - 7].live === 1, 'and once historically: ' + dedup.days[dedup.days.length - 7].live);
     const d4 = pulse.days[pulse.days.length - 5];   // 4 days ago: old + live1 both live
     A(d4.live === 2, 'pulse 4 days ago both live: ' + d4.live);
     A(pulse.days.length === 84 && pulse.avg28 > 0 && pulse.index != null, 'pulse series + index');

@@ -997,9 +997,11 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
   <div id="cargoTrendsView" style="display:none">
     <div class="cargo-filters" id="trendStemFilters" style="padding:10px 28px 0"></div>
 
-    <div style="padding:14px 28px 4px">
+    <div style="padding:14px 28px 4px;display:flex;align-items:baseline;gap:8px">
       <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim)">Demand pulse</span>
-      <span style="font-size:11px;color:var(--text-dim);margin-left:8px">live cargoes vs the trailing 4-week norm — reconstructed daily from the book's history</span>
+      <span style="font-size:11px;color:var(--text-dim)">live cargoes vs the trailing 4-week norm — reconstructed daily from the book's history · pills above filter to a stem</span>
+      <div style="flex:1"></div>
+      <button class="report-copy-btn" onclick="copyPulse(this)" title="WhatsApp-ready: total + every stem's live count, index and deltas in one message">Copy pulse 📋</button>
     </div>
     <div class="cargo-stats" id="pulseStats" style="padding:6px 28px"></div>
     <div class="cargo-chart-wrap" style="height:260px"><canvas id="pulseChart"></canvas></div>
@@ -6843,14 +6845,26 @@ function computeDemandPulse(hist, windowDays) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const dayStr = t => new Date(t).toISOString().slice(0, 10);
 
-  const spans = hist.map(c => {
+  // One span per PHYSICAL cargo. The history id includes the sheet's
+  // "updated" stamp, so a re-touched cargo appears as several entries with
+  // overlapping lives — merged here (same charterer/stem/load/disch/laycan)
+  // or the reconstruction double-counts busy books.
+  const phys = {};
+  hist.forEach(c => {
     const start = c.entered_market || c.first_seen;
-    if (!start) return null;
-    // still live if in the current list; else ended at departure/last sighting
+    if (!start) return;
     const live = typeof cargoCurrent !== 'undefined' && cargoCurrent.includes(c.id) && !c.fixed;
     const end = live ? dayStr(today) : (c.departed_at || c.last_seen || start);
-    return { start: String(start).slice(0, 10), end: String(end).slice(0, 10) };
-  }).filter(Boolean);
+    const key = [c.charterer, c.stem, c.load, c.disch, c.laycan]
+      .map(x => String(x || '').toLowerCase().replace(/\s+/g, '')).join('|');
+    const s = String(start).slice(0, 10), e = String(end).slice(0, 10);
+    if (!phys[key]) phys[key] = { start: s, end: e };
+    else {
+      if (s < phys[key].start) phys[key].start = s;
+      if (e > phys[key].end) phys[key].end = e;
+    }
+  });
+  const spans = Object.values(phys);
 
   const days = [];
   for (let i = W - 1; i >= 0; i--) {
@@ -6882,6 +6896,34 @@ function computeDemandPulse(hist, windowDays) {
   };
 }
 
+// WhatsApp export: the pulse for the whole book AND per stem in one message
+function buildPulseText() {
+  const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const sign = n => n == null ? '' : (n > 0 ? '+' : '') + n;
+  const arrow = idx => idx == null ? '' : idx >= 115 ? ' ↑' : idx <= 85 ? ' ↓' : '';
+  const line = p => `${p.today} live — index ${p.index != null ? p.index : '—'}${arrow(p.index)}` +
+    ` (${sign(p.dd)} d/d, ${sign(p.ww)} w/w)`;
+
+  const all = computeDemandPulse(cargoHistory, 84);
+  let text = `*CARGO DEMAND PULSE — ${today}*\n_live cargoes vs trailing 4-week norm · index 100 = typical_\n\n`;
+  text += `*All stems:* ${line(all)}\n\n_By stem:_\n`;
+
+  const stems = STEM_ORDER.filter(s => cargoHistory.some(c => c.stem === s));
+  for (const s of stems) {
+    const p = computeDemandPulse(cargoHistory.filter(c => c.stem === s), 84);
+    if (p.today === 0 && !p.ww) continue;   // dead stems stay out of the message
+    text += `· *${s}* ${line(p)}\n`;
+  }
+  return text.trim();
+}
+
+function copyPulse(btn) {
+  const text = buildPulseText();
+  const done = () => { if (btn) { const t = btn.textContent; btn.textContent = '✓ copied'; setTimeout(() => { btn.textContent = t; }, 1400); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(done);
+  else done();
+}
+
 let pulseChart = null;
 function renderDemandPulse(hist) {
   const stats = document.getElementById('pulseStats');
@@ -6890,8 +6932,12 @@ function renderDemandPulse(hist) {
   const p = computeDemandPulse(hist);
   const sign = n => n == null ? '—' : (n > 0 ? '+' : '') + n;
   const idxColor = p.index == null ? 'var(--text-dim)' : p.index >= 115 ? 'var(--green)' : p.index <= 85 ? 'var(--red)' : 'var(--text-bright)';
+  const scope = activeCargoStem === 'ALL' ? 'all stems' : activeCargoStem;
+  // Audit list: hover the live count to see exactly which cargoes it counts
+  const liveNow = hist.filter(c => cargoCurrent.includes(c.id) && !c.fixed)
+    .map(c => `${c.charterer || '?'} · ${c.load || '?'} · ${c.laycan || '?'}`);
   stats.innerHTML = [
-    ['Live cargoes', p.today, ''],
+    ['Live cargoes — ' + scope, p.today, '', 'Counted right now:\n' + (liveNow.join('\n') || 'none')],
     ['4-week norm', p.avg28 ? p.avg28.toFixed(1) : '—', ''],
     ['Demand index', p.index != null ? p.index : '—', `color:${idxColor}`, 'today ÷ trailing 28d avg × 100 — >100 = more cargoes than typical'],
     ['Day / day', sign(p.dd), p.dd > 0 ? 'color:var(--green)' : p.dd < 0 ? 'color:var(--red)' : ''],
@@ -6905,7 +6951,7 @@ function renderDemandPulse(hist) {
     data: {
       labels: p.days.map(d => d.date),
       datasets: [
-        { label: 'Live cargoes', data: p.days.map(d => d.live),
+        { label: 'Live cargoes (' + scope + ')', data: p.days.map(d => d.live),
           borderColor: '#185FA5', backgroundColor: '#185FA51a', fill: true,
           borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: .25 },
         { label: '4-week average', data: p.days.map(d => Math.round(d.avg28 * 10) / 10),

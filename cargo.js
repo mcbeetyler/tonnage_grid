@@ -898,14 +898,26 @@ function computeDemandPulse(hist, windowDays) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const dayStr = t => new Date(t).toISOString().slice(0, 10);
 
-  const spans = hist.map(c => {
+  // One span per PHYSICAL cargo. The history id includes the sheet's
+  // "updated" stamp, so a re-touched cargo appears as several entries with
+  // overlapping lives — merged here (same charterer/stem/load/disch/laycan)
+  // or the reconstruction double-counts busy books.
+  const phys = {};
+  hist.forEach(c => {
     const start = c.entered_market || c.first_seen;
-    if (!start) return null;
-    // still live if in the current list; else ended at departure/last sighting
+    if (!start) return;
     const live = typeof cargoCurrent !== 'undefined' && cargoCurrent.includes(c.id) && !c.fixed;
     const end = live ? dayStr(today) : (c.departed_at || c.last_seen || start);
-    return { start: String(start).slice(0, 10), end: String(end).slice(0, 10) };
-  }).filter(Boolean);
+    const key = [c.charterer, c.stem, c.load, c.disch, c.laycan]
+      .map(x => String(x || '').toLowerCase().replace(/\s+/g, '')).join('|');
+    const s = String(start).slice(0, 10), e = String(end).slice(0, 10);
+    if (!phys[key]) phys[key] = { start: s, end: e };
+    else {
+      if (s < phys[key].start) phys[key].start = s;
+      if (e > phys[key].end) phys[key].end = e;
+    }
+  });
+  const spans = Object.values(phys);
 
   const days = [];
   for (let i = W - 1; i >= 0; i--) {
@@ -973,8 +985,12 @@ function renderDemandPulse(hist) {
   const p = computeDemandPulse(hist);
   const sign = n => n == null ? '—' : (n > 0 ? '+' : '') + n;
   const idxColor = p.index == null ? 'var(--text-dim)' : p.index >= 115 ? 'var(--green)' : p.index <= 85 ? 'var(--red)' : 'var(--text-bright)';
+  const scope = activeCargoStem === 'ALL' ? 'all stems' : activeCargoStem;
+  // Audit list: hover the live count to see exactly which cargoes it counts
+  const liveNow = hist.filter(c => cargoCurrent.includes(c.id) && !c.fixed)
+    .map(c => `${c.charterer || '?'} · ${c.load || '?'} · ${c.laycan || '?'}`);
   stats.innerHTML = [
-    ['Live cargoes', p.today, ''],
+    ['Live cargoes — ' + scope, p.today, '', 'Counted right now:\n' + (liveNow.join('\n') || 'none')],
     ['4-week norm', p.avg28 ? p.avg28.toFixed(1) : '—', ''],
     ['Demand index', p.index != null ? p.index : '—', `color:${idxColor}`, 'today ÷ trailing 28d avg × 100 — >100 = more cargoes than typical'],
     ['Day / day', sign(p.dd), p.dd > 0 ? 'color:var(--green)' : p.dd < 0 ? 'color:var(--red)' : ''],
@@ -988,7 +1004,7 @@ function renderDemandPulse(hist) {
     data: {
       labels: p.days.map(d => d.date),
       datasets: [
-        { label: 'Live cargoes', data: p.days.map(d => d.live),
+        { label: 'Live cargoes (' + scope + ')', data: p.days.map(d => d.live),
           borderColor: '#185FA5', backgroundColor: '#185FA51a', fill: true,
           borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: .25 },
         { label: '4-week average', data: p.days.map(d => Math.round(d.avg28 * 10) / 10),
