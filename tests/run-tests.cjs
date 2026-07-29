@@ -293,6 +293,30 @@ section('demand depth');
     const dedup = computeDemandPulse(cargoHistory, 84);
     A(dedup.today === 1, 'retouched cargo counts once today');
     A(dedup.days[dedup.days.length - 7].live === 1, 'and once historically: ' + dedup.days[dedup.days.length - 7].live);
+
+    // Chain merge: retouch that ALSO changed the laycan text still merges
+    cargoCurrent = ['w2'];
+    cargoHistory = [
+      { id: 'w1', charterer: 'koch', stem: 'ECSA Fronthaul', load: 'santos', laycan: '20-28aug', entered_market: '${'${A9}'}', departed_at: '${'${A4}'}', fixed: true },
+      { id: 'w2', charterer: 'koch', stem: 'ECSA Fronthaul', load: 'santos', laycan: '22-28aug', entered_market: '${'${A4}'}' },
+    ];
+    const chain = computeDemandPulse(cargoHistory, 84);
+    A(chain.today === 1 && chain.days[chain.days.length - 7].live === 1, 'laycan-shifted retouch chains into one cargo');
+
+    // Parallel liftings (overlapping for days) do NOT merge
+    cargoCurrent = ['p1', 'p2'];
+    cargoHistory = [
+      { id: 'p1', charterer: 'koch', stem: 'ECSA Fronthaul', load: 'santos', laycan: '1-10sep', entered_market: '${'${A10}'}' },
+      { id: 'p2', charterer: 'koch', stem: 'ECSA Fronthaul', load: 'santos', laycan: '15-25sep', entered_market: '${'${A8}'}' },
+    ];
+    A(computeDemandPulse(cargoHistory, 84).today === 2, 'parallel liftings stay two cargoes');
+
+    // Departure day exclusive: cargo that left today is not live today
+    cargoCurrent = [];
+    cargoHistory = [
+      { id: 'q', charterer: 'x', stem: 'USG TA', load: 'nola', laycan: '5-10aug', entered_market: '${'${A6}'}', departed_at: '${'${A0}'}' },
+    ];
+    A(computeDemandPulse(cargoHistory, 84).today === 0, 'departed-today not counted today');
     const d4 = pulse.days[pulse.days.length - 5];   // 4 days ago: old + live1 both live
     A(d4.live === 2, 'pulse 4 days ago both live: ' + d4.live);
     A(pulse.days.length === 84 && pulse.avg28 > 0 && pulse.index != null, 'pulse series + index');

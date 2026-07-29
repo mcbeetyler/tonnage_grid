@@ -895,41 +895,79 @@ function renderBalanceChart(hist) {
 function computeDemandPulse(hist, windowDays) {
   const W = windowDays || 84;
   const DAY = 86400000;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
   const dayStr = t => new Date(t).toISOString().slice(0, 10);
+  // UTC day grid — cargo dates are UTC calendar strings, and a local-midnight
+  // grid drifts a day behind near midnight (Geneva mornings included)
+  const todayStr = dayStr(Date.now());
+  const todayUtc = new Date(todayStr + 'T00:00:00Z').getTime();
 
   // One span per PHYSICAL cargo. The history id includes the sheet's
-  // "updated" stamp, so a re-touched cargo appears as several entries with
-  // overlapping lives — merged here (same charterer/stem/load/disch/laycan)
-  // or the reconstruction double-counts busy books.
-  const phys = {};
+  // "updated" stamp, so a re-touched cargo appears as several entries.
+  // Two merge tiers:
+  //  1. strict — identical charterer/stem/load/disch/laycan → same cargo
+  //  2. chain  — same charterer/stem/load/disch and the old entry ends
+  //     within ±1 day of the new one entering (a retouch that ALSO moved
+  //     the laycan text). Parallel liftings (two stems live side by side
+  //     for days) never chain — their overlap is much bigger than a day.
+  const norm = x => String(x || '').toLowerCase().replace(/\s+/g, '');
+  const entries = [];
   hist.forEach(c => {
     const start = c.entered_market || c.first_seen;
     if (!start) return;
     const live = typeof cargoCurrent !== 'undefined' && cargoCurrent.includes(c.id) && !c.fixed;
-    const end = live ? dayStr(today) : (c.departed_at || c.last_seen || start);
-    // Merge needs substance: without load/laycan/disch to match on, two
-    // bare entries from one charterer could be genuinely different cargoes
+    const end = live ? todayStr : (c.departed_at || c.last_seen || start);
     const hasSubstance = c.load || c.laycan || c.disch || c.cargo;
-    const key = hasSubstance
-      ? [c.charterer, c.stem, c.load, c.disch, c.laycan]
-        .map(x => String(x || '').toLowerCase().replace(/\s+/g, '')).join('|')
-      : 'id:' + c.id;
-    const s = String(start).slice(0, 10), e = String(end).slice(0, 10);
-    if (!phys[key]) phys[key] = { start: s, end: e };
-    else {
-      if (s < phys[key].start) phys[key].start = s;
-      if (e > phys[key].end) phys[key].end = e;
-    }
+    entries.push({
+      start: String(start).slice(0, 10), end: String(end).slice(0, 10), live,
+      strictKey: hasSubstance ? [c.charterer, c.stem, c.load, c.disch, c.laycan].map(norm).join('|') : 'id:' + c.id,
+      looseKey: hasSubstance ? [c.charterer, c.stem, c.load, c.disch].map(norm).join('|') : 'id:' + c.id,
+    });
   });
-  const spans = Object.values(phys);
+
+  // Tier 1: strict union
+  const strict = {};
+  for (const e of entries) {
+    const p = strict[e.strictKey];
+    if (!p) strict[e.strictKey] = { ...e };
+    else {
+      if (e.start < p.start) p.start = e.start;
+      if (e.end > p.end) p.end = e.end;
+      p.live = p.live || e.live;
+    }
+  }
+  // Tier 2: chain hand-offs within the loose group
+  const groups = {};
+  for (const s of Object.values(strict)) (groups[s.looseKey] = groups[s.looseKey] || []).push(s);
+  const spans = [];
+  const T = d => new Date(d + 'T00:00:00Z').getTime();
+  for (const list of Object.values(groups)) {
+    list.sort((a, b) => a.start < b.start ? -1 : 1);
+    let cur = null;
+    for (const s of list) {
+      if (cur && Math.abs(T(s.start) - T(cur.end)) <= DAY) {
+        // hand-off: successor starts within a day of the predecessor ending
+        if (s.end > cur.end) cur.end = s.end;
+        cur.live = cur.live || s.live;
+      } else {
+        if (cur) spans.push(cur);
+        cur = { ...s };
+      }
+    }
+    if (cur) spans.push(cur);
+  }
 
   const days = [];
   for (let i = W - 1; i >= 0; i--) {
-    const d = dayStr(today.getTime() - i * DAY);
+    const d = dayStr(todayUtc - i * DAY);
     let live = 0, inflow = 0;
     for (const s of spans) {
-      if (s.start <= d && d <= s.end) live++;
+      // Departure day is EXCLUSIVE for ended cargoes — a cargo that left the
+      // book today is not live today (keeps 'today' equal to the Current tab).
+      // Still-live spans count through today; same-day blips count their day.
+      const counted = s.live
+        ? (s.start <= d && d <= s.end)
+        : (s.start === s.end ? d === s.start : (s.start <= d && d < s.end));
+      if (counted) live++;
       if (s.start === d) inflow++;
     }
     days.push({ date: d, live, inflow });
