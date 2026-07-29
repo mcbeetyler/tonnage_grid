@@ -937,6 +937,34 @@ function computeDemandPulse(hist, windowDays) {
   };
 }
 
+// WhatsApp export: the pulse for the whole book AND per stem in one message
+function buildPulseText() {
+  const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const sign = n => n == null ? '' : (n > 0 ? '+' : '') + n;
+  const arrow = idx => idx == null ? '' : idx >= 115 ? ' ↑' : idx <= 85 ? ' ↓' : '';
+  const line = p => `${p.today} live — index ${p.index != null ? p.index : '—'}${arrow(p.index)}` +
+    ` (${sign(p.dd)} d/d, ${sign(p.ww)} w/w)`;
+
+  const all = computeDemandPulse(cargoHistory, 84);
+  let text = `*CARGO DEMAND PULSE — ${today}*\n_live cargoes vs trailing 4-week norm · index 100 = typical_\n\n`;
+  text += `*All stems:* ${line(all)}\n\n_By stem:_\n`;
+
+  const stems = STEM_ORDER.filter(s => cargoHistory.some(c => c.stem === s));
+  for (const s of stems) {
+    const p = computeDemandPulse(cargoHistory.filter(c => c.stem === s), 84);
+    if (p.today === 0 && !p.ww) continue;   // dead stems stay out of the message
+    text += `· *${s}* ${line(p)}\n`;
+  }
+  return text.trim();
+}
+
+function copyPulse(btn) {
+  const text = buildPulseText();
+  const done = () => { if (btn) { const t = btn.textContent; btn.textContent = '✓ copied'; setTimeout(() => { btn.textContent = t; }, 1400); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(done);
+  else done();
+}
+
 let pulseChart = null;
 function renderDemandPulse(hist) {
   const stats = document.getElementById('pulseStats');

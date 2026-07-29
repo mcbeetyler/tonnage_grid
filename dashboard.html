@@ -996,9 +996,11 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
   <div id="cargoTrendsView" style="display:none">
     <div class="cargo-filters" id="trendStemFilters" style="padding:10px 28px 0"></div>
 
-    <div style="padding:14px 28px 4px">
+    <div style="padding:14px 28px 4px;display:flex;align-items:baseline;gap:8px">
       <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim)">Demand pulse</span>
-      <span style="font-size:11px;color:var(--text-dim);margin-left:8px">live cargoes vs the trailing 4-week norm — reconstructed daily from the book's history</span>
+      <span style="font-size:11px;color:var(--text-dim)">live cargoes vs the trailing 4-week norm — reconstructed daily from the book's history · pills above filter to a stem</span>
+      <div style="flex:1"></div>
+      <button class="report-copy-btn" onclick="copyPulse(this)" title="WhatsApp-ready: total + every stem's live count, index and deltas in one message">Copy pulse 📋</button>
     </div>
     <div class="cargo-stats" id="pulseStats" style="padding:6px 28px"></div>
     <div class="cargo-chart-wrap" style="height:260px"><canvas id="pulseChart"></canvas></div>
