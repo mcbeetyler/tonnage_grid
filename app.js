@@ -204,7 +204,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-08-19.4';
+const APP_REV = '2026-08-19.5';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');
@@ -365,8 +365,15 @@ function openHistoryModal(globalIdx) {
       rev ${typeof APP_REV !== 'undefined' ? APP_REV : '?'} · status=${v.status} · route=${v.route ?? '∅'} · mc.route=${v.market_colour?.[0]?.route ?? '∅'} ·
       eta=${v.eta_ecsa ?? '∅'} · open=${v.open_date ?? '∅'} · date_fixed=${v.date_fixed ?? '∅'} · fixed_px=${v.fixed_price ?? '∅'} ·
       charterer=${v.charterer ?? '∅'} · p6_offer=${v.market_colour?.[0]?.p6_offer ?? '∅'} ·
-      overrides=${JSON.stringify(v.field_overrides || {})} · fixture_hist=${(v.fixture_history || []).length}
+      overrides=${JSON.stringify(v.field_overrides || {})} · fixture_hist=${(v.fixture_history || []).length} ·
+      reopened_at=${v.reopened_at ?? '∅'} · offer_updated_at=${v.offer_updated_at ?? '∅'} ·
+      hire_offer=${v.hire_offer ?? '∅'} · hire_ta=${v.hire_ta ?? '∅'} · csv_updated=${v.csv_updated ?? '∅'}
     </div>
+    ${v.status === 'OPEN' && (v.hire_offer != null || v.hire_ta != null || v.market_colour?.[0]?.p6_offer != null)
+      ? `<button class="filter-pill" style="font-size:11px;padding:4px 12px;margin-bottom:12px"
+           onclick="clearVesselQuotes(${globalIdx})"
+           title="Wipe hire offer / TA / BKI / BB and market-colour quotes — for rates that belong to a previous cycle">
+           Clear stale quotes</button>` : ''}
     ${renderHistoryChart(offerHist, bidHist)}
     <table class="history-table" style="margin-top:14px;width:100%">
       <thead><tr><th>When</th><th>Type</th><th style="text-align:right">P6</th><th style="text-align:right">Raw</th><th style="text-align:right">BB</th></tr></thead>
@@ -1766,6 +1773,25 @@ function cycleStatus(idx) {
   const cur = vessels[idx].status || 'OPEN';
   const next = VESSEL_STATUSES[(VESSEL_STATUSES.indexOf(cur) + 1) % VESSEL_STATUSES.length];
   setVesselStatus(idx, next);
+}
+
+// Manual escape hatch for ghost rates the retro sweep can't prove stale
+// (ships that reentered before reopened_at/offer_updated_at stamps existed).
+// Stamps overrides so the same stale sheet row can't re-apply the rate;
+// a FUTURE row with a fresh UPDATE and a real rate still flows in normally.
+function clearVesselQuotes(idx) {
+  const v = vessels[idx];
+  if (!v) return;
+  if (!confirm(`Clear all quotes on ${v.vessel_name}? (hire offer/TA, BKI, BB, market colour)`)) return;
+  if (typeof clearQuoteResidue === 'function') clearQuoteResidue(v);
+  const now = new Date().toISOString();
+  v.field_overrides = v.field_overrides || {};
+  for (const f of ['hire_offer', 'hire_ta', 'bb_offer', 'bki_eqvt', 'p6_offer']) v.field_overrides[f] = now;
+  touchVessel(idx);
+  save();
+  renderTable();
+  updateStats();
+  closeHistoryModal();
 }
 
 // Resolve a fix-and-fail suspect: reopen her (records the failed fixture in
