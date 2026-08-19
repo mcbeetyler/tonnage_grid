@@ -578,7 +578,8 @@ function sweepStaleFixtureResidue() {
 // grid); never overrides FAILED or a manual status edit newer than the fix.
 function markFixturesFromCSV(parsed) {
   const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  let marked = 0, already = 0, unmatched = 0;
+  const payloadNames = new Set(parsed.map(f => norm(f.vessel_name)).filter(Boolean));
+  let marked = 0, already = 0, unmatched = 0, retracted = 0;
   for (const f of parsed) {
     const v = vessels.find(x => norm(x.vessel_name) === norm(f.vessel_name));
     if (!v) { unmatched++; continue; }
@@ -619,7 +620,29 @@ function markFixturesFromCSV(parsed) {
     v.last_updated = fixTs;
     marked++;
   }
-  return { marked, already, unmatched };
+
+  // RETRACTION: a mistaken entry in the Fixtures tab gets deleted by the
+  // desk — the mark it left must go too. Revert to OPEN only when ALL hold:
+  //  · the fix is recent (<=14d — real fixtures are still in the tab then;
+  //    only deletions aren't)
+  //  · it was feed-made (no manual status override — user fixes are theirs)
+  //  · the name is absent from today's fixtures payload
+  //  · the ECSA grid still lists her as active (fresh csv_updated) — a real
+  //    fixture drops off the grid instead
+  const nowT = Date.now();
+  for (const v of vessels) {
+    if (v.status !== 'FIXED' || !v.date_fixed) continue;
+    if ((v.field_overrides || {}).status) continue;
+    if ((nowT - new Date(String(v.date_fixed).slice(0, 10)).getTime()) / 86400000 > 14) continue;
+    if (payloadNames.has(norm(v.vessel_name))) continue;
+    if (!v.csv_updated || (nowT - new Date(v.csv_updated).getTime()) / 86400000 > 3) continue;
+    archiveFixtureResidue(v);
+    v.status = 'OPEN';
+    v.last_updated = new Date().toISOString();
+    retracted++;
+  }
+
+  return { marked, already, unmatched, retracted };
 }
 
 // Pending withdrawal queue — populated by a CSV parse, applied by user click.

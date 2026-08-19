@@ -94,7 +94,7 @@ function applyFixtures(data) {
     if (typeof renderTable === 'function') renderTable();
     if (typeof updateStats === 'function') updateStats();
   }
-  return `${parsed.length} fixtures (${r.marked} newly marked FIXED on the board)`;
+  return `${parsed.length} fixtures (${r.marked} newly marked FIXED${r.retracted ? ', ' + r.retracted + ' retracted → OPEN' : ''})`;
 }
 
 const APPLIERS = { ecsa: applyEcsa, fixtures: applyFixtures, cargo: applyCargo, natl: applyNatl };

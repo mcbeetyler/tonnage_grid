@@ -248,6 +248,23 @@ section('csv-import + app');
     markFixturesFromCSV(parseCSVVessels([roFxHdr, undated].join('\\n')).vessels);
     A(vessels.find(v => v.vessel_name === 'BLUE IONIAN').status === 'OPEN', 'undated fixture row skipped');
 
+    // RETRACTION: feed-fixed recently, entry deleted from the tab, ship
+    // still active on the grid → reverts to OPEN
+    const nowIso = d => new Date(Date.now() - d * 86400000).toISOString();
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'MISTAKE SHIP', status: 'FIXED', date_fixed: nowIso(1).slice(0, 10),
+      fixed_price: 19000, charterer: 'GHOST', csv_updated: nowIso(0) });
+    vessels.push({ vessel_name: 'REAL FIX', status: 'FIXED', date_fixed: nowIso(1).slice(0, 10),
+      csv_updated: nowIso(0), field_overrides: { status: nowIso(1) } });   // user-made → untouchable
+    vessels.push({ vessel_name: 'OLD FIX', status: 'FIXED', date_fixed: nowIso(30).slice(0, 10),
+      csv_updated: nowIso(0) });   // old fixtures roll off the tab — never retracted
+    const rr = markFixturesFromCSV(parseCSVVessels([roFxHdr, freshFx].join('\\n')).vessels);
+    A(rr.retracted === 1, 'one retraction: ' + rr.retracted);
+    const ms = vessels.find(v => v.vessel_name === 'MISTAKE SHIP');
+    A(ms.status === 'OPEN' && ms.charterer === null && ms.fixture_history.length === 1, 'mistake reverted + archived');
+    A(vessels.find(v => v.vessel_name === 'REAL FIX').status === 'FIXED', 'manual fix untouched');
+    A(vessels.find(v => v.vessel_name === 'OLD FIX').status === 'FIXED', 'old fixture untouched');
+
     // Manually-fixed ship: user's values stand, blanks get backfilled
     vessels.length = 0;
     vessels.push({ vessel_name: 'MINOAN BAY', status: 'FIXED', fixed_price: 27500, date_fixed: null, fix_msg: null });
