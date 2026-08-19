@@ -3878,7 +3878,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-07-29.4';
+const APP_REV = '2026-07-29.5';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');
@@ -12262,7 +12262,7 @@ let ui = Object.assign({
   mode: 'cargo2ship',       // or 'ship2cargo'
   cargoId: '', shipName: '',
   manFrom: '', manTo: '',   // manual date window — search ships with no cargo attached
-  minDwt: '', maxDwt: '',
+  minDwt: '', maxDwt: '', maxAge: '',
   waitTolDays: 2, tightTolDays: 2, etaAdjDays: 0, autoBasis: true,
   ecsaOnly: true, showAll: false,
 }, IS_BROWSER ? JSON.parse(localStorage.getItem(LS_UI) || '{}') : {});
@@ -12326,10 +12326,14 @@ function computeCargo2Ship() {
   const opts = { waitTolDays: ui.waitTolDays, tightTolDays: ui.tightTolDays };
   const minDwt = parseFloat(ui.minDwt) || 0;
   const maxDwt = parseFloat(ui.maxDwt) || Infinity;
+  const maxAge = parseFloat(ui.maxAge) || Infinity;
+  const yearNow = new Date().getFullYear();
   // TA cargo? Then the TA quote is the price that matters — a ship quoting
   // TA is declaring interest in going that way.
   const isTa = !!(cargo && /\bta\b/i.test(cargo.stem || ''));
-  const rows = openShips().filter(v => (v.dwt || 0) >= minDwt && (v.dwt || 0) <= maxDwt).map(v => {
+  const rows = openShips().filter(v => (v.dwt || 0) >= minDwt && (v.dwt || 0) <= maxDwt
+    // Age filter: ships with unknown build year stay visible (no false drops)
+    && (!isFinite(maxAge) || !v.build_year || (yearNow - v.build_year) <= maxAge)).map(v => {
     const eta = shipEta(v, basis.days || 0);
     const fit = FU.fitStatus(eta, w && w.from, w && w.to, opts);
     const p6 = p6Of(v);
@@ -12537,6 +12541,7 @@ function syncModeUI() {
   document.getElementById('pr_ecsaWrap').style.display = c2s ? 'none' : '';
   document.getElementById('pr_manWrap').style.display = c2s ? '' : 'none';
   document.getElementById('pr_dwtWrap').style.display = c2s ? '' : 'none';
+  document.getElementById('pr_ageWrap').style.display = c2s ? '' : 'none';
 }
 
 function buildUI() {
@@ -12597,6 +12602,8 @@ function buildUI() {
             <input type="number" id="pr_minDwt" placeholder="min" style="width:80px" value="${esc(ui.minDwt)}">
             <input type="number" id="pr_maxDwt" placeholder="max" style="width:80px" value="${esc(ui.maxDwt)}">
           </div></div>
+        <div class="pr-field" id="pr_ageWrap" title="Ships older than this drop out; unknown build years stay visible"><label>Max age (yrs)</label>
+          <input type="number" id="pr_maxAge" placeholder="any" style="width:70px" value="${esc(ui.maxAge)}"></div>
         <button id="pr_clear" title="Clear the cargo, ETA window, DWT range and ± adj — back to a blank search"
           style="align-self:flex-end;border:1px solid var(--border);background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;padding:7px 14px;color:var(--text-dim)">Clear</button>
         <div class="pr-field"><label title="Max idle days before layfrom to still count as FITS">Max wait (d)</label>
@@ -12632,9 +12639,9 @@ function buildUI() {
     if (ui.cargoId && window.LaycanMatcherSelectCargo) window.LaycanMatcherSelectCargo(ui.cargoId);
   });
   document.getElementById('pr_clear').addEventListener('click', () => {
-    ui.cargoId = ''; ui.manFrom = ''; ui.manTo = ''; ui.minDwt = ''; ui.maxDwt = ''; ui.etaAdjDays = 0;
+    ui.cargoId = ''; ui.manFrom = ''; ui.manTo = ''; ui.minDwt = ''; ui.maxDwt = ''; ui.maxAge = ''; ui.etaAdjDays = 0;
     saveUi();
-    for (const [id, val] of [['pr_cargoPick', ''], ['pr_manFrom', ''], ['pr_manTo', ''], ['pr_minDwt', ''], ['pr_maxDwt', ''], ['pr_etaAdj', 0]]) {
+    for (const [id, val] of [['pr_cargoPick', ''], ['pr_manFrom', ''], ['pr_manTo', ''], ['pr_minDwt', ''], ['pr_maxDwt', ''], ['pr_maxAge', ''], ['pr_etaAdj', 0]]) {
       const el = document.getElementById(id);
       if (el) el.value = val;
     }
@@ -12652,6 +12659,7 @@ function buildUI() {
   on('pr_manTo', 'change', e => { ui.manTo = e.target.value; saveUi(); render(); });
   on('pr_minDwt', 'input', e => { ui.minDwt = e.target.value; saveUi(); render(); });
   on('pr_maxDwt', 'input', e => { ui.maxDwt = e.target.value; saveUi(); render(); });
+  on('pr_maxAge', 'input', e => { ui.maxAge = e.target.value; saveUi(); render(); });
   on('pr_waitTol', 'input', e => { ui.waitTolDays = e.target.value; saveUi(); render(); });
   on('pr_tightTol', 'input', e => { ui.tightTolDays = e.target.value; saveUi(); render(); });
   on('pr_etaAdj', 'input', e => { ui.etaAdjDays = e.target.value; saveUi(); render(); });

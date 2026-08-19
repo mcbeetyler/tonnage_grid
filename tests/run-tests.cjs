@@ -486,6 +486,20 @@ section('pairings');
   const mw = p._test.computeCargo2Ship();
   A(mw.window && mw.window.manual, 'manual window active without cargo');
   A(mw.rows.length === 2, 'dwt filter drops the 63k');
+
+  // Age filter: old ships drop, unknown build years stay visible
+  p._test.setGlobals({
+    vessels: [
+      { vessel_name: 'YOUNG', status: 'OPEN', dwt: 82000, build_year: 2022, eta_ecsa: '2026-08-10', market_colour: [{}] },
+      { vessel_name: 'OLD LADY', status: 'OPEN', dwt: 82000, build_year: 2006, eta_ecsa: '2026-08-10', market_colour: [{}] },
+      { vessel_name: 'NO YEAR', status: 'OPEN', dwt: 82000, eta_ecsa: '2026-08-10', market_colour: [{}] },
+    ],
+    cargoHistory: [], cargoCurrent: [],
+  });
+  p._test.setUi({ mode: 'cargo2ship', cargoId: '', manFrom: '', manTo: '', minDwt: '', maxDwt: '', maxAge: '15', autoBasis: true, etaAdjDays: 0 });
+  const ageRows = p._test.computeCargo2Ship().rows.map(r => r.v.vessel_name);
+  A(ageRows.includes('YOUNG') && !ageRows.includes('OLD LADY') && ageRows.includes('NO YEAR'), 'max age 15: ' + ageRows.join(','));
+  p._test.setUi({ maxAge: '' });
   A(mw.rows.find(r => r.v.vessel_name === 'IN WINDOW').status === 'FIT', 'in-window FIT');
   A(mw.rows.find(r => r.v.vessel_name === 'OUT WINDOW').status === 'MISSES', 'out-window MISSES');
   p._test.setUi({ manFrom: '', manTo: '', minDwt: '', maxDwt: '' });
