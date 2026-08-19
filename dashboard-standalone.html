@@ -3001,13 +3001,16 @@ function archiveFixtureResidue(v) {
 // Both offer AND bid side go — a bid on her old position is meaningless now.
 function clearQuoteResidue(v, opts) {
   const offerOnly = !!(opts && opts.offerOnly);
-  v.hire_offer = null; v.hire_ta = null; v.bb_offer = null; v.bki_eqvt = null;
-  v.offer_updated_at = null;
-  if (!offerOnly) v.bidding_charterer = null;
-  if (v.market_colour && v.market_colour[0]) {
-    const mc = v.market_colour[0];
-    mc.offer_usd = null; mc.p6_offer = null; mc.bb_usd = null;
-    if (!offerOnly) { mc.bid_usd = null; mc.p6_bid = null; }
+  const bidOnly = !!(opts && opts.bidOnly);
+  const mc = (v.market_colour || [])[0];
+  if (!bidOnly) {
+    v.hire_offer = null; v.hire_ta = null; v.bb_offer = null; v.bki_eqvt = null;
+    v.offer_updated_at = null;
+    if (mc) { mc.offer_usd = null; mc.p6_offer = null; mc.bb_usd = null; }
+  }
+  if (!offerOnly) {
+    v.bidding_charterer = null; v.bids = []; v.bid_updated_at = null;
+    if (mc) { mc.bid_usd = null; mc.p6_bid = null; }
   }
 }
 
@@ -3045,25 +3048,32 @@ function sweepStaleFixtureResidue() {
     }
   }
 
-  // Retro-repair: ships that reentered BEFORE quote-clearing existed can be
-  // wearing a rate from their previous cycle. An offer is provably stale when
-  //  · offer_updated_at predates the reopening, OR
-  //  · there is NO offer_updated_at at all — every feed-applied offer since
-  //    stamping existed carries one, and every manual quote stamps
-  //    field_overrides; unstamped + reopened + no fresh override = pre-stamp
-  //    era, i.e. older than any reopening.
-  // Offer side only — bids Tyler entered post-reopen can't be dated reliably.
+  // Retro-repair: a reopened ship is a NEW position — nothing quoted on the
+  // old one carries over. A quote (either side) is provably stale when its
+  // freshness stamp predates the reopening, or when it has no stamp at all:
+  // every feed-applied offer stamps offer_updated_at, every manual edit
+  // stamps field_overrides, every manual bid stamps bid_updated_at (and each
+  // entry in v.bids carries its own t). Unstamped + reopened = pre-stamp era.
   const OFFER_FIELDS = ['hire_offer', 'hire_ta', 'bb_offer', 'bki_eqvt', 'p6_offer'];
+  const BID_FIELDS = ['p6_bid', 'bid_usd', 'bidding_charterer'];
   for (const v of vessels) {
     if (v.status !== 'OPEN' || !v.reopened_at) continue;
     const mc = (v.market_colour || [])[0] || {};
-    const hasOffer = v.hire_offer != null || v.hire_ta != null || v.bki_eqvt != null
-      || v.bb_offer != null || mc.p6_offer != null || mc.offer_usd != null;
-    if (!hasOffer) continue;
     const ov = v.field_overrides || {};
-    if (OFFER_FIELDS.some(f => ov[f] && ov[f] > v.reopened_at)) continue;  // fresh manual quote
-    if (v.offer_updated_at && v.offer_updated_at >= v.reopened_at) continue;  // fresh feed quote
-    clearQuoteResidue(v, { offerOnly: true });
+    const ro = v.reopened_at;
+    const offerPresent = v.hire_offer != null || v.hire_ta != null || v.bki_eqvt != null
+      || v.bb_offer != null || mc.p6_offer != null || mc.offer_usd != null;
+    const bidPresent = mc.p6_bid != null || mc.bid_usd != null
+      || v.bidding_charterer != null || (v.bids || []).length > 0;
+    const offerFresh = OFFER_FIELDS.some(f => ov[f] && ov[f] > ro)
+      || (v.offer_updated_at && v.offer_updated_at >= ro);
+    const bidFresh = BID_FIELDS.some(f => ov[f] && ov[f] > ro)
+      || (v.bid_updated_at && v.bid_updated_at >= ro)
+      || (v.bids || []).some(b => b.t && b.t >= ro);
+    const clearOffer = offerPresent && !offerFresh;
+    const clearBid = bidPresent && !bidFresh;
+    if (!clearOffer && !clearBid) continue;
+    clearQuoteResidue(v, { offerOnly: !clearBid, bidOnly: !clearOffer });
     swept++;
   }
   return swept;
@@ -3979,7 +3989,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-08-19.6';
+const APP_REV = '2026-08-19.7';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');

@@ -300,7 +300,7 @@ section('csv-import + app');
     sweepStaleFixtureResidue();
     const lg = vessels.find(v => v.vessel_name === 'LEGACY GHOST RATE');
     A(lg.hire_offer === null && lg.market_colour[0].p6_offer === null, 'retro sweep clears pre-reopen offer');
-    A(lg.market_colour[0].p6_bid === 15900, 'retro sweep leaves desk bids alone');
+    A(lg.market_colour[0].p6_bid === null, 'retro sweep clears undated old bid too');
     A(vessels.find(v => v.vessel_name === 'FRESH QUOTE').hire_offer === 17000, 'post-reopen quote survives sweep');
     // Unstamped offer on a reopened ship = pre-stamp era = provably stale
     vessels.length = 0;
@@ -308,11 +308,18 @@ section('csv-import + app');
       hire_offer: 22000, market_colour: [{ route: 'ECSA FH', p6_offer: 20500, p6_bid: 19000 }] });
     vessels.push({ vessel_name: 'MANUAL REQUOTE', status: 'OPEN', reopened_at: '2026-08-19T07:00:00Z',
       hire_offer: 23000, field_overrides: { hire_offer: '2026-08-19T09:00:00Z' } });
+    vessels.push({ vessel_name: 'FRESH BID', status: 'OPEN', reopened_at: '2026-08-19T07:00:00Z',
+      hire_offer: 21000,   // stale offer (unstamped)
+      bid_updated_at: '2026-08-19T10:00:00Z',
+      market_colour: [{ route: 'ECSA FH', p6_offer: 21200, p6_bid: 20000, bid_usd: 20800 }] });
     sweepStaleFixtureResidue();
     const ug = vessels.find(v => v.vessel_name === 'UNSTAMPED GHOST');
     A(ug.hire_offer === null && ug.market_colour[0].p6_offer === null, 'unstamped ghost rate cleared');
-    A(ug.market_colour[0].p6_bid === 19000, 'unstamped ghost keeps desk bid');
+    A(ug.market_colour[0].p6_bid === null, 'unstamped ghost bid cleared — truly new to the board');
     A(vessels.find(v => v.vessel_name === 'MANUAL REQUOTE').hire_offer === 23000, 'manual post-reopen quote survives');
+    const fb = vessels.find(v => v.vessel_name === 'FRESH BID');
+    A(fb.market_colour[0].p6_bid === 20000 && fb.market_colour[0].bid_usd === 20800, 'post-reopen bid survives');
+    A(fb.hire_offer === null && fb.market_colour[0].p6_offer === null, 'her stale offer still cleared independently');
 
     // FIX-AND-FAIL: a genuinely fixed ship LEAVES the grid — one still
     // trading there on 3+ distinct days after her fixture gets flagged
