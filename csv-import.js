@@ -593,7 +593,10 @@ function markFixturesFromCSV(parsed) {
       continue;
     }
     if (v.status === 'FAILED') continue;                    // desk judgment stands
-    const fixTs = f.csv_updated || new Date().toISOString();
+    // A fixture row with no parseable date can't be judged fresh or stale —
+    // acting on it stamps a phantom "fixed today". Skip it.
+    if (!f.csv_updated) continue;
+    const fixTs = f.csv_updated;
     const o = v.field_overrides || {};
     if (o.status && o.status > fixTs) continue;             // manual status is newer
     // Stale fixture guard: a ship that reopened after a Pacific round would

@@ -242,6 +242,12 @@ section('csv-import + app');
     markFixturesFromCSV(parseCSVVessels([roFxHdr, freshFx].join('\\n')).vessels);
     A(pr2.status === 'FIXED', 'fresh fixture after reopening marks her again');
 
+    // Undated fixture rows never act (would stamp a phantom 'fixed today')
+    vessels.push({ vessel_name: 'BLUE IONIAN', status: 'OPEN', eta_ecsa: '2026-09-03' });
+    const undated = ['', 'Blue Ionian', '77,000', 'Jan-2007', '', '', 'IONIAN', ''].join('\\t');
+    markFixturesFromCSV(parseCSVVessels([roFxHdr, undated].join('\\n')).vessels);
+    A(vessels.find(v => v.vessel_name === 'BLUE IONIAN').status === 'OPEN', 'undated fixture row skipped');
+
     // Manually-fixed ship: user's values stand, blanks get backfilled
     vessels.length = 0;
     vessels.push({ vessel_name: 'MINOAN BAY', status: 'FIXED', fixed_price: 27500, date_fixed: null, fix_msg: null });
