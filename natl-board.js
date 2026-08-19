@@ -146,12 +146,19 @@ function render() {
     const zones = Object.entries(counts).sort((a, b) => b[1] - a[1]);
     strip.innerHTML = zones.map(([z, c]) => {
       const dl = basinDelta(z, counts);
+      const p = basinPulse(z, counts);
       const dTxt = dl == null ? '<span style="color:var(--text-dim)" title="No snapshot ~7 days back yet — history builds daily from today">·</span>'
         : dl === 0 ? '<span style="color:var(--text-dim)">=</span>'
         : `<span style="color:${dl > 0 ? 'var(--red)' : 'var(--green)'}" title="vs ~7 days ago — more ships = softer basin">${dl > 0 ? '+' : ''}${dl}</span>`;
-      return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);padding:5px 12px;font-size:12px">
+      // Supply index appears once ~a week of snapshots exists; red = basin
+      // filling (softer), green = draining (tighter)
+      const idxTxt = p.idx == null ? ''
+        : ` <span style="font-family:var(--mono);font-size:10px;color:${p.idx >= 115 ? 'var(--red)' : p.idx <= 85 ? 'var(--green)' : 'var(--text-dim)'}"
+             title="Supply index: today ÷ trailing ${p.sample}-day mean × 100${p.dd != null ? ' · d/d ' + (p.dd > 0 ? '+' : '') + p.dd : ''}">${p.idx}</span>`;
+      return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);padding:5px 12px;font-size:12px"
+        title="${p.dd != null ? 'd/d ' + (p.dd > 0 ? '+' : '') + p.dd + ' · ' : ''}w/w ${dl == null ? 'building history' : (dl > 0 ? '+' : '') + dl}">
         <span style="color:${REGION_COLORS[z] || 'var(--text)'};font-weight:700">${esc(z)}</span>
-        <b style="font-family:var(--mono);margin-left:5px">${c}</b> <span style="margin-left:3px">${dTxt}</span></div>`;
+        <b style="font-family:var(--mono);margin-left:5px">${c}</b> <span style="margin-left:3px">${dTxt}</span>${idxTxt}</div>`;
     }).join('');
   }
 
@@ -310,6 +317,27 @@ function basinDelta(zone, counts) {
   return null;
 }
 
+// Per-basin supply pulse: today vs the trailing mean of the daily snapshots
+// (needs >=5 days of history before an index is worth showing), plus d/d.
+function basinPulse(zone, counts) {
+  if (!IS_BROWSER) return { idx: null, dd: null };
+  const hist = JSON.parse(localStorage.getItem(LS_BASINS) || '{}');
+  const days = Object.keys(hist).sort();
+  const today = new Date().toISOString().slice(0, 10);
+  const past = days.filter(d => d < today).slice(-28);
+  let idx = null;
+  if (past.length >= 5) {
+    const avg = past.reduce((s, d) => s + (hist[d][zone] || 0), 0) / past.length;
+    if (avg > 0) idx = Math.round((counts[zone] || 0) / avg * 100);
+  }
+  let dd = null;
+  for (let back = 1; back <= 3 && dd == null; back++) {
+    const d = new Date(Date.now() - back * 86400000).toISOString().slice(0, 10);
+    if (hist[d]) dd = (counts[zone] || 0) - (hist[d][zone] || 0);
+  }
+  return { idx, dd, sample: past.length };
+}
+
 function fmtOffers(v) {
   const parts = [];
   if (v.rate_ta != null) parts.push(`$${Math.round(v.rate_ta).toLocaleString()}${v.bb_ta ? ' + $' + Math.round(v.bb_ta).toLocaleString() + ' bb' : ''} TA`);
@@ -385,7 +413,7 @@ if (IS_BROWSER) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { _test: { setUi: u => Object.assign(ui, u), computeRows, basinCounts, buildMarketText } };
+  module.exports = { _test: { setUi: u => Object.assign(ui, u), computeRows, basinCounts, buildMarketText, basinPulse, basinDelta } };
 }
 
 })();

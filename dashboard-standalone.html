@@ -3878,7 +3878,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-07-29.3';
+const APP_REV = '2026-07-29.4';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');
@@ -12862,6 +12862,36 @@ function fmtD(iso) {
   return isNaN(d) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
 }
 
+// ─── Supply Pulse ────────────────────────────────────────────────────────────
+// Mirror of the cargo book's Demand Pulse: are more or fewer ships arriving
+// than typical? Metric = ships arriving inside 30 days (next30), series from
+// the imported Curves history + daily snapshots, norm = trailing 28d mean.
+function computeSupplyPulse() {
+  const hist = loadHistory().filter(h => h.next30 != null);
+  if (!hist.length) return null;
+  const t = hist[hist.length - 1];
+  const from = Math.max(0, hist.length - 28);
+  const window28 = hist.slice(from);
+  const avg28 = window28.reduce((s, h) => s + h.next30, 0) / window28.length;
+  const prev = hist[hist.length - 2];
+  // w/w: nearest entry 6-9 days back by DATE (the series can skip weekends)
+  let wk = null;
+  for (let back = 7; back <= 9 && !wk; back++) {
+    for (const sign of [0, 1, -1]) {
+      const d = new Date(new Date(t.date + 'T00:00:00Z').getTime() - (back + sign) * FU_DAY()).toISOString().slice(0, 10);
+      const hit = hist.find(h => h.date === d);
+      if (hit) { wk = hit; break; }
+    }
+  }
+  return {
+    date: t.date, today: t.next30,
+    avg28, index: avg28 > 0 ? Math.round(t.next30 / avg28 * 100) : null,
+    dd: prev ? t.next30 - prev.next30 : null,
+    ww: wk ? t.next30 - wk.next30 : null,
+  };
+}
+function FU_DAY() { return 86400000; }
+
 // Rolling depth curve — the old Curves tab, live: x = date, y = ships by ETA
 // bucket, P6 value on the right axis.
 function renderRollChart() {
@@ -12983,14 +13013,27 @@ function render() {
   if (!root || !SP.initialised) return;
   const res = computeSupply();
 
-  // Stat cards: depth buckets + rated stats
+  // Stat cards: depth buckets + rated stats + the SUPPLY PULSE — same
+  // grammar as the cargo book's demand pulse (>100 = more ships than typical
+  // = softer market for owners)
   const b = res.buckets;
+  const pulse = computeSupplyPulse();
+  const sgn = n => n == null ? '—' : (n > 0 ? '+' : '') + n;
+  const pulseCards = pulse ? [
+    ['Supply index', pulse.index != null ? pulse.index : '—',
+      pulse.index == null ? '' : pulse.index >= 115 ? 'color:var(--red)' : pulse.index <= 85 ? 'color:var(--green)' : '',
+      `Arrivals ≤30d (${pulse.today}) ÷ trailing 28d norm (${pulse.avg28.toFixed(1)}) × 100. >100 = more ships than typical (softer); <100 = tighter.`],
+    ['Supply d/d', sgn(pulse.dd), pulse.dd > 0 ? 'color:var(--red)' : pulse.dd < 0 ? 'color:var(--green)' : '', 'Change in ≤30d arrivals vs the previous data day'],
+    ['Supply w/w', sgn(pulse.ww), pulse.ww > 0 ? 'color:var(--red)' : pulse.ww < 0 ? 'color:var(--green)' : '', 'Change vs ~7 days ago'],
+  ] : [];
   document.getElementById('sp_stats').innerHTML = [
     ['0–10d', b.b0_10], ['10–20d', b.b10_20], ['20–30d', b.b20_30],
     ['Next 30d', b.next30, true], ['30–40d', b.b30_40],
     ['Rated', res.ratedCount], ['Median offer', res.median != null ? fmtK(res.median) : '—'],
   ].map(([l, v, hot]) => `<div class="stat" style="min-width:86px;padding:8px 14px${hot ? ';border-color:var(--accent);background:var(--accent-light)' : ''}">
-      <div class="stat-label">${l}</div><div class="stat-value" style="font-size:22px">${v}</div></div>`).join('');
+      <div class="stat-label">${l}</div><div class="stat-value" style="font-size:22px">${v}</div></div>`).join('')
+    + pulseCards.map(([l, v, style, tip]) => `<div class="stat" title="${tip}" style="min-width:86px;padding:8px 14px;border-style:dashed">
+      <div class="stat-label">${l}</div><div class="stat-value" style="font-size:22px;${style}">${v}</div></div>`).join('');
 
   const note = [];
   if (res.excluded.laycan) note.push(`${res.excluded.laycan} hidden by laycan window`);
@@ -13146,7 +13189,7 @@ if (typeof module !== 'undefined' && module.exports) {
     _test: {
       setUi: u => Object.assign(ui, u),
       setVessels: v => { global.vessels = v; },
-      computeSupply,
+      computeSupply, computeSupplyPulse,
     },
   };
 }
@@ -13303,12 +13346,19 @@ function render() {
     const zones = Object.entries(counts).sort((a, b) => b[1] - a[1]);
     strip.innerHTML = zones.map(([z, c]) => {
       const dl = basinDelta(z, counts);
+      const p = basinPulse(z, counts);
       const dTxt = dl == null ? '<span style="color:var(--text-dim)" title="No snapshot ~7 days back yet — history builds daily from today">·</span>'
         : dl === 0 ? '<span style="color:var(--text-dim)">=</span>'
         : `<span style="color:${dl > 0 ? 'var(--red)' : 'var(--green)'}" title="vs ~7 days ago — more ships = softer basin">${dl > 0 ? '+' : ''}${dl}</span>`;
-      return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);padding:5px 12px;font-size:12px">
+      // Supply index appears once ~a week of snapshots exists; red = basin
+      // filling (softer), green = draining (tighter)
+      const idxTxt = p.idx == null ? ''
+        : ` <span style="font-family:var(--mono);font-size:10px;color:${p.idx >= 115 ? 'var(--red)' : p.idx <= 85 ? 'var(--green)' : 'var(--text-dim)'}"
+             title="Supply index: today ÷ trailing ${p.sample}-day mean × 100${p.dd != null ? ' · d/d ' + (p.dd > 0 ? '+' : '') + p.dd : ''}">${p.idx}</span>`;
+      return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);padding:5px 12px;font-size:12px"
+        title="${p.dd != null ? 'd/d ' + (p.dd > 0 ? '+' : '') + p.dd + ' · ' : ''}w/w ${dl == null ? 'building history' : (dl > 0 ? '+' : '') + dl}">
         <span style="color:${REGION_COLORS[z] || 'var(--text)'};font-weight:700">${esc(z)}</span>
-        <b style="font-family:var(--mono);margin-left:5px">${c}</b> <span style="margin-left:3px">${dTxt}</span></div>`;
+        <b style="font-family:var(--mono);margin-left:5px">${c}</b> <span style="margin-left:3px">${dTxt}</span>${idxTxt}</div>`;
     }).join('');
   }
 
@@ -13467,6 +13517,27 @@ function basinDelta(zone, counts) {
   return null;
 }
 
+// Per-basin supply pulse: today vs the trailing mean of the daily snapshots
+// (needs >=5 days of history before an index is worth showing), plus d/d.
+function basinPulse(zone, counts) {
+  if (!IS_BROWSER) return { idx: null, dd: null };
+  const hist = JSON.parse(localStorage.getItem(LS_BASINS) || '{}');
+  const days = Object.keys(hist).sort();
+  const today = new Date().toISOString().slice(0, 10);
+  const past = days.filter(d => d < today).slice(-28);
+  let idx = null;
+  if (past.length >= 5) {
+    const avg = past.reduce((s, d) => s + (hist[d][zone] || 0), 0) / past.length;
+    if (avg > 0) idx = Math.round((counts[zone] || 0) / avg * 100);
+  }
+  let dd = null;
+  for (let back = 1; back <= 3 && dd == null; back++) {
+    const d = new Date(Date.now() - back * 86400000).toISOString().slice(0, 10);
+    if (hist[d]) dd = (counts[zone] || 0) - (hist[d][zone] || 0);
+  }
+  return { idx, dd, sample: past.length };
+}
+
 function fmtOffers(v) {
   const parts = [];
   if (v.rate_ta != null) parts.push(`$${Math.round(v.rate_ta).toLocaleString()}${v.bb_ta ? ' + $' + Math.round(v.bb_ta).toLocaleString() + ' bb' : ''} TA`);
@@ -13542,7 +13613,7 @@ if (IS_BROWSER) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { _test: { setUi: u => Object.assign(ui, u), computeRows, basinCounts, buildMarketText } };
+  module.exports = { _test: { setUi: u => Object.assign(ui, u), computeRows, basinCounts, buildMarketText, basinPulse, basinDelta } };
 }
 
 })();

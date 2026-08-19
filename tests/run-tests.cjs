@@ -508,10 +508,44 @@ section('supply + feeds');
   A(r.buckets.b0_10 === 1 && r.buckets.b10_20 === 1 && r.buckets.next30 === 2, 'buckets');
   A(r.ratedBuckets.b0_10 === 1 && r.ratedBuckets.b10_20 === 0, 'rated buckets');
   A(r.ladder[0].rate === 18000 && !r.ladder[0].rated, 'ladder implied first (cheaper)');
+  // Supply pulse from history (seed + snapshots): next30 vs trailing mean
+  {
+    const iso = d => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+    const seed = [];
+    for (let d = 40; d >= 1; d--) seed.push({ date: iso(d), next30: 40, p6: null });
+    global.CURVES_SEED = seed;
+    localStorage.setItem('sp_snapshots', JSON.stringify({ [iso(0)]: { next30: 50, b0_10: 5, b10_20: 15, b20_30: 30, b30_40: 8 } }));
+    const p = sp._test.computeSupplyPulse();
+    A(p && p.today === 50, 'pulse today from snapshot: ' + (p && p.today));
+    // trailing 28: 27 seed days @40 + today 50 → avg ≈ 40.36; index ≈ 124
+    A(p.index >= 120 && p.index <= 128, 'supply index vs norm: ' + p.index);
+    A(p.dd === 10 && p.ww === 10, 'supply d/d + w/w: ' + p.dd + '/' + p.ww);
+    localStorage.removeItem('sp_snapshots');
+    delete global.CURVES_SEED;
+  }
+
   const fd = load('feeds.js');
   A(fd._test.rowsToTsv([['a', 'b'], ['c\td', null]]) === 'a\tb\nc d\t', 'rowsToTsv');
   // Header cells with embedded newlines ("HIRE\n(offer)") must not split rows
   A(fd._test.rowsToTsv([['HIRE\n(offer)', 'x']]) === 'HIRE (offer)\tx', 'rowsToTsv flattens newlines');
+}
+
+// ═══ 5b. natl basin pulse ═════════════════════════════════════════════════════
+section('basin pulse');
+{
+  global.NA_SEED = undefined;
+  const nb = load('natl-board.js');
+  const iso = d => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+  const hist = {};
+  for (let d = 10; d >= 1; d--) hist[iso(d)] = { 'N CONT': 20, 'W MED': 10 };
+  localStorage.setItem('nb_basin_history', JSON.stringify(hist));
+  const counts = { 'N CONT': 25, 'W MED': 8 };
+  const pn = nb._test.basinPulse('N CONT', counts);
+  A(pn.idx === 125 && pn.dd === 5, 'N CONT: index 125, d/d +5 → ' + JSON.stringify(pn));
+  const pw = nb._test.basinPulse('W MED', counts);
+  A(pw.idx === 80 && pw.dd === -2, 'W MED draining: index 80, d/d -2');
+  A(nb._test.basinDelta('N CONT', counts) === 5, 'w/w from 7d-back snapshot');
+  localStorage.removeItem('nb_basin_history');
 }
 
 // ═══ 6. scrubber calc ═════════════════════════════════════════════════════════
