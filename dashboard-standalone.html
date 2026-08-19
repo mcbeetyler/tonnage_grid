@@ -3046,15 +3046,25 @@ function sweepStaleFixtureResidue() {
   }
 
   // Retro-repair: ships that reentered BEFORE quote-clearing existed can be
-  // wearing a rate from their previous cycle (offer stamped before the
-  // reopening). Offer side only — a bid Tyler entered after the reopen has
-  // no reliable timestamp of its own, so bids are left alone here.
+  // wearing a rate from their previous cycle. An offer is provably stale when
+  //  · offer_updated_at predates the reopening, OR
+  //  · there is NO offer_updated_at at all — every feed-applied offer since
+  //    stamping existed carries one, and every manual quote stamps
+  //    field_overrides; unstamped + reopened + no fresh override = pre-stamp
+  //    era, i.e. older than any reopening.
+  // Offer side only — bids Tyler entered post-reopen can't be dated reliably.
+  const OFFER_FIELDS = ['hire_offer', 'hire_ta', 'bb_offer', 'bki_eqvt', 'p6_offer'];
   for (const v of vessels) {
-    if (v.status !== 'OPEN' || !v.reopened_at || !v.offer_updated_at) continue;
-    if (v.offer_updated_at < v.reopened_at) {
-      clearQuoteResidue(v, { offerOnly: true });
-      swept++;
-    }
+    if (v.status !== 'OPEN' || !v.reopened_at) continue;
+    const mc = (v.market_colour || [])[0] || {};
+    const hasOffer = v.hire_offer != null || v.hire_ta != null || v.bki_eqvt != null
+      || v.bb_offer != null || mc.p6_offer != null || mc.offer_usd != null;
+    if (!hasOffer) continue;
+    const ov = v.field_overrides || {};
+    if (OFFER_FIELDS.some(f => ov[f] && ov[f] > v.reopened_at)) continue;  // fresh manual quote
+    if (v.offer_updated_at && v.offer_updated_at >= v.reopened_at) continue;  // fresh feed quote
+    clearQuoteResidue(v, { offerOnly: true });
+    swept++;
   }
   return swept;
 }
@@ -3969,7 +3979,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-08-19.5';
+const APP_REV = '2026-08-19.6';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');
