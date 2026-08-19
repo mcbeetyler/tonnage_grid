@@ -204,7 +204,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-08-19.2';
+const APP_REV = '2026-08-19.3';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');
@@ -1768,6 +1768,33 @@ function cycleStatus(idx) {
   setVesselStatus(idx, next);
 }
 
+// Resolve a fix-and-fail suspect: reopen her (records the failed fixture in
+// history + participants), or dismiss the flag (the fixture is real, the
+// grid is just slow to drop her).
+function resolveFixSuspect(idx) {
+  const v = vessels[idx];
+  if (!v) return;
+  const failed = confirm(
+    `${v.vessel_name} — marked FIXED ${v.date_fixed || ''} but still trading on the grid ` +
+    `(${(v.post_fix_days || []).length} days since).\n\n` +
+    `OK = fixture FAILED, reopen her (old fixture archived)\n` +
+    `Cancel = fixture is real, stop flagging her`);
+  if (failed) {
+    v.price_history = v.price_history || [];
+    v.price_history.push({ t: new Date().toISOString(), field: 'fixture_failed', value: v.fixed_price || null, counterparty: v.charterer || null });
+    if (typeof archiveFixtureResidue === 'function') archiveFixtureResidue(v);
+    v.status = 'OPEN';
+    v.field_overrides = v.field_overrides || {};
+    v.field_overrides.status = new Date().toISOString();
+  } else {
+    v.fix_suspect_dismissed = true;
+  }
+  touchVessel(idx);
+  save();
+  renderTable();
+  updateStats();
+}
+
 function setVesselStatus(idx, next) {
   const v = vessels[idx];
   if (!v) return;
@@ -2182,7 +2209,12 @@ function renderTable() {
         // not in its options silently shows the first one, i.e. it lies
         const list = VESSEL_STATUSES.includes(cur) ? VESSEL_STATUSES : [cur].concat(VESSEL_STATUSES);
         const opts = list.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}</option>`).join('');
-        return `<td><select class="status-select status-${statusCls}" onclick="event.stopPropagation()" onchange="setVesselStatus(${gi}, this.value)">${opts}</select></td>`;
+        // Fix-and-fail suspect: FIXED but still trading on the grid for 3+ days
+        const suspect = typeof isFixSuspect === 'function' && isFixSuspect(v)
+          ? `<span onclick="event.stopPropagation();resolveFixSuspect(${gi})" style="cursor:pointer;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;background:var(--amber-light);color:var(--amber);border:1px solid var(--amber-border);margin-left:4px"
+              title="Marked FIXED ${v.date_fixed || ''} but the grid has listed her as active on ${(v.post_fix_days || []).length} days since — likely failed on subs. Click to resolve.">FAILED?</span>`
+          : '';
+        return `<td><select class="status-select status-${statusCls}" onclick="event.stopPropagation()" onchange="setVesselStatus(${gi}, this.value)">${opts}</select>${suspect}</td>`;
       }
       case 'actions': {
         const onSubs = v.status === 'FIXED' || v.status === 'IN HOUSE';

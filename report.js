@@ -103,6 +103,19 @@ function toggleReportFixtures(el) {
   renderReport();
 }
 
+// OPEN ships with no update in >7 days are dropped from the report entirely
+// (the 96h "quiet" grey-out still applies below that). Typical culprit: a
+// ballaster who quietly did a Pacific round — her grid row stales out because
+// nobody knew. She is NOT deleted: the moment her grid row gets a fresh
+// UPDATE stamp (or she's edited manually), the sync refreshes csv_updated /
+// last_updated and she walks straight back into the report.
+function isReportStale(v) {
+  const ts = [v.csv_updated, v.last_updated].filter(Boolean)
+    .map(t => new Date(t).getTime()).filter(n => isFinite(n));
+  if (!ts.length) return false;                    // no stamps — don't hide
+  return (Date.now() - Math.max(...ts)) / 86400000 > 7;
+}
+
 function renderReport() {
   const mode = document.getElementById('reportMonth').value;
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
@@ -115,7 +128,7 @@ function renderReport() {
   const isEcsaFh = v => (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH';
 
   // Filter to only OPEN vessels (includes gone-quiet — they render greyed out)
-  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name) && isEcsaFh(v));
+  const eligible = vessels.filter(v => v.status === 'OPEN' && !isReportStale(v) && !reportExcluded.has(v.vessel_name) && isEcsaFh(v));
 
   renderP6IndexSidebar(eligible);
 
@@ -450,7 +463,7 @@ function copyWindowReport(winLabel, mode) {
 
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
   const showType = document.getElementById('reportType').value;
-  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name) && (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH');
+  const eligible = vessels.filter(v => v.status === 'OPEN' && !isReportStale(v) && !reportExcluded.has(v.vessel_name) && (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH');
   const inWindow = eligible.filter(v => {
     if (!v.eta_ecsa) return false;
     const eta = new Date(v.eta_ecsa);
@@ -509,7 +522,7 @@ function copyFullReport() {
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
   const showType = document.getElementById('reportType').value;
   const windows = getEtaWindows(mode);
-  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name) && (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH');
+  const eligible = vessels.filter(v => v.status === 'OPEN' && !isReportStale(v) && !reportExcluded.has(v.vessel_name) && (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH');
 
   let text = `*Tonnage Report — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}*\n`;
 

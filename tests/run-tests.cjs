@@ -265,6 +265,27 @@ section('csv-import + app');
     A(vessels.find(v => v.vessel_name === 'REAL FIX').status === 'FIXED', 'manual fix untouched');
     A(vessels.find(v => v.vessel_name === 'OLD FIX').status === 'FIXED', 'old fixture untouched');
 
+    // FIX-AND-FAIL: a genuinely fixed ship LEAVES the grid — one still
+    // trading there on 3+ distinct days after her fixture gets flagged
+    // as a suspected failed-on-subs (user resolves via the FAILED? chip)
+    const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const csvStamp = d => { const x = new Date(Date.now() - d * 86400000); return String(x.getDate()).padStart(2, '0') + '-' + MON[x.getMonth()] + ' 10:00'; };
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'SUBS FAILER', status: 'FIXED', date_fixed: nowIso(6).slice(0, 10), fixed_price: 20000, csv_updated: nowIso(6) });
+    const ffHdr = ['UPDATE', 'VESSEL', 'DWT', 'AGE', 'LAYDAY', 'ETA', 'OWNER', 'STATUS'].join('\\t');
+    for (const d of [4, 3, 2]) {
+      const row = [csvStamp(d), 'Subs Failer', '82,000', 'Jan-2018', '', '', 'OWNERCO', '1'].join('\\t');
+      syncCSVVessels(parseCSVVessels([ffHdr, row].join('\\n')).vessels);
+    }
+    const sf = vessels.find(v => v.vessel_name === 'SUBS FAILER');
+    A(sf.status === 'FIXED', 'no auto-flip — status stays FIXED');
+    A((sf.post_fix_days || []).length === 3, 'post-fix trading days counted: ' + (sf.post_fix_days || []).length);
+    A(isFixSuspect(sf), 'flagged as suspected failed fixture');
+    sf.fix_suspect_dismissed = true;
+    A(!isFixSuspect(sf), 'dismissal silences the flag');
+    sf.fix_suspect_dismissed = false; sf.field_overrides = { status: nowIso(1) };
+    A(!isFixSuspect(sf), 'manually-FIXED ship never flagged');
+
     // Manually-fixed ship: user's values stand, blanks get backfilled
     vessels.length = 0;
     vessels.push({ vessel_name: 'MINOAN BAY', status: 'FIXED', fixed_price: 27500, date_fixed: null, fix_msg: null });

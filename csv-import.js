@@ -505,6 +505,20 @@ function syncCSVVessels(newVessels, opts) {
       }
     }
 
+    // Fix-and-fail detection: a genuinely fixed ship LEAVES the grid.
+    // One still trading there days after her fixture likely failed on
+    // subs — count the distinct days she's been seen post-fixture.
+    if (existing.status === 'FIXED' && existing.date_fixed
+        && nv.csv_status === '1' && rowTs.slice(0, 10) > existing.date_fixed) {
+      existing.post_fix_days = existing.post_fix_days || [];
+      const d = rowTs.slice(0, 10);
+      if (!existing.post_fix_days.includes(d)) {
+        existing.post_fix_days.push(d);
+        if (existing.post_fix_days.length > 10) existing.post_fix_days.shift();
+        changed = true;
+      }
+    }
+
     if (changed) { existing.last_updated = rowTs; updated++; }
     else unchanged++;
   }
@@ -549,7 +563,18 @@ function archiveFixtureResidue(v) {
   // Stale route hides the ship from the Report tab (ECSA FH-only filter) —
   // a reopened ship's route is unknown until quoted again
   v.route = null; v.fixed_route = null;
+  // Fresh position: fail-detection counters reset too
+  v.post_fix_days = []; v.fix_suspect_dismissed = false;
   return true;
+}
+
+// Is this FIXED ship suspiciously still trading on the grid? (>=3 distinct
+// post-fixture days seen, feed-made fix, not dismissed by the user)
+function isFixSuspect(v) {
+  return v.status === 'FIXED'
+    && !(v.field_overrides || {}).status
+    && (v.post_fix_days || []).length >= 3
+    && !v.fix_suspect_dismissed;
 }
 
 // Self-healing sweep, run on every load: OPEN ships still wearing a fixture

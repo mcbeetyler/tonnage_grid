@@ -2926,6 +2926,20 @@ function syncCSVVessels(newVessels, opts) {
       }
     }
 
+    // Fix-and-fail detection: a genuinely fixed ship LEAVES the grid.
+    // One still trading there days after her fixture likely failed on
+    // subs — count the distinct days she's been seen post-fixture.
+    if (existing.status === 'FIXED' && existing.date_fixed
+        && nv.csv_status === '1' && rowTs.slice(0, 10) > existing.date_fixed) {
+      existing.post_fix_days = existing.post_fix_days || [];
+      const d = rowTs.slice(0, 10);
+      if (!existing.post_fix_days.includes(d)) {
+        existing.post_fix_days.push(d);
+        if (existing.post_fix_days.length > 10) existing.post_fix_days.shift();
+        changed = true;
+      }
+    }
+
     if (changed) { existing.last_updated = rowTs; updated++; }
     else unchanged++;
   }
@@ -2970,7 +2984,18 @@ function archiveFixtureResidue(v) {
   // Stale route hides the ship from the Report tab (ECSA FH-only filter) —
   // a reopened ship's route is unknown until quoted again
   v.route = null; v.fixed_route = null;
+  // Fresh position: fail-detection counters reset too
+  v.post_fix_days = []; v.fix_suspect_dismissed = false;
   return true;
+}
+
+// Is this FIXED ship suspiciously still trading on the grid? (>=3 distinct
+// post-fixture days seen, feed-made fix, not dismissed by the user)
+function isFixSuspect(v) {
+  return v.status === 'FIXED'
+    && !(v.field_overrides || {}).status
+    && (v.post_fix_days || []).length >= 3
+    && !v.fix_suspect_dismissed;
 }
 
 // Self-healing sweep, run on every load: OPEN ships still wearing a fixture
@@ -3904,7 +3929,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-08-19.2';
+const APP_REV = '2026-08-19.3';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');
@@ -5468,6 +5493,33 @@ function cycleStatus(idx) {
   setVesselStatus(idx, next);
 }
 
+// Resolve a fix-and-fail suspect: reopen her (records the failed fixture in
+// history + participants), or dismiss the flag (the fixture is real, the
+// grid is just slow to drop her).
+function resolveFixSuspect(idx) {
+  const v = vessels[idx];
+  if (!v) return;
+  const failed = confirm(
+    `${v.vessel_name} — marked FIXED ${v.date_fixed || ''} but still trading on the grid ` +
+    `(${(v.post_fix_days || []).length} days since).\n\n` +
+    `OK = fixture FAILED, reopen her (old fixture archived)\n` +
+    `Cancel = fixture is real, stop flagging her`);
+  if (failed) {
+    v.price_history = v.price_history || [];
+    v.price_history.push({ t: new Date().toISOString(), field: 'fixture_failed', value: v.fixed_price || null, counterparty: v.charterer || null });
+    if (typeof archiveFixtureResidue === 'function') archiveFixtureResidue(v);
+    v.status = 'OPEN';
+    v.field_overrides = v.field_overrides || {};
+    v.field_overrides.status = new Date().toISOString();
+  } else {
+    v.fix_suspect_dismissed = true;
+  }
+  touchVessel(idx);
+  save();
+  renderTable();
+  updateStats();
+}
+
 function setVesselStatus(idx, next) {
   const v = vessels[idx];
   if (!v) return;
@@ -5882,7 +5934,12 @@ function renderTable() {
         // not in its options silently shows the first one, i.e. it lies
         const list = VESSEL_STATUSES.includes(cur) ? VESSEL_STATUSES : [cur].concat(VESSEL_STATUSES);
         const opts = list.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}</option>`).join('');
-        return `<td><select class="status-select status-${statusCls}" onclick="event.stopPropagation()" onchange="setVesselStatus(${gi}, this.value)">${opts}</select></td>`;
+        // Fix-and-fail suspect: FIXED but still trading on the grid for 3+ days
+        const suspect = typeof isFixSuspect === 'function' && isFixSuspect(v)
+          ? `<span onclick="event.stopPropagation();resolveFixSuspect(${gi})" style="cursor:pointer;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;background:var(--amber-light);color:var(--amber);border:1px solid var(--amber-border);margin-left:4px"
+              title="Marked FIXED ${v.date_fixed || ''} but the grid has listed her as active on ${(v.post_fix_days || []).length} days since — likely failed on subs. Click to resolve.">FAILED?</span>`
+          : '';
+        return `<td><select class="status-select status-${statusCls}" onclick="event.stopPropagation()" onchange="setVesselStatus(${gi}, this.value)">${opts}</select>${suspect}</td>`;
       }
       case 'actions': {
         const onSubs = v.status === 'FIXED' || v.status === 'IN HOUSE';
@@ -8762,6 +8819,19 @@ function toggleReportFixtures(el) {
   renderReport();
 }
 
+// OPEN ships with no update in >7 days are dropped from the report entirely
+// (the 96h "quiet" grey-out still applies below that). Typical culprit: a
+// ballaster who quietly did a Pacific round — her grid row stales out because
+// nobody knew. She is NOT deleted: the moment her grid row gets a fresh
+// UPDATE stamp (or she's edited manually), the sync refreshes csv_updated /
+// last_updated and she walks straight back into the report.
+function isReportStale(v) {
+  const ts = [v.csv_updated, v.last_updated].filter(Boolean)
+    .map(t => new Date(t).getTime()).filter(n => isFinite(n));
+  if (!ts.length) return false;                    // no stamps — don't hide
+  return (Date.now() - Math.max(...ts)) / 86400000 > 7;
+}
+
 function renderReport() {
   const mode = document.getElementById('reportMonth').value;
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
@@ -8774,7 +8844,7 @@ function renderReport() {
   const isEcsaFh = v => (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH';
 
   // Filter to only OPEN vessels (includes gone-quiet — they render greyed out)
-  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name) && isEcsaFh(v));
+  const eligible = vessels.filter(v => v.status === 'OPEN' && !isReportStale(v) && !reportExcluded.has(v.vessel_name) && isEcsaFh(v));
 
   renderP6IndexSidebar(eligible);
 
@@ -9109,7 +9179,7 @@ function copyWindowReport(winLabel, mode) {
 
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
   const showType = document.getElementById('reportType').value;
-  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name) && (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH');
+  const eligible = vessels.filter(v => v.status === 'OPEN' && !isReportStale(v) && !reportExcluded.has(v.vessel_name) && (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH');
   const inWindow = eligible.filter(v => {
     if (!v.eta_ecsa) return false;
     const eta = new Date(v.eta_ecsa);
@@ -9168,7 +9238,7 @@ function copyFullReport() {
   const topN = parseInt(document.getElementById('reportTopN').value, 10);
   const showType = document.getElementById('reportType').value;
   const windows = getEtaWindows(mode);
-  const eligible = vessels.filter(v => v.status === 'OPEN' && !reportExcluded.has(v.vessel_name) && (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH');
+  const eligible = vessels.filter(v => v.status === 'OPEN' && !isReportStale(v) && !reportExcluded.has(v.vessel_name) && (getEffectiveRoute(v) || 'ECSA FH').toUpperCase() === 'ECSA FH');
 
   let text = `*Tonnage Report — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}*\n`;
 
@@ -14033,7 +14103,8 @@ function applyEcsa(data) {
   save();
   if (typeof renderTable === 'function') renderTable();
   if (typeof updateStats === 'function') updateStats();
-  return `${parsed.length} rows (${r.added} new, ${r.updated} updated${r.autoWithdrawn ? ', ' + r.autoWithdrawn + ' auto-withdrawn' : ''}${r.reopened ? ', ' + r.reopened + ' reopened after fixture' : ''})`;
+  const suspects = (typeof isFixSuspect === 'function') ? vessels.filter(isFixSuspect).length : 0;
+  return `${parsed.length} rows (${r.added} new, ${r.updated} updated${r.autoWithdrawn ? ', ' + r.autoWithdrawn + ' auto-withdrawn' : ''}${r.reopened ? ', ' + r.reopened + ' reopened after fixture' : ''})${suspects ? ` · ⚠ ${suspects} FIXED but still trading — review FAILED? flags` : ''}`;
 }
 
 function applyCargo(data) {
