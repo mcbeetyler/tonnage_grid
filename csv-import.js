@@ -478,6 +478,9 @@ function syncCSVVessels(newVessels, opts) {
       if (existing.date_fixed && nv.open_date && nv.open_date > existing.date_fixed) {
         archiveFixtureResidue(existing);
       }
+      // Her return row has no rate → the sheet says no rate. Don't let a
+      // quote from her previous cycle walk back in with her.
+      if (!rowHasRate(nv)) clearQuoteResidue(existing);
       changed = true;
     } else if (nv.csv_status === '1' && (existing.status === 'FIXED' || existing.status === 'ON SUBS') && !isProtected('status')) {
       // A fixed (or long-stuck on-subs) ship back on the grid: reopen ONLY if her new layday is
@@ -500,6 +503,9 @@ function syncCSVVessels(newVessels, opts) {
         existing.date_fixed = null; existing.fixed_price = null;
         existing.fix_msg = null; existing.charterer = null;
         existing.reopened_at = rowTs;
+        // Fresh position after the round trip — quotes from the cycle she
+        // just completed are dead unless her return row carries a new rate
+        if (!rowHasRate(nv)) clearQuoteResidue(existing);
         reopened++;
         changed = true;
       }
@@ -568,6 +574,28 @@ function archiveFixtureResidue(v) {
   return true;
 }
 
+// A reentering ship's quotes died with her previous cycle. If the sheet row
+// that brings her back carries NO rate, clearing prevents a months-old rate
+// from resurrecting alongside her (sheet is truth: blank rate = no rate).
+// Both offer AND bid side go — a bid on her old position is meaningless now.
+function clearQuoteResidue(v, opts) {
+  const offerOnly = !!(opts && opts.offerOnly);
+  v.hire_offer = null; v.hire_ta = null; v.bb_offer = null; v.bki_eqvt = null;
+  v.offer_updated_at = null;
+  if (!offerOnly) v.bidding_charterer = null;
+  if (v.market_colour && v.market_colour[0]) {
+    const mc = v.market_colour[0];
+    mc.offer_usd = null; mc.p6_offer = null; mc.bb_usd = null;
+    if (!offerOnly) { mc.bid_usd = null; mc.p6_bid = null; }
+  }
+}
+
+// Does this parsed CSV row carry any rate at all?
+function rowHasRate(nv) {
+  return nv.hire_offer != null || nv.hire_ta != null
+    || nv.bki_eqvt != null || nv.bb_offer != null;
+}
+
 // Is this FIXED ship suspiciously still trading on the grid? (>=3 distinct
 // post-fixture days seen, feed-made fix, not dismissed by the user)
 function isFixSuspect(v) {
@@ -592,6 +620,18 @@ function sweepStaleFixtureResidue() {
     const gap = (new Date(String(v.eta_ecsa).slice(0, 10)) - new Date(String(v.date_fixed).slice(0, 10))) / 86400000;
     if (gap > 60 && archiveFixtureResidue(v)) {
       if (v.status === 'ON SUBS') v.status = 'OPEN';
+      swept++;
+    }
+  }
+
+  // Retro-repair: ships that reentered BEFORE quote-clearing existed can be
+  // wearing a rate from their previous cycle (offer stamped before the
+  // reopening). Offer side only — a bid Tyler entered after the reopen has
+  // no reliable timestamp of its own, so bids are left alone here.
+  for (const v of vessels) {
+    if (v.status !== 'OPEN' || !v.reopened_at || !v.offer_updated_at) continue;
+    if (v.offer_updated_at < v.reopened_at) {
+      clearQuoteResidue(v, { offerOnly: true });
       swept++;
     }
   }

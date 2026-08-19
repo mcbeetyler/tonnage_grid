@@ -204,7 +204,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-08-19.3';
+const APP_REV = '2026-08-19.4';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');

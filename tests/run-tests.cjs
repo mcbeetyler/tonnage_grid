@@ -265,6 +265,44 @@ section('csv-import + app');
     A(vessels.find(v => v.vessel_name === 'REAL FIX').status === 'FIXED', 'manual fix untouched');
     A(vessels.find(v => v.vessel_name === 'OLD FIX').status === 'FIXED', 'old fixture untouched');
 
+    // QUOTE RESIDUE: a ship reentering the grid must not resurrect a rate
+    // from her previous cycle when her return row carries no rate
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'PACIFIC RUNNER', status: 'FIXED', date_fixed: '2026-05-01',
+      fixed_price: 21000, hire_offer: 18000, hire_ta: 17000, bki_eqvt: 18500, csv_updated: '2026-05-01T00:00:00Z',
+      offer_updated_at: '2026-04-20T00:00:00Z',
+      market_colour: [{ route: 'ECSA FH', offer_usd: 18000, p6_offer: 18500, bid_usd: 17500, p6_bid: 17800 }] });
+    syncCSVVessels(parseCSVVessels([roHdr, roRow].join('\\n')).vessels);   // reopens (no rate cols)
+    const qr = vessels.find(v => v.vessel_name === 'PACIFIC RUNNER');
+    A(qr.status === 'OPEN' && qr.hire_offer === null && qr.hire_ta === null && qr.bki_eqvt === null, 'reopen w/o rate clears quote residue');
+    A(qr.market_colour[0].p6_offer === null && qr.market_colour[0].p6_bid === null, 'both market_colour sides cleared');
+    // ...but a return row WITH a rate keeps it
+    const roRated = ['09-Jul 10:00', 'Rated Return', '82,000', 'Jan-2018', '05-Sep', '03-Oct', 'OWNERCO', '1', '$19,500'].join('\\t');
+    const roHdrR = ['UPDATE', 'VESSEL', 'DWT', 'AGE', 'LAYDAY', 'ETA', 'OWNER', 'STATUS', 'HIRE (offer)'].join('\\t');
+    vessels.push({ vessel_name: 'RATED RETURN', status: 'FIXED', date_fixed: '2026-05-01', hire_offer: 15000, csv_updated: '2026-05-01T00:00:00Z' });
+    syncCSVVessels(parseCSVVessels([roHdrR, roRated].join('\\n')).vessels);
+    const rr2 = vessels.find(v => v.vessel_name === 'RATED RETURN');
+    A(rr2.status === 'OPEN' && rr2.hire_offer === 19500, 'reopen WITH rate keeps the fresh rate');
+    // WITHDRAWN → OPEN reentry: same rule
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'PACIFIC RUNNER', status: 'WITHDRAWN', hire_offer: 18000,
+      csv_updated: '2026-05-01T00:00:00Z', market_colour: [{ route: 'ECSA FH', p6_offer: 18500 }] });
+    syncCSVVessels(parseCSVVessels([roHdr, roRow].join('\\n')).vessels);
+    const wq = vessels.find(v => v.vessel_name === 'PACIFIC RUNNER');
+    A(wq.status === 'OPEN' && wq.hire_offer === null && wq.market_colour[0].p6_offer === null, 'un-withdraw w/o rate clears quotes');
+    // Retro sweep: already-reopened ship wearing a pre-reopen offer gets cleaned
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'LEGACY GHOST RATE', status: 'OPEN', reopened_at: '2026-07-01T00:00:00Z',
+      offer_updated_at: '2026-04-01T00:00:00Z', hire_offer: 16000,
+      market_colour: [{ route: 'ECSA FH', offer_usd: 16000, p6_offer: 16200, p6_bid: 15900 }] });
+    vessels.push({ vessel_name: 'FRESH QUOTE', status: 'OPEN', reopened_at: '2026-07-01T00:00:00Z',
+      offer_updated_at: '2026-07-05T00:00:00Z', hire_offer: 17000 });
+    sweepStaleFixtureResidue();
+    const lg = vessels.find(v => v.vessel_name === 'LEGACY GHOST RATE');
+    A(lg.hire_offer === null && lg.market_colour[0].p6_offer === null, 'retro sweep clears pre-reopen offer');
+    A(lg.market_colour[0].p6_bid === 15900, 'retro sweep leaves desk bids alone');
+    A(vessels.find(v => v.vessel_name === 'FRESH QUOTE').hire_offer === 17000, 'post-reopen quote survives sweep');
+
     // FIX-AND-FAIL: a genuinely fixed ship LEAVES the grid — one still
     // trading there on 3+ distinct days after her fixture gets flagged
     // as a suspected failed-on-subs (user resolves via the FAILED? chip)
