@@ -269,6 +269,7 @@ function render() {
     const shown = rows.filter(r => !w ? true : visible(r));
     const taHot = !!isTa;
     thead.innerHTML = `<tr><th>Status</th><th>Vessel</th><th>DWT/Blt</th><th>Dely</th><th>ETA ECSA</th><th>Owner</th>
+      <th title="Bunkers on delivery (IFO/MDO) from the grid">BOD</th>
       <th style="text-align:right" title="P6-equivalent offer — the universal comparator">Offer P6</th>
       <th style="text-align:right${taHot ? ';color:var(--accent)' : ''}" title="TA offer from the grid — a ship quoting TA has declared interest in going that way${taHot ? '. TA cargo selected: sorted on this column' : ''}">Hire TA${taHot ? ' ▾' : ''}</th>
       <th style="text-align:right">Bid P6</th><th style="text-align:right">Spread</th><th style="text-align:right">vs Canc.</th></tr>`;
@@ -283,13 +284,14 @@ function render() {
         <td>${esc(v.delivery_basis || '—')}</td>
         <td style="font-family:var(--mono);font-size:12px;font-weight:600">${v.eta_ecsa ? fmtD(shipEta(v)) : '—'}${onw}</td>
         <td>${esc(v.owner || v.source || '—')}</td>
+        <td style="font-family:var(--mono);font-size:11px" title="Bunkers on delivery (IFO/MDO)">${esc(v.bunker || (v.bod_ifo != null ? `${v.bod_ifo}/${v.bod_mdo ?? '?'}` : '—'))}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:600">${fmtK(r.p6offer)}${r.rawOffer != null && r.p6offer != null ? `<span style="color:var(--text-dim);font-weight:400" title="raw offer"> (${fmtK(r.rawOffer)})</span>` : ''}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px${taHot ? ';font-weight:700;color:var(--accent)' : ''}">${fmtK(r.hireTa)}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px">${fmtK(r.p6bid)}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px;color:${r.spread != null && r.spread <= 1000 ? 'var(--green)' : 'var(--text)'}"
             title="Offer minus bid — how far apart the two sides are">${r.spread == null ? '—' : fmtK(r.spread)}</td>
         ${fitCells(r)}</tr>`;
-    }).join('') : `<tr><td colspan="11" style="padding:18px;color:var(--text-dim)">${cargo ? 'No ships fit — toggle "Show all" to see the misses.' : 'No open ships on the board.'}</td></tr>`;
+    }).join('') : `<tr><td colspan="12" style="padding:18px;color:var(--text-dim)">${cargo ? 'No ships fit — toggle "Show all" to see the misses.' : 'No open ships on the board.'}</td></tr>`;
     renderStats(w ? rows : []);
   } else {
     const { ship, eta, rows } = computeShip2Cargo();
