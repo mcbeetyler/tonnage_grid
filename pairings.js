@@ -47,9 +47,9 @@ const BASIS_PORT_ADJ = {
   // Panama
   'cristobal': 7.5, 'colon': 7.5, 'balboa': 8.5, 'panama': 7.5,
   // Desk shorthand seen in the cargo book
-  'pdm': 6.5, 'up river arg': 2, 'north brazil': 2, 'n brazil': 2, 'amazon': 2.5,
+  'pdm': 2, 'up river arg': 2, 'north brazil': 2, 'n brazil': 2, 'amazon': 2.5,   // pdm ≡ ponta da madeira ≡ itaqui
 };
-const BASIS_ZONE_ADJ = { 'ECSA': 0.5, 'NCSA': 5.5 };
+const BASIS_ZONE_ADJ = { 'ECSA': 0.5, 'NCSA': 3 };   // NCSA = desk figure: ~3d extra vs Santos
 
 function basisNorm(p) {
   return String(p || '').toLowerCase().replace(/\(.*?\)/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -85,7 +85,7 @@ let PR = { initialised: false };
 let ui = Object.assign({
   mode: 'cargo2ship',       // or 'ship2cargo'
   cargoId: '', shipName: '',
-  manFrom: '', manTo: '',   // manual date window — search ships with no cargo attached
+  manFrom: '', manTo: '', manBasis: '',   // manual date window + load basis — search ships with no cargo attached
   minDwt: '', maxDwt: '', maxAge: '',
   waitTolDays: 2, tightTolDays: 2, etaAdjDays: 0, autoBasis: true,
   ecsaOnly: true, showAll: false,
@@ -146,7 +146,12 @@ function computeCargo2Ship() {
       manual: true,
     };
   }
-  const basis = (ui.autoBasis && cargo) ? loadBasisAdj(cargo) : { days: 0, label: null };
+  // Basis: cargo selected → auto from her load port. Manual window → the
+  // Load basis dropdown (e.g. NCSA loader ≈ Santos +3d, desk figure).
+  const manDays = parseFloat(ui.manBasis) || 0;
+  const basis = (ui.autoBasis && cargo) ? loadBasisAdj(cargo)
+    : (!cargo && manDays) ? { days: manDays, label: `manual basis +${manDays}d vs Santos` }
+    : { days: 0, label: null };
   const opts = { waitTolDays: ui.waitTolDays, tightTolDays: ui.tightTolDays };
   const minDwt = parseFloat(ui.minDwt) || 0;
   const maxDwt = parseFloat(ui.maxDwt) || Infinity;
@@ -247,13 +252,13 @@ function render() {
     const { cargo, window: w, rows, basis, isTa } = computeCargo2Ship();
     // A selected cargo's laycan outranks the manual window — grey the manual
     // inputs so a leftover window can't look like it's still driving
-    for (const id of ['pr_manFrom', 'pr_manTo']) {
+    for (const id of ['pr_manFrom', 'pr_manTo', 'pr_manBasis']) {
       const el = document.getElementById(id);
       if (el) { el.style.opacity = cargo ? '.4' : '1'; el.title = cargo ? 'Inactive — the selected cargo’s laycan is driving. Clear the cargo to use this window.' : ''; }
     }
     if (!cargo && w && w.manual) {
       const f = w.from ? fmtD(w.from) : '…', t = w.to ? fmtD(w.to) : '…';
-      note.textContent = `Manual window ${f} – ${t}, no cargo attached — raw declared ETAs (no load-basis adjustment).`;
+      note.textContent = `Manual window ${f} – ${t}, no cargo attached — ${basis && basis.days ? `ETAs adjusted +${basis.days}d for load basis.` : 'raw declared ETAs (Santos basis, no adjustment).'}`;
       note.style.color = 'var(--text-dim)';
     }
     else if (!cargo) note.textContent = 'Pick a cargo — or just set a date window and/or DWT range to browse ships.';
@@ -423,6 +428,15 @@ function buildUI() {
             <input type="date" id="pr_manFrom" value="${esc(ui.manFrom)}">
             <input type="date" id="pr_manTo" value="${esc(ui.manTo)}">
           </div></div>
+        <div class="pr-field" id="pr_manBasisWrap" title="Where is she actually loading? Board ETAs are bss Santos — pick the load area and every ship's ETA shifts by the extra steaming. Only applies with a manual window; a selected cargo uses auto basis from her load port.">
+          <label>Load basis</label>
+          <select id="pr_manBasis" style="width:130px">
+            <option value=""${!ui.manBasis ? ' selected' : ''}>Santos (bss)</option>
+            <option value="2"${ui.manBasis === '2' ? ' selected' : ''}>N Brazil +2d</option>
+            <option value="3"${ui.manBasis === '3' ? ' selected' : ''}>NCSA +3d</option>
+            <option value="6.5"${ui.manBasis === '6.5' ? ' selected' : ''}>Carib rim +6.5d</option>
+            <option value="7.5"${ui.manBasis === '7.5' ? ' selected' : ''}>Panama +7.5d</option>
+          </select></div>
         <div class="pr-field" id="pr_dwtWrap"><label>DWT range</label>
           <div style="display:flex;gap:4px">
             <input type="number" id="pr_minDwt" placeholder="min" style="width:80px" value="${esc(ui.minDwt)}">
@@ -465,9 +479,9 @@ function buildUI() {
     if (ui.cargoId && window.LaycanMatcherSelectCargo) window.LaycanMatcherSelectCargo(ui.cargoId);
   });
   document.getElementById('pr_clear').addEventListener('click', () => {
-    ui.cargoId = ''; ui.manFrom = ''; ui.manTo = ''; ui.minDwt = ''; ui.maxDwt = ''; ui.maxAge = ''; ui.etaAdjDays = 0;
+    ui.cargoId = ''; ui.manFrom = ''; ui.manTo = ''; ui.manBasis = ''; ui.minDwt = ''; ui.maxDwt = ''; ui.maxAge = ''; ui.etaAdjDays = 0;
     saveUi();
-    for (const [id, val] of [['pr_cargoPick', ''], ['pr_manFrom', ''], ['pr_manTo', ''], ['pr_minDwt', ''], ['pr_maxDwt', ''], ['pr_maxAge', ''], ['pr_etaAdj', 0]]) {
+    for (const [id, val] of [['pr_cargoPick', ''], ['pr_manFrom', ''], ['pr_manTo', ''], ['pr_manBasis', ''], ['pr_minDwt', ''], ['pr_maxDwt', ''], ['pr_maxAge', ''], ['pr_etaAdj', 0]]) {
       const el = document.getElementById(id);
       if (el) el.value = val;
     }
@@ -482,6 +496,7 @@ function buildUI() {
     if (hit || t === '') { ui.shipName = hit ? hit.vessel_name : ''; saveUi(); render(); }
   });
   on('pr_manFrom', 'change', e => { ui.manFrom = e.target.value; saveUi(); render(); });
+  on('pr_manBasis', 'change', e => { ui.manBasis = e.target.value; saveUi(); render(); });
   on('pr_manTo', 'change', e => { ui.manTo = e.target.value; saveUi(); render(); });
   on('pr_minDwt', 'input', e => { ui.minDwt = e.target.value; saveUi(); render(); });
   on('pr_maxDwt', 'input', e => { ui.maxDwt = e.target.value; saveUi(); render(); });

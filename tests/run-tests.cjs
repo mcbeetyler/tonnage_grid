@@ -559,8 +559,8 @@ section('pairings');
   // Load-basis adjustment: Santos-basis ETA corrected for the actual load
   A(p._test.loadBasisAdj({ load: 'santos' }).days === 0, 'santos basis 0');
   A(p._test.loadBasisAdj({ load: 'itaqui' }).days === 2, 'n brazil +2');
-  A(p._test.loadBasisAdj({ load: 'pdm' }).days === 6.5 && p._test.loadBasisAdj({ load: 'puerto drummond' }).days === 6.5, 'caribbean +6.5 incl pdm shorthand');
-  A(p._test.loadBasisAdj({ load: 'ncsa (int amazon)' }).days === 5.5, 'ncsa zone token fallback');
+  A(p._test.loadBasisAdj({ load: 'pdm' }).days === 2 && p._test.loadBasisAdj({ load: 'puerto drummond' }).days === 6.5, 'pdm ≡ N Brazil +2; caribbean rim +6.5');
+  A(p._test.loadBasisAdj({ load: 'ncsa (int amazon)' }).days === 3, 'ncsa zone token fallback = desk +3d');
   A(p._test.loadBasisAdj({ load: 'rotterdam' }).days === null, 'out-of-reach load warns');
   // FIT flips when basis applied: cargo laycan tight against unadjusted ETA
   p._test.setGlobals({
