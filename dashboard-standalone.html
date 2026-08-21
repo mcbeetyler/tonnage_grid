@@ -3989,7 +3989,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-08-19.9';
+const APP_REV = '2026-08-19.10';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');
@@ -12541,6 +12541,55 @@ function computeCargo2Ship() {
   return { cargo, window: w, rows, basis, isTa };
 }
 
+// ─── WhatsApp export ─────────────────────────────────────────────────────────
+// Principal-facing: ships that make the laycan (FIT/EARLY, TIGHT tagged) AND
+// have an offer. *bold* = title + ship blocks, _italic_ = context lines,
+// facts plain. Internal comments/notes are NEVER included.
+function buildPairingsText() {
+  const { cargo, window: w, rows, basis, isTa } = computeCargo2Ship();
+  if (!w) return null;
+  const px = r => isTa ? r.hireTa : r.p6offer;
+  const picks = rows.filter(r =>
+    (r.status === 'FIT' || r.status === 'EARLY' || r.status === 'TIGHT')
+    && !r.reason && px(r) != null);
+  if (!picks.length) return null;
+
+  const money = n => n != null ? 'usd ' + Math.round(n).toLocaleString('en-US') : '';
+  const lay = `${w.from ? fmtD(w.from) : '…'} - ${w.to ? fmtD(w.to) : '…'}`;
+  const where = cargo && cargo.load ? cargo.load.trim().toUpperCase()
+    : (basis && basis.days ? `LOAD BSS SANTOS +${basis.days}D` : 'ECSA');
+
+  const lines = [`*PANAMAX TONNAGE — ${where}*`, `_laycan ${lay}_`];
+  if (basis && basis.days) lines.push(`_etas shown at the load area (+${basis.days}d vs santos)_`);
+  lines.push('');
+
+  for (const r of picks) {
+    const v = r.v;
+    const dwtYr = `${v.dwt ? Math.round(v.dwt / 1000) + 'k' : '?'} / ${v.build_year || '?'}${v.scrubber ? ' / scrubber' : ''}`;
+    const offer = isTa
+      ? `${money(r.hireTa)} ta${r.p6offer != null ? ` (${money(r.p6offer)} p6)` : ''}`
+      : `${money(r.p6offer)} p6${r.rawOffer != null ? ` (${money(r.rawOffer)} quoted)` : ''}`;
+    lines.push(`*${(v.vessel_name || '').toUpperCase()}* — ${dwtYr}`);
+    lines.push(`dely ${(v.delivery_basis || 'tbn').toLowerCase()} | eta ${r.eta ? fmtD(r.eta).toLowerCase() : '?'}${v.eta_type === 'ONW' ? ' onw' : ''}${r.status === 'TIGHT' ? ' _(tight)_' : ''}`);
+    lines.push(`${offer}${v.owner ? ' | ' + v.owner : ''}`);
+    lines.push('');
+  }
+  return lines.join('\n').trimEnd() + '\n';
+}
+
+function prCopy() {
+  if (ui.mode !== 'cargo2ship') { alert('Switch to Cargo → Ships to export a tonnage list.'); return; }
+  const text = buildPairingsText();
+  if (!text) { alert('Nothing to export — need a laycan (cargo or manual window) and at least one fitting ship with an offer.'); return; }
+  const done = () => {
+    const b = document.getElementById('pr_copy');
+    if (b) { const t = b.textContent; b.textContent = 'Copied ✓'; setTimeout(() => { b.textContent = t; }, 1500); }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => prompt('Copy manually:', text));
+  } else prompt('Copy manually:', text);
+}
+
 function computeShip2Cargo() {
   const ship = openShips().find(v => v.vessel_name === ui.shipName) || null;
   const eta = ship ? shipEta(ship) : null;
@@ -12631,7 +12680,11 @@ function render() {
     }
     const shown = rows.filter(r => !w ? true : visible(r));
     const taHot = !!isTa;
-    thead.innerHTML = `<tr><th>Status</th><th>Vessel</th><th>DWT/Blt</th><th>Dely</th><th>ETA ECSA</th><th>Owner</th>
+    const basisDays = basis && basis.days ? basis.days : 0;
+    const etaHead = basisDays
+      ? `ETA load (+${basisDays}d)`
+      : 'ETA ECSA';
+    thead.innerHTML = `<tr><th>Status</th><th>Vessel</th><th>DWT/Blt</th><th>Dely</th><th title="${basisDays ? `Santos-basis ETA shifted +${basisDays}d for the load area — this is her ETA at the load port` : 'Owner-declared ETA bss Santos'}">${etaHead}</th><th>Owner</th>
       <th title="Bunkers on delivery (IFO/MDO) from the grid">BOD</th>
       <th style="text-align:right" title="P6-equivalent offer — the universal comparator">Offer P6</th>
       <th style="text-align:right${taHot ? ';color:var(--accent)' : ''}" title="TA offer from the grid — a ship quoting TA has declared interest in going that way${taHot ? '. TA cargo selected: sorted on this column' : ''}">Hire TA${taHot ? ' ▾' : ''}</th>
@@ -12645,7 +12698,7 @@ function render() {
         <td style="font-weight:600;color:var(--text-bright)">${esc(v.vessel_name)}${v.notes ? ` <span class="pr-info" title="${esc(v.notes)}">ⓘ</span>` : ''}</td>
         <td style="font-family:var(--mono);font-size:12px">${v.dwt ? Math.round(v.dwt / 1000) + 'k' : '?'}/${v.build_year || '?'}</td>
         <td>${esc(v.delivery_basis || '—')}</td>
-        <td style="font-family:var(--mono);font-size:12px;font-weight:600">${v.eta_ecsa ? fmtD(shipEta(v)) : '—'}${onw}</td>
+        <td style="font-family:var(--mono);font-size:12px;font-weight:600" title="${basisDays ? `board ETA ${v.eta_ecsa ? fmtD(shipEta(v)) : '—'} bss Santos, +${basisDays}d to the load` : ''}">${r.eta ? fmtD(r.eta) : '—'}${onw}</td>
         <td>${esc(v.owner || v.source || '—')}</td>
         <td style="font-family:var(--mono);font-size:11px" title="Bunkers on delivery (IFO/MDO)">${esc(v.bunker || (v.bod_ifo != null ? `${v.bod_ifo}/${v.bod_mdo ?? '?'}` : '—'))}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:600">${fmtK(r.p6offer)}${r.rawOffer != null && r.p6offer != null ? `<span style="color:var(--text-dim);font-weight:400" title="raw offer"> (${fmtK(r.rawOffer)})</span>` : ''}</td>
@@ -12804,6 +12857,8 @@ function buildUI() {
           <input type="number" id="pr_maxAge" placeholder="any" style="width:70px" value="${esc(ui.maxAge)}"></div>
         <button id="pr_clear" title="Clear the cargo, ETA window, DWT range and ± adj — back to a blank search"
           style="align-self:flex-end;border:1px solid var(--border);background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;padding:7px 14px;color:var(--text-dim)">Clear</button>
+        <button id="pr_copy" title="Copy a WhatsApp-ready tonnage list: ships fitting the laycan WITH an offer. ETAs at the load area, no internal comments."
+          style="align-self:flex-end;border:1px solid var(--border);background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;padding:7px 14px">WhatsApp ⧉</button>
         <div class="pr-field"><label title="Max idle days before layfrom to still count as FITS">Max wait (d)</label>
           <input type="number" id="pr_waitTol" step="0.5" min="0" style="width:70px" value="${ui.waitTolDays}"></div>
         <div class="pr-field"><label>Tight tolerance (d)</label>
@@ -12848,6 +12903,7 @@ function buildUI() {
     render();
   });
   if (ui.cargoId) { const b = document.getElementById('pr_toMatcher'); if (b) b.style.display = ''; }
+  on('pr_copy', 'click', prCopy);
   on('pr_shipPick', 'input', e => {
     const t = e.target.value.trim();
     const hit = openShips().find(v => (v.vessel_name || '').toLowerCase() === t.toLowerCase());
@@ -12907,7 +12963,7 @@ if (typeof module !== 'undefined' && module.exports) {
         if (g.cargoHistory) global.cargoHistory = g.cargoHistory;
         if (g.cargoCurrent) global.cargoCurrent = g.cargoCurrent;
       },
-      computeCargo2Ship, computeShip2Cargo, isEcsa, loadBasisAdj,
+      computeCargo2Ship, computeShip2Cargo, isEcsa, loadBasisAdj, buildPairingsText,
     },
   };
 }

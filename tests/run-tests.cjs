@@ -587,6 +587,30 @@ section('pairings');
   A(mw.window && mw.window.manual, 'manual window active without cargo');
   A(mw.rows.length === 2, 'dwt filter drops the 63k');
 
+  // Manual load basis (NCSA loader): +3d shifts every ETA before tiering,
+  // and the WhatsApp export shows the shifted date
+  p._test.setGlobals({
+    vessels: [{ vessel_name: 'NCSA CANDIDATE', status: 'OPEN', dwt: 82000, build_year: 2019,
+      owner: 'OwnerCo', delivery_basis: 'APS GIB', eta_ecsa: '2026-08-13',
+      market_colour: [{ p6_offer: 21000, offer_usd: 21500 }] }],
+    cargoHistory: [], cargoCurrent: [],
+  });
+  p._test.setUi({ mode: 'cargo2ship', cargoId: '', manFrom: '2026-08-15', manTo: '2026-08-17',
+    manBasis: '3', minDwt: '', maxDwt: '', maxAge: '', autoBasis: true, etaAdjDays: 0 });
+  const nb = p._test.computeCargo2Ship();
+  A(nb.basis.days === 3, 'manual NCSA basis +3d applied');
+  A(nb.rows[0].eta.toISOString().slice(0, 10) === '2026-08-16', 'ETA shifted to the load-port date');
+  A(nb.rows[0].status === 'FIT', 'fits the NCSA laycan after the shift');
+  const wt = p._test.buildPairingsText();
+  A(wt && /\*NCSA CANDIDATE\*/.test(wt) && /21,000 p6/.test(wt) && /21,500 quoted/.test(wt), 'whatsapp export: ship, P6 + raw offer');
+  A(/\+3d vs santos/.test(wt) && /OwnerCo/.test(wt), 'export notes the basis shift + owner');
+  // Ships without an offer never make the export
+  p._test.setGlobals({
+    vessels: [{ vessel_name: 'NO OFFER', status: 'OPEN', dwt: 82000, eta_ecsa: '2026-08-13', market_colour: [{}] }],
+    cargoHistory: [], cargoCurrent: [],
+  });
+  A(p._test.buildPairingsText() === null, 'no offers -> nothing to export');
+
   // Age filter: old ships drop, unknown build years stay visible
   p._test.setGlobals({
     vessels: [
