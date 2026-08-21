@@ -602,8 +602,8 @@ section('pairings');
   A(nb.rows[0].eta.toISOString().slice(0, 10) === '2026-08-16', 'ETA shifted to the load-port date');
   A(nb.rows[0].status === 'FIT', 'fits the NCSA laycan after the shift');
   const wt = p._test.buildPairingsText();
-  A(wt && /\*NCSA CANDIDATE\*/.test(wt) && /21,000 p6/.test(wt) && /21,500 quoted/.test(wt), 'whatsapp export: ship, P6 + raw offer');
-  A(/\+3d vs santos/.test(wt) && /OwnerCo/.test(wt), 'export notes the basis shift + owner');
+  A(wt && /\*NCSA CANDIDATE 82\/19\*/.test(wt) && /P6: \$21,000/.test(wt), 'whatsapp export: reports-style ship line + P6');
+  A(/\+3d vs Santos/.test(wt) && /OWNERCO/.test(wt) && /ETA: 16/.test(wt), 'export: basis note, owner caps, load-port ETA');
   // Ships without an offer never make the export
   p._test.setGlobals({
     vessels: [{ vessel_name: 'NO OFFER', status: 'OPEN', dwt: 82000, eta_ecsa: '2026-08-13', market_colour: [{}] }],

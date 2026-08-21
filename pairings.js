@@ -196,27 +196,30 @@ function buildPairingsText() {
     && !r.reason && px(r) != null);
   if (!picks.length) return null;
 
-  const money = n => n != null ? 'usd ' + Math.round(n).toLocaleString('en-US') : '';
-  const lay = `${w.from ? fmtD(w.from) : '…'} - ${w.to ? fmtD(w.to) : '…'}`;
-  const where = cargo && cargo.load ? cargo.load.trim().toUpperCase()
-    : (basis && basis.days ? `LOAD BSS SANTOS +${basis.days}D` : 'ECSA');
-
-  const lines = [`*PANAMAX TONNAGE — ${where}*`, `_laycan ${lay}_`];
-  if (basis && basis.days) lines.push(`_etas shown at the load area (+${basis.days}d vs santos)_`);
-  lines.push('');
+  // Header: the laycan window (cargo's own string when we have it) + load
+  const lay = cargo && cargo.laycan ? cargo.laycan.trim()
+    : `${w.from ? fmtD(w.from) : '…'} - ${w.to ? fmtD(w.to) : '…'}`;
+  const where = cargo && cargo.load ? ` — ${cargo.load.trim().toUpperCase()}` : '';
+  let text = `*${lay}${where}*\n`;
+  if (basis && basis.days) text += `_ETAs at the load area (+${basis.days}d vs Santos)_\n`;
 
   for (const r of picks) {
     const v = r.v;
-    const dwtYr = `${v.dwt ? Math.round(v.dwt / 1000) + 'k' : '?'} / ${v.build_year || '?'}${v.scrubber ? ' / scrubber' : ''}`;
-    const offer = isTa
-      ? `${money(r.hireTa)} ta${r.p6offer != null ? ` (${money(r.p6offer)} p6)` : ''}`
-      : `${money(r.p6offer)} p6${r.rawOffer != null ? ` (${money(r.rawOffer)} quoted)` : ''}`;
-    lines.push(`*${(v.vessel_name || '').toUpperCase()}* — ${dwtYr}`);
-    lines.push(`dely ${(v.delivery_basis || 'tbn').toLowerCase()} | eta ${r.eta ? fmtD(r.eta).toLowerCase() : '?'}${v.eta_type === 'ONW' ? ' onw' : ''}${r.status === 'TIGHT' ? ' _(tight)_' : ''}`);
-    lines.push(`${offer}${v.owner ? ' | ' + v.owner : ''}`);
-    lines.push('');
+    const specs = `${v.dwt ? (v.dwt / 1000).toFixed(0) : '?'}/${v.build_year ? String(v.build_year).slice(2) : '?'}`;
+    let line1 = `*${v.vessel_name || '?'} ${specs}${v.scrubber === true ? ' SCR' : ''}*${r.status === 'TIGHT' ? ' [TIGHT]' : ''}`;
+    if (v.owner) line1 += ` — ${v.owner.toUpperCase()}`;
+    const delivery = v.delivery_basis || v.current_position || '';
+    if (delivery) line1 += ` — ${delivery}`;
+    if (r.eta) line1 += ` — ETA: ${fmtD(r.eta)}${v.eta_type === 'ONW' ? ' (ONW)' : ''}`;
+
+    const parts = [];
+    if (r.p6offer != null) parts.push(`P6: $${r.p6offer.toLocaleString()}`);
+    if (isTa && r.hireTa != null) parts.push(`TA: $${r.hireTa.toLocaleString()}`);
+    if (v.hire_offer) parts.push(`Hire: $${v.hire_offer.toLocaleString()}`);
+    if (v.bb_offer) parts.push(`BB: $${v.bb_offer.toLocaleString()}`);
+    text += line1 + '\n' + parts.join(' | ') + '\n';
   }
-  return lines.join('\n').trimEnd() + '\n';
+  return text;
 }
 
 function prCopy() {
