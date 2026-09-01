@@ -1,9 +1,14 @@
 /* ============================================================
    csv-import.js — CSV/TSV grid sync engine
-   Extracted verbatim from app.js. Loaded as a classic script
-   BEFORE app.js — top-level declarations share the global
-   lexical scope, so handleParse() and inline onclick handlers
-   keep working unchanged.
+   Loaded as a classic script BEFORE app.js — top-level
+   declarations share the global lexical scope.
+
+   Owns the sheet-truth rules:
+   · parse (headers by name, desk date/dwt/age formats)
+   · sync (freshness arbitration vs manual field_overrides)
+   · lifecycle (withdraw/return, reopen after fixture, fixture
+     marking + retraction, fix-and-fail suspects, quote-residue
+     clearing, self-healing sweeps)
    ============================================================ */
 
 // ─── CSV/TSV Paste Parser ───────────────────────────────────────────────────
@@ -142,26 +147,6 @@ function tokenizeCSV(text, delim) {
     if (row.some(f => f && f.trim())) rows.push(row);
   }
   return rows;
-}
-
-// Simple CSV splitter that respects double-quoted fields (for single-line usage)
-function splitCSVRow(line, delim) {
-  if (delim === '\t') return line.split('\t');
-  const out = [];
-  let cur = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '"') {
-      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; continue; }
-      inQuotes = !inQuotes;
-      continue;
-    }
-    if (c === delim && !inQuotes) { out.push(cur); cur = ''; continue; }
-    cur += c;
-  }
-  out.push(cur);
-  return out;
 }
 
 function parseMoney(s) {

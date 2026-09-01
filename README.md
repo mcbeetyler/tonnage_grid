@@ -16,7 +16,9 @@ This tool:
 1. **Parses** raw WhatsApp tonnage messages into structured vessel objects
 2. **Displays** vessels on a tonnage board with key fields visible at a glance
 3. **Normalises** rate intelligence to P6 equivalent (the universal comparator across vessels)
-4. **Tracks status** as vessels go from Open → Fixed / Failed / Withdrawn
+4. **Tracks the lifecycle** OPEN → ON SUBS → FIXED / FAILED / WITHDRAWN / IN HOUSE,
+   with automatic reopening after Pacific rounds, fixture retraction, fix-and-fail
+   flagging, and quote-residue clearing when a ship reenters the grid
 
 ---
 
@@ -33,12 +35,18 @@ tonnage_grid/
 ├── fit-utils.js            ← shared FIT/EARLY/TIGHT laycan-fit logic
 ├── laycan-matcher.js       ← Laycan Matcher tab (NATL positions vs cargo laycans)
 │     na-seed.js            ← seed snapshot of NORTH ATLANTIC TONNAGE.xlsx
+├── natl-board.js           ← NATL Board tab (global view, multi-basin, WhatsApp export,
+│                             per-basin count history + supply index)
+├── zones.js                ← port → zone mapping + distance-estimate clusters
+├── scrubber-calc.js        ← scrubber economics engine + tab (honest all-in benefit)
+├── overview.js             ← morning overview strip
+├── report.js               ← Tonnage Report tab (best offers/bids per ETA window)
 ├── pairings.js             ← Pairings tab (board ships ↔ cargo book, both ways)
 ├── supply.js               ← Supply tab (rolling depth curve + price ladder)
 │     curves-seed.js        ← seed history from TBM_ECSA Curves tab
 ├── feeds.js                ← applies Google Sheets feeds (see FEEDS_SETUP.md)
 ├── apps-script.gs          ← the read-only Apps Script that pushes the feeds
-├── voyages.js / voyage-estimator.js / voyageCalc.js / report.js / market.js /
+├── voyages.js / voyage-estimator.js / voyageCalc.js / market.js /
 │   participants.js         ← remaining tabs
 ├── api/                    ← Vercel serverless: vessels (rev-guarded KV sync),
 │                             cargo, voyages, import (feed drop-box), parse (AI)
@@ -59,7 +67,7 @@ works too — server features degrade gracefully to localStorage.
 **Data in** (any of):
 - Google Sheets feeds every 30 min via Apps Script — see `FEEDS_SETUP.md`
 - Paste the ECSA grid CSV/TSV into the Tonnage Board input (auto-detected)
-- Drag the NORTH ATLANTIC TONNAGE xlsx onto the Laycan Matcher
+- (NATL positions arrive via the feed; the old xlsx upload box is retired)
 - Paste the cargo book into the Cargo Book tab
 - Paste WhatsApp position messages (AI-parsed server-side)
 

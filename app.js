@@ -176,8 +176,6 @@ function saveColumns() {
   localStorage.setItem('pt_col_order', JSON.stringify(columnOrder));
   localStorage.setItem('pt_col_hidden', JSON.stringify([...hiddenColumns]));
 }
-function colVis(col) { return !hiddenColumns.has(col); }
-
 // ─── Formatting ──────────────────────────────────────────────────────────────
 
 function fmtDate(iso) {
@@ -204,7 +202,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-08-19.12';
+const APP_REV = '2026-08-19.13';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');
@@ -1070,11 +1068,6 @@ function closeChat() {
   document.getElementById('chatOverlay').classList.remove('open');
 }
 
-function clearChat() {
-  chatHistory = [];
-  renderChat();
-}
-
 function handleChatKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -1455,49 +1448,6 @@ function handleParseRegex() {
   }
 }
 
-function mergeMarketColour(existing, incoming, now) {
-  // Offers: always take the latest (owner has updated their ask)
-  // Bids: keep highest, unless a fresh offer accompanies this message (means market has moved)
-  const exMC = existing.market_colour && existing.market_colour[0];
-  const inMC = incoming.market_colour && incoming.market_colour[0];
-  if (!inMC) return; // nothing to merge
-
-  const hasNewOffer = inMC.offer_usd != null || inMC.p6_offer != null;
-  const hasNewBid   = inMC.bid_usd  != null || inMC.p6_bid   != null;
-
-  if (!exMC) {
-    existing.market_colour = incoming.market_colour;
-    if (hasNewOffer) existing.offer_updated_at = now;
-    if (hasNewBid)   existing.bid_updated_at   = now;
-    return;
-  }
-
-  // Offer — always overwrite with latest
-  if (hasNewOffer) {
-    exMC.offer_usd  = inMC.offer_usd  ?? exMC.offer_usd;
-    exMC.p6_offer   = inMC.p6_offer   ?? exMC.p6_offer;
-    exMC.bb_usd     = inMC.bb_usd     ?? exMC.bb_usd;
-    // Sync hire_offer top-level field (what the board displays)
-    if (inMC.offer_usd != null) existing.hire_offer = inMC.offer_usd;
-    if (inMC.bb_usd != null) existing.bb_offer = inMC.bb_usd;
-    existing.offer_updated_at = now;
-  }
-
-  // Bid — update if: new bid is higher, OR a fresh offer came with this message (market moved)
-  if (hasNewBid) {
-    const newBid = inMC.p6_bid ?? inMC.bid_usd ?? 0;
-    const oldBid = exMC.p6_bid ?? exMC.bid_usd ?? 0;
-    if (newBid >= oldBid || hasNewOffer) {
-      exMC.bid_usd = inMC.bid_usd ?? exMC.bid_usd;
-      exMC.p6_bid  = inMC.p6_bid  ?? exMC.p6_bid;
-      existing.bid_updated_at = now;
-    }
-  }
-
-  // Route — update if incoming has one
-  if (inMC.route) exMC.route = inMC.route;
-}
-
 function handleAdd() {
   if (!pendingParsed) return;
   const now = new Date().toISOString();
@@ -1765,14 +1715,6 @@ function setVesselRoute(idx, route) {
   touchVessel(idx);
   save();
   renderTable();
-}
-
-// Backward-compat: cycleStatus still exists for any code that calls it,
-// but the UI now picks an exact target via setVesselStatus().
-function cycleStatus(idx) {
-  const cur = vessels[idx].status || 'OPEN';
-  const next = VESSEL_STATUSES[(VESSEL_STATUSES.indexOf(cur) + 1) % VESSEL_STATUSES.length];
-  setVesselStatus(idx, next);
 }
 
 // Manual escape hatch for ghost rates the retro sweep can't prove stale

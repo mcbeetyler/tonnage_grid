@@ -652,30 +652,6 @@ function renderOperatorCard(op, mkt, cargoMap) {
   </div>`;
 }
 
-function renderOperatorCardList(operators, mkt, cargoMap) {
-  if (operators.length === 0) return '';
-  const sorted = operators.slice().sort(byRecent);
-  return sorted.map(op => renderOperatorCard(op, mkt, cargoMap)).join('');
-}
-
-function renderPartyCardList(rows, type, mkt, cargoMap) {
-  if (rows.length === 0) {
-    return `<div class="party-empty">No ${type === 'owner' ? 'owners' : 'charterers'} with identifiable names yet.</div>`;
-  }
-  const sorted = rows.slice().sort(byRecent);
-  const showAll = type === 'owner' ? ownersShowAll : charterersShowAll;
-  const shown = showAll ? sorted : sorted.slice(0, PARTY_DEFAULT);
-  const cards = shown.map(r => renderPartyCard(r, type, mkt, cargoMap)).join('');
-  let toggle = '';
-  if (sorted.length > PARTY_DEFAULT) {
-    const fn = type === 'owner' ? 'toggleOwnersExpand' : 'toggleCharterersExpand';
-    toggle = showAll
-      ? `<button class="party-show-toggle" onclick="${fn}()">Show top ${PARTY_DEFAULT}</button>`
-      : `<button class="party-show-toggle" onclick="${fn}()">Show all ${sorted.length}</button>`;
-  }
-  return cards + (toggle ? `<div class="party-show-row">${toggle}</div>` : '');
-}
-
 // ─── Drill-downs ────────────────────────────────────────────────────────────
 
 function renderOwnerDrill(r) {
