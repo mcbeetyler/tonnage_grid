@@ -158,6 +158,84 @@ const STEM_MAP = {
 
 const STEM_ORDER = ['ECSA Fronthaul','ECSA TA','NCSA Fronthaul','NCSA TA','USG Fronthaul','USG TA','USEC Fronthaul','USEC TA','EC CAN TA','EC CAN Fronthaul','Cont/Baltic TA','Cont/Baltic Fronthaul','WAFR Fronthaul','WAFR TA','Bsea/Med Fronthaul','Bsea/Med TA'];
 
+// ─── Segments ────────────────────────────────────────────────────────────────
+// Stems roll up into trade segments so the book reads on aggregate: every
+// NATL loading area bound for the Far East is ONE fronthaul market (USG and
+// NCSA to China compete for the same ships), every NATL → Atlantic stem is
+// ONE TA market. ECSA is its own basin — Santos/China is THE fronthaul, and
+// ECSA TA runs against the flow, so it's the backhaul. Edit SEGMENT_OF to
+// move a stem; anything unmapped falls back on its Fronthaul/TA suffix.
+const SEGMENT_ORDER = ['ECSA Fronthaul', 'NATL Fronthaul', 'NATL TA', 'ECSA Backhaul'];
+const SEGMENT_OF = {
+  'ECSA Fronthaul': 'ECSA Fronthaul',
+  'ECSA TA': 'ECSA Backhaul',
+  'NCSA Fronthaul': 'NATL Fronthaul', 'USG Fronthaul': 'NATL Fronthaul', 'USEC Fronthaul': 'NATL Fronthaul',
+  'EC CAN Fronthaul': 'NATL Fronthaul', 'Cont/Baltic Fronthaul': 'NATL Fronthaul',
+  'WAFR Fronthaul': 'NATL Fronthaul', 'Bsea/Med Fronthaul': 'NATL Fronthaul',
+  'NCSA TA': 'NATL TA', 'USG TA': 'NATL TA', 'USEC TA': 'NATL TA', 'EC CAN TA': 'NATL TA',
+  'Cont/Baltic TA': 'NATL TA', 'WAFR TA': 'NATL TA', 'Bsea/Med TA': 'NATL TA',
+};
+function segmentOfStem(stem) {
+  if (SEGMENT_OF[stem]) return SEGMENT_OF[stem];
+  const s = String(stem || '');
+  if (/f(ront)?haul/i.test(s)) return /ecsa/i.test(s) ? 'ECSA Fronthaul' : 'NATL Fronthaul';
+  if (/\bta\b/i.test(s)) return /ecsa/i.test(s) ? 'ECSA Backhaul' : 'NATL TA';
+  return 'Other';
+}
+
+// Two-level scope shared by the Current and Trends views: a segment pill
+// narrows the book to that market, a stem pill narrows further. Picking a
+// segment clears the stem so the aggregate is what you see first.
+let activeCargoSegment = 'ALL';
+function cargoInScope(c) {
+  if (activeCargoSegment !== 'ALL' && segmentOfStem(c.stem) !== activeCargoSegment) return false;
+  if (activeCargoStem !== 'ALL' && c.stem !== activeCargoStem) return false;
+  return true;
+}
+function cargoScopeLabel() {
+  if (activeCargoStem !== 'ALL') return activeCargoStem;
+  if (activeCargoSegment !== 'ALL') return activeCargoSegment;
+  return 'all stems';
+}
+// The board is the ECSA book, so ship-supply series only make sense for an
+// ECSA scope (or the whole book).
+function cargoScopeIsEcsa() {
+  if (activeCargoStem !== 'ALL') return /ecsa/i.test(activeCargoStem);
+  if (activeCargoSegment !== 'ALL') return /ecsa/i.test(activeCargoSegment);
+  return true;
+}
+function setCargoSegment(seg) {
+  activeCargoSegment = seg;
+  activeCargoStem = 'ALL';
+  renderCargo();
+}
+// Segment + stem pill rows for one view. `cargoes` = the population the
+// counts describe (live book on Current, full history on Trends).
+function renderScopePills(segEl, stemEl, cargoes) {
+  const segCounts = {}, stemCounts = {};
+  cargoes.forEach(c => {
+    const seg = segmentOfStem(c.stem);
+    segCounts[seg] = (segCounts[seg] || 0) + 1;
+    stemCounts[c.stem] = (stemCounts[c.stem] || 0) + 1;
+  });
+  const segs = SEGMENT_ORDER.filter(s => segCounts[s]).concat(segCounts.Other ? ['Other'] : []);
+  if (segEl) segEl.innerHTML =
+    `<span class="toolbar-label">Segment</span>` +
+    `<button class="filter-pill ${activeCargoSegment === 'ALL' ? 'active' : ''}" onclick="setCargoSegment('ALL')">All (${cargoes.length})</button>` +
+    segs.map(s =>
+      `<button class="filter-pill ${activeCargoSegment === s ? 'active' : ''}" onclick="setCargoSegment('${s}')" title="${STEM_ORDER.filter(st => segmentOfStem(st) === s).join(' · ')}">${s} (${segCounts[s]})</button>`
+    ).join('');
+  // Stem pills: only the stems inside the chosen segment
+  const inSeg = activeCargoSegment === 'ALL' ? cargoes.length : (segCounts[activeCargoSegment] || 0);
+  const stems = STEM_ORDER.filter(s => stemCounts[s] && (activeCargoSegment === 'ALL' || segmentOfStem(s) === activeCargoSegment));
+  if (stemEl) stemEl.innerHTML =
+    `<span class="toolbar-label">Stem</span>` +
+    `<button class="filter-pill ${activeCargoStem === 'ALL' ? 'active' : ''}" onclick="setCargoStem('ALL')">All (${inSeg})</button>` +
+    stems.map(s =>
+      `<button class="filter-pill ${activeCargoStem === s ? 'active' : ''}" onclick="setCargoStem('${s}')">${s} (${stemCounts[s]})</button>`
+    ).join('');
+}
+
 // ─── Laycan Parsing ──────────────────────────────────────────────────────────
 
 const MONTH_NAMES = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
@@ -346,7 +424,7 @@ function renderCargo() {
   const typeFilter = document.getElementById('cargoTypeFilter').value;
 
   let filtered = cargoData.filter(c => {
-    if (activeCargoStem !== 'ALL' && c.stem !== activeCargoStem) return false;
+    if (!cargoInScope(c)) return false;
     if (statusFilter === 'fresh' && !c.fresh) return false;
     if (statusFilter === 'fixed' && !c.fixed) return false;
     if (typeFilter !== 'all' && (c.cargo || '').toLowerCase().indexOf(typeFilter) === -1) return false;
@@ -366,16 +444,8 @@ function renderCargo() {
     { label: 'FH laycans', value: fhCount },
   ].map(s => `<div class="stat"><div class="stat-label">${s.label}</div><div class="stat-value">${s.value}</div></div>`).join('');
 
-  // Stem filter buttons
-  const stemCounts = {};
-  cargoData.forEach(c => { stemCounts[c.stem] = (stemCounts[c.stem] || 0) + 1; });
-  const stems = STEM_ORDER.filter(s => stemCounts[s]);
-
-  document.getElementById('cargoStemFilters').innerHTML =
-    `<button class="filter-pill ${activeCargoStem === 'ALL' ? 'active' : ''}" onclick="setCargoStem('ALL')">All (${total})</button>` +
-    stems.map(s =>
-      `<button class="filter-pill ${activeCargoStem === s ? 'active' : ''}" onclick="setCargoStem('${s}')">${s} (${stemCounts[s]})</button>`
-    ).join('');
+  // Segment + stem filter buttons
+  renderScopePills(document.getElementById('cargoSegmentFilters'), document.getElementById('cargoStemFilters'), cargoData);
 
   // Table
   filtered.sort((a, b) => slotSortKey(a.slot) - slotSortKey(b.slot));
@@ -391,7 +461,7 @@ function renderCargo() {
     const chartererEsc = (c.charterer || '').replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
     return `<tr>
       <td contenteditable="true" class="cargo-charterer-cell" onblur="saveCargoCharterer('${idEscaped}', this.innerText)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.blur();}" title="Click to edit · Enter to save">${chartererEsc}</td>
-      <td style="color:var(--text-dim)">${c.stem}</td>
+      <td style="color:var(--text-dim)" title="${segmentOfStem(c.stem)}">${c.stem}</td>
       <td>${c.cargo || ''}</td>
       <td style="color:var(--text-dim)">${route}</td>
       <td style="font-family:var(--mono);font-size:12px">${c.laycan || ''}</td>
@@ -819,20 +889,12 @@ function etaSlot(iso) {
   return MONTH_FULL[d.getUTCMonth() + 1] + (d.getUTCDate() <= 15 ? ' FH' : ' LH');
 }
 function renderTrendStemPills() {
-  const wrap = document.getElementById('trendStemFilters');
-  if (!wrap) return;
-  const counts = {};
-  cargoHistory.forEach(c => { if (c.stem) counts[c.stem] = (counts[c.stem] || 0) + 1; });
-  const stems = STEM_ORDER.filter(s => counts[s]);
-  wrap.innerHTML =
-    `<button class="filter-pill ${activeCargoStem === 'ALL' ? 'active' : ''}" onclick="setCargoStem('ALL')">All (${cargoHistory.length})</button>` +
-    stems.map(s =>
-      `<button class="filter-pill ${activeCargoStem === s ? 'active' : ''}" onclick="setCargoStem('${s}')">${s} (${counts[s]})</button>`).join('');
+  renderScopePills(document.getElementById('trendSegmentFilters'), document.getElementById('trendStemFilters'), cargoHistory);
 }
 
 // Demand (live cargoes by laycan slot) vs supply (OPEN board ships by ETA
-// slot). Ship series only means something for ECSA-loading stems — the board
-// is the ECSA book — so it hides for e.g. a USG-only stem selection.
+// slot). Ship series only means something for an ECSA scope — the board is
+// the ECSA book — so it hides for e.g. a USG stem or the NATL TA segment.
 let balanceChart = null;
 function renderBalanceChart(hist) {
   const canvas = document.getElementById('balanceChart');
@@ -841,7 +903,7 @@ function renderBalanceChart(hist) {
   const demand = {};
   live.forEach(c => { const s = c.slot || parseLaycanSlot(c.laycan); if (s) demand[s] = (demand[s] || 0) + 1; });
 
-  const stemIsEcsa = activeCargoStem === 'ALL' || /ecsa/i.test(activeCargoStem);
+  const stemIsEcsa = cargoScopeIsEcsa();
   const supply = {};
   if (stemIsEcsa && typeof vessels !== 'undefined' && Array.isArray(vessels)) {
     vessels.forEach(v => {
@@ -992,7 +1054,8 @@ function computeDemandPulse(hist, windowDays) {
   };
 }
 
-// WhatsApp export: the pulse for the whole book AND per stem in one message
+// WhatsApp export: the pulse for the whole book, per segment, and per stem in
+// one message — segments first so the market read comes before the detail
 function buildPulseText() {
   const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const sign = n => n == null ? '' : (n > 0 ? '+' : '') + n;
@@ -1002,7 +1065,15 @@ function buildPulseText() {
 
   const all = computeDemandPulse(cargoHistory, 84);
   let text = `*CARGO DEMAND PULSE — ${today}*\n_live cargoes vs trailing 4-week norm · index 100 = typical_\n\n`;
-  text += `*All stems:* ${line(all)}\n\n_By stem:_\n`;
+  text += `*All stems:* ${line(all)}\n\n_By segment:_\n`;
+
+  const segs = SEGMENT_ORDER.filter(s => cargoHistory.some(c => segmentOfStem(c.stem) === s));
+  for (const s of segs) {
+    const p = computeDemandPulse(cargoHistory.filter(c => segmentOfStem(c.stem) === s), 84);
+    if (p.today === 0 && !p.ww) continue;
+    text += `· *${s}* ${line(p)}\n`;
+  }
+  text += `\n_By stem:_\n`;
 
   const stems = STEM_ORDER.filter(s => cargoHistory.some(c => c.stem === s));
   for (const s of stems) {
@@ -1028,7 +1099,7 @@ function renderDemandPulse(hist) {
   const p = computeDemandPulse(hist);
   const sign = n => n == null ? '—' : (n > 0 ? '+' : '') + n;
   const idxColor = p.index == null ? 'var(--text-dim)' : p.index >= 115 ? 'var(--green)' : p.index <= 85 ? 'var(--red)' : 'var(--text-bright)';
-  const scope = activeCargoStem === 'ALL' ? 'all stems' : activeCargoStem;
+  const scope = cargoScopeLabel();
   // Audit list: hover the live count to see exactly which cargoes it counts
   const liveNow = hist.filter(c => cargoCurrent.includes(c.id) && !c.fixed)
     .map(c => `${c.charterer || '?'} · ${c.load || '?'} · ${c.laycan || '?'}`);
@@ -1187,9 +1258,9 @@ function renderDemandDepth() {
 
 function renderTrends() {
   renderTrendStemPills();
-  // Trends respect the stem pills — pick ECSA Fronthaul and everything below
-  // (stats, activity chart, balance) is that stem only
-  const hist = activeCargoStem === 'ALL' ? cargoHistory : cargoHistory.filter(c => c.stem === activeCargoStem);
+  // Trends respect the segment/stem pills — pick NATL TA and everything below
+  // (stats, activity chart, balance) is that market only
+  const hist = cargoHistory.filter(cargoInScope);
   if (cargoHistory.length === 0) {
     document.getElementById('trendStats').innerHTML = '<div style="padding:40px;color:var(--text-dim);font-size:13px">No cargo history yet. Paste cargo data to start building trends.</div>';
     document.getElementById('trendLegend').innerHTML = '';
@@ -1243,6 +1314,7 @@ function renderTrends() {
     let category;
     if (trendType === 'charterer') category = (c.charterer || 'Unknown').toLowerCase();
     else if (trendType === 'stem') category = c.stem || 'Unknown';
+    else if (trendType === 'segment') category = segmentOfStem(c.stem);
     else if (trendType === 'cargo') category = (c.cargo || 'Unknown').toLowerCase();
     else category = 'All';
 

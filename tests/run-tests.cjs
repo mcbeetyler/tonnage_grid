@@ -452,6 +452,52 @@ section('demand depth');
     + cargoSrc + '\n;(function(){' + testBody + '})();');
 }
 
+// ═══ 2c. segments (cargo.js) ═════════════════════════════════════════════════
+section('segments');
+{
+  const cargoSrc = fs.readFileSync(path.join(ROOT, 'cargo.js'), 'utf8');
+  const testBody = `
+    // Every known stem rolls up into one of the four segments
+    A(STEM_ORDER.every(st => SEGMENT_ORDER.includes(segmentOfStem(st))), 'every stem has a segment');
+    A(segmentOfStem('USG Fronthaul') === 'NATL Fronthaul' && segmentOfStem('NCSA Fronthaul') === 'NATL Fronthaul', 'USG + NCSA to China = NATL fronthaul');
+    A(segmentOfStem('USG TA') === 'NATL TA' && segmentOfStem('Cont/Baltic TA') === 'NATL TA' && segmentOfStem('Bsea/Med TA') === 'NATL TA', 'TAs aggregate');
+    A(segmentOfStem('ECSA Fronthaul') === 'ECSA Fronthaul', 'ECSA fronthaul stays its own segment');
+    A(segmentOfStem('ECSA TA') === 'ECSA Backhaul', 'ECSA TA is the backhaul');
+    // Unmapped stems fall back on their suffix
+    A(segmentOfStem('S AFR Fronthaul') === 'NATL Fronthaul' && segmentOfStem('S AFR TA') === 'NATL TA', 'unknown stem falls back on suffix');
+    A(segmentOfStem('Unknown') === 'Other' && segmentOfStem(null) === 'Other', 'no suffix → Other');
+
+    // Two-level scope: segment narrows, stem narrows further, segment pick clears stem
+    const book = [
+      { stem: 'USG Fronthaul' }, { stem: 'NCSA Fronthaul' }, { stem: 'USG TA' }, { stem: 'ECSA Fronthaul' }, { stem: 'ECSA TA' },
+    ];
+    activeCargoSegment = 'ALL'; activeCargoStem = 'ALL';
+    A(book.filter(cargoInScope).length === 5 && cargoScopeLabel() === 'all stems' && cargoScopeIsEcsa(), 'ALL scope');
+    activeCargoSegment = 'NATL Fronthaul';
+    A(book.filter(cargoInScope).length === 2 && cargoScopeLabel() === 'NATL Fronthaul' && !cargoScopeIsEcsa(), 'segment scope');
+    activeCargoStem = 'USG Fronthaul';
+    A(book.filter(cargoInScope).length === 1 && cargoScopeLabel() === 'USG Fronthaul', 'stem inside segment');
+    activeCargoSegment = 'ECSA Backhaul'; activeCargoStem = 'ALL';
+    A(book.filter(cargoInScope).length === 1 && book.filter(cargoInScope)[0].stem === 'ECSA TA' && cargoScopeIsEcsa(), 'backhaul scope = ECSA TA, ship series stays on');
+    activeCargoSegment = 'ALL'; activeCargoStem = 'ALL';
+
+    // Pulse export carries a segment block ahead of the stem block
+    const iso = d => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+    cargoCurrent = ['s1', 's2'];
+    cargoHistory = [
+      { id: 's1', charterer: 'a', stem: 'USG Fronthaul', load: 'nola', laycan: '1-10sep', entered_market: iso(3) },
+      { id: 's2', charterer: 'b', stem: 'NCSA TA', load: 'pdm', laycan: '5-15sep', entered_market: iso(2) },
+    ];
+    const txt = buildPulseText();
+    A(txt.indexOf('_By segment:_') > -1 && txt.indexOf('_By segment:_') < txt.indexOf('_By stem:_'), 'pulse text: segments before stems');
+    A(/\\*NATL Fronthaul\\* 1 live/.test(txt) && /\\*NATL TA\\* 1 live/.test(txt), 'pulse text: segment lines: ' + txt);
+  `;
+  // eslint-disable-next-line no-eval
+  eval(fs.readFileSync(path.join(ROOT, 'csv-import.js'), 'utf8') + '\n'
+    + fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8').replace(/\ninit\(\);\s*$/, '\n') + '\n'
+    + cargoSrc + '\n;(function(){' + testBody + '})();');
+}
+
 // ═══ 3. laycan-matcher ════════════════════════════════════════════════════════
 section('laycan-matcher');
 {
