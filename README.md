@@ -29,7 +29,8 @@ tonnage_grid/
 ├── dashboard.html          ← the app shell: tabs + styles + script includes
 ├── app.js                  ← Tonnage Board: state, rendering, sync, inline edits
 ├── csv-import.js           ← CSV/TSV grid sync engine (CSV is source of truth;
-│                             manual edits win until a fresher CSV row arrives)
+│                             manual edits win until a fresher CSV row arrives;
+│                             a desk P6 calc holds until the sheet's hire moves)
 ├── parser.js               ← WhatsApp message parser
 ├── cargo.js                ← Cargo Book tab
 ├── fit-utils.js            ← shared FIT/EARLY/TIGHT laycan-fit logic

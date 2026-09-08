@@ -419,8 +419,22 @@ function syncCSVVessels(newVessels, opts) {
 
     const rowTs = nv.csv_updated || new Date().toISOString();
     const overrides = existing.field_overrides || {};
-    // A manual edit newer than this CSV row wins; otherwise CSV wins.
-    const isProtected = f => overrides[f] && overrides[f] > rowTs;
+    // A manual edit newer than this CSV row wins; otherwise CSV wins. A row
+    // with no UPDATE stamp has unknown freshness — it never beats a manual edit.
+    const isProtected = f => !!overrides[f] && (!nv.csv_updated || overrides[f] > rowTs);
+    // Manual P6 calc: the desk re-ran the P6 off the sheet's hire (the
+    // sheet's BKI eqvt wasn't trusted). It sticks for as long as the inputs
+    // it was built on — the raw hire offer and BB — are what the sheet still
+    // shows, whatever the row's UPDATE stamp says. The moment the hire
+    // moves, that's a genuine re-offer and the sheet's number flows back in.
+    const p6Basis = overrides.p6_offer && existing.p6_offer_basis;
+    const p6ManualHolds = p6Basis
+      ? (nv.hire_offer ?? null) === (p6Basis.hire ?? null) && (nv.bb_offer ?? null) === (p6Basis.bb ?? null)
+      : isProtected('p6_offer') || isProtected('bki_eqvt');
+    if (p6Basis && !p6ManualHolds) {
+      delete overrides.p6_offer;          // hire changed → manual calc is obsolete
+      delete existing.p6_offer_basis;
+    }
     let changed = false;
 
     for (const f of CSV_SYNC_FIELDS) {
@@ -443,7 +457,7 @@ function syncCSVVessels(newVessels, opts) {
       const mc = existing.market_colour[0];
       const beforeOffer = { p6: mc.p6_offer, raw: mc.offer_usd, bb: mc.bb_usd };
       if (nv.hire_offer != null && !isProtected('hire_offer')) mc.offer_usd = nv.hire_offer;
-      if (nv.bki_eqvt != null && !isProtected('p6_offer') && !isProtected('bki_eqvt')) mc.p6_offer = nv.bki_eqvt;
+      if (nv.bki_eqvt != null && !p6ManualHolds) mc.p6_offer = nv.bki_eqvt;
       if (nv.bb_offer != null && !isProtected('bb_offer')) mc.bb_usd = nv.bb_offer;
       if (mc.p6_offer !== beforeOffer.p6 || mc.offer_usd !== beforeOffer.raw || mc.bb_usd !== beforeOffer.bb) {
         existing.offer_history = existing.offer_history || [];

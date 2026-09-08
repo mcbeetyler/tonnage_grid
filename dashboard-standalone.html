@@ -147,6 +147,7 @@
   .route-select:focus{outline:none;border-color:var(--accent)}
 
   .stale-tag{font-size:9px;font-weight:500;color:var(--text-dim);opacity:.7;margin-left:4px;vertical-align:middle;white-space:nowrap}
+  .manual-tag{font-size:10px;font-weight:500;color:var(--accent);margin-left:3px;vertical-align:middle;cursor:help}
   td.stale .bid, td.stale .offer{opacity:.5}
   .row-quiet td{opacity:.45}
   .row-quiet:hover td{opacity:.8}
@@ -2843,8 +2844,22 @@ function syncCSVVessels(newVessels, opts) {
 
     const rowTs = nv.csv_updated || new Date().toISOString();
     const overrides = existing.field_overrides || {};
-    // A manual edit newer than this CSV row wins; otherwise CSV wins.
-    const isProtected = f => overrides[f] && overrides[f] > rowTs;
+    // A manual edit newer than this CSV row wins; otherwise CSV wins. A row
+    // with no UPDATE stamp has unknown freshness — it never beats a manual edit.
+    const isProtected = f => !!overrides[f] && (!nv.csv_updated || overrides[f] > rowTs);
+    // Manual P6 calc: the desk re-ran the P6 off the sheet's hire (the
+    // sheet's BKI eqvt wasn't trusted). It sticks for as long as the inputs
+    // it was built on — the raw hire offer and BB — are what the sheet still
+    // shows, whatever the row's UPDATE stamp says. The moment the hire
+    // moves, that's a genuine re-offer and the sheet's number flows back in.
+    const p6Basis = overrides.p6_offer && existing.p6_offer_basis;
+    const p6ManualHolds = p6Basis
+      ? (nv.hire_offer ?? null) === (p6Basis.hire ?? null) && (nv.bb_offer ?? null) === (p6Basis.bb ?? null)
+      : isProtected('p6_offer') || isProtected('bki_eqvt');
+    if (p6Basis && !p6ManualHolds) {
+      delete overrides.p6_offer;          // hire changed → manual calc is obsolete
+      delete existing.p6_offer_basis;
+    }
     let changed = false;
 
     for (const f of CSV_SYNC_FIELDS) {
@@ -2867,7 +2882,7 @@ function syncCSVVessels(newVessels, opts) {
       const mc = existing.market_colour[0];
       const beforeOffer = { p6: mc.p6_offer, raw: mc.offer_usd, bb: mc.bb_usd };
       if (nv.hire_offer != null && !isProtected('hire_offer')) mc.offer_usd = nv.hire_offer;
-      if (nv.bki_eqvt != null && !isProtected('p6_offer') && !isProtected('bki_eqvt')) mc.p6_offer = nv.bki_eqvt;
+      if (nv.bki_eqvt != null && !p6ManualHolds) mc.p6_offer = nv.bki_eqvt;
       if (nv.bb_offer != null && !isProtected('bb_offer')) mc.bb_usd = nv.bb_offer;
       if (mc.p6_offer !== beforeOffer.p6 || mc.offer_usd !== beforeOffer.raw || mc.bb_usd !== beforeOffer.bb) {
         existing.offer_history = existing.offer_history || [];
@@ -3987,6 +4002,15 @@ function hoursAgo(isoTs) {
   if (!isoTs) return null;
   return (Date.now() - new Date(isoTs).getTime()) / 36e5;
 }
+// Desk-calculated P6 (inline edit) — the feed keeps it while the sheet's hire
+// offer stays where it was when the calc was made.
+function manualP6Tag(v) {
+  const b = v.p6_offer_basis;
+  if (!b || !(v.field_overrides || {}).p6_offer) return '';
+  const basis = b.hire != null ? '$' + fmtNum(b.hire) + (b.bb ? ' + $' + fmtNum(b.bb) + ' bb' : '') : 'no hire';
+  return `<span class="manual-tag" title="Desk P6 calc — held until the sheet's hire offer moves (basis ${basis})">✎</span>`;
+}
+
 function stalenessTag(isoTs, label) {
   const h = hoursAgo(isoTs);
   if (h === null) return '';
@@ -4452,6 +4476,10 @@ function applyEdit(idx, field, val) {
   // CSV row with a fresher UPDATE timestamp arrives (last write wins).
   v.field_overrides = v.field_overrides || {};
   v.field_overrides[field] = now;
+  // A manual P6 is a calc off the sheet's hire/BB — remember those inputs so
+  // the sync keeps the calc while they hold and only lets the sheet's BKI
+  // back in when the hire itself moves (see syncCSVVessels).
+  if (field === 'p6_offer') v.p6_offer_basis = { hire: v.hire_offer ?? null, bb: v.bb_offer ?? null };
 
   save();
 }
@@ -5920,10 +5948,11 @@ function renderTable() {
       case 'p6_offer': {
         const offerStale = stalenessTag(v.offer_updated_at, 'Offer');
         const offerCls = offerStale ? ' stale' : '';
+        const manual = manualP6Tag(v);
         const histTip = formatHistoryTooltip(v.offer_history, 'offer');
         const tipAttr = histTip ? ` title="${histTip.replace(/"/g,'&quot;')}"` : '';
         const spark = renderSparkline(v.offer_history, 'offer');
-        return `<td class="td-p6 editable${offerCls}" onclick="startEdit(this,${gi},'p6_offer',true)"${tipAttr}><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span>${spark}${offerStale}</td>`;
+        return `<td class="td-p6 editable${offerCls}" onclick="startEdit(this,${gi},'p6_offer',true)"${tipAttr}><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span>${manual}${spark}${offerStale}</td>`;
       }
       case 'spread': {
         if (spread == null) return `<td>—</td>`;

@@ -214,6 +214,15 @@ function hoursAgo(isoTs) {
   if (!isoTs) return null;
   return (Date.now() - new Date(isoTs).getTime()) / 36e5;
 }
+// Desk-calculated P6 (inline edit) — the feed keeps it while the sheet's hire
+// offer stays where it was when the calc was made.
+function manualP6Tag(v) {
+  const b = v.p6_offer_basis;
+  if (!b || !(v.field_overrides || {}).p6_offer) return '';
+  const basis = b.hire != null ? '$' + fmtNum(b.hire) + (b.bb ? ' + $' + fmtNum(b.bb) + ' bb' : '') : 'no hire';
+  return `<span class="manual-tag" title="Desk P6 calc — held until the sheet's hire offer moves (basis ${basis})">✎</span>`;
+}
+
 function stalenessTag(isoTs, label) {
   const h = hoursAgo(isoTs);
   if (h === null) return '';
@@ -679,6 +688,10 @@ function applyEdit(idx, field, val) {
   // CSV row with a fresher UPDATE timestamp arrives (last write wins).
   v.field_overrides = v.field_overrides || {};
   v.field_overrides[field] = now;
+  // A manual P6 is a calc off the sheet's hire/BB — remember those inputs so
+  // the sync keeps the calc while they hold and only lets the sheet's BKI
+  // back in when the hire itself moves (see syncCSVVessels).
+  if (field === 'p6_offer') v.p6_offer_basis = { hire: v.hire_offer ?? null, bb: v.bb_offer ?? null };
 
   save();
 }
@@ -2147,10 +2160,11 @@ function renderTable() {
       case 'p6_offer': {
         const offerStale = stalenessTag(v.offer_updated_at, 'Offer');
         const offerCls = offerStale ? ' stale' : '';
+        const manual = manualP6Tag(v);
         const histTip = formatHistoryTooltip(v.offer_history, 'offer');
         const tipAttr = histTip ? ` title="${histTip.replace(/"/g,'&quot;')}"` : '';
         const spark = renderSparkline(v.offer_history, 'offer');
-        return `<td class="td-p6 editable${offerCls}" onclick="startEdit(this,${gi},'p6_offer',true)"${tipAttr}><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span>${spark}${offerStale}</td>`;
+        return `<td class="td-p6 editable${offerCls}" onclick="startEdit(this,${gi},'p6_offer',true)"${tipAttr}><span class="offer">${p6.offer ? fmtNum(p6.offer) : '—'}</span>${manual}${spark}${offerStale}</td>`;
       }
       case 'spread': {
         if (spread == null) return `<td>—</td>`;

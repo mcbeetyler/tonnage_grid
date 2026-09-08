@@ -182,6 +182,31 @@ section('csv-import + app');
     syncCSVVessels(parseCSVVessels(TSV).vessels);
     A(s.owner === 'GLOBE MARINE', 'fresher csv reclaims stale override');
 
+    // Desk P6 calc: sticks while the sheet's hire is unchanged, even though
+    // the row's UPDATE (08-Jul) is fresher than the edit
+    s.market_colour[0].p6_offer = 17900;
+    s.field_overrides = { p6_offer: '2026-07-01T00:00:00Z' };
+    s.p6_offer_basis = { hire: 18250, bb: null };
+    syncCSVVessels(parseCSVVessels(TSV).vessels);
+    A(s.market_colour[0].p6_offer === 17900 && s.p6_offer_basis, 'desk P6 calc held while hire unchanged');
+    A(s.hire_offer === 18250, 'raw hire still synced alongside the held calc');
+    // Hire moves on the sheet → genuine re-offer → sheet BKI flows back in
+    const r1new = r1.replace('$18,250', '$19,000').replace('$18,219', '$18,950');
+    syncCSVVessels(parseCSVVessels([hdr, r1new, r2].join('\\n')).vessels);
+    A(s.market_colour[0].p6_offer === 18950 && s.hire_offer === 19000, 'hire moved → sheet P6 wins: ' + s.market_colour[0].p6_offer);
+    A(!s.field_overrides.p6_offer && !s.p6_offer_basis, 'obsolete P6 override dropped');
+    A(s.offer_history[s.offer_history.length - 1].p6_offer === 18950, 'refresh logged in offer history');
+    // Legacy override (no basis) keeps the timestamp rule
+    s.market_colour[0].p6_offer = 17500;
+    s.field_overrides = { p6_offer: '2099-01-01T00:00:00Z' };
+    syncCSVVessels(parseCSVVessels([hdr, r1new, r2].join('\\n')).vessels);
+    A(s.market_colour[0].p6_offer === 17500, 'legacy P6 override: newer-than-row still protects');
+    // Row with a blank UPDATE stamp never beats a manual edit
+    s.owner = 'DESK OWNER'; s.field_overrides = { owner: '2020-01-01T00:00:00Z' };
+    const r1blank = r1new.replace(/^08-Jul 10:46/, '');
+    syncCSVVessels(parseCSVVessels([hdr, r1blank, r2].join('\\n')).vessels);
+    A(s.owner === 'DESK OWNER', 'unstamped row cannot clobber a manual edit');
+
     // Feed sends whole tabs — header row may sit below decorative rows
     const junky = ['\\tFILTERING & SO\\t\\t', '\\tSantos/Qingdao\\t2026\\t', TSV].join('\\n');
     A(looksLikeCSV(junky), 'header found below junk rows');
