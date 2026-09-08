@@ -560,8 +560,8 @@ function syncCSVVessels(newVessels, opts) {
   return { added, updated, unchanged, protectedFields, withdrawCandidates, autoWithdrawn, reopened };
 }
 
-// Stale positions: an OPEN ship whose ETA / layday has passed AND whose row
-// nobody has touched for a week isn't a position any more — owners rarely
+// Stale positions: an OPEN ship whose ETA / layday has passed (at all) AND
+// whose row nobody has touched for a week isn't a position any more — owners rarely
 // just pull a ship; she fixed an alternate route (Pac RV, coastal, India)
 // or went on period. The desk updates a ship within days if she's still
 // there, so a week of silence past her ETA is the tell. The grid feed only
@@ -570,7 +570,7 @@ function syncCSVVessels(newVessels, opts) {
 // Reversible: a manual status flip stamps an override the sweep respects,
 // and the sync reopens her the moment the sheet touches her row again
 // (coastal trips reopen her inside a couple of weeks).
-const STALE_ETA_DAYS = 7;
+const STALE_QUIET_DAYS = 7;
 const STALE_REASON = 'stale — assumed fixed elsewhere';
 function positionRefDate(v) {
   const ds = [v.eta_ecsa, v.eta_ecsa_end, v.open_date]
@@ -582,15 +582,14 @@ function isStalePosition(v, nowMs) {
   const ref = positionRefDate(v);
   if (!ref) return false;
   const now = nowMs || Date.now();
-  const etaAge = (now - new Date(ref + 'T00:00:00Z').getTime()) / 86400000;
-  if (etaAge <= STALE_ETA_DAYS) return false;
+  if (ref >= new Date(now).toISOString().slice(0, 10)) return false;   // ETA/layday still ahead (or today)
   // Row touched within the week = she's still there. Sheet ships: the
   // sheet's own UPDATE stamp (an unparseable stamp protects nothing — the
   // sync bumps last_updated on any cell change, so it's no proxy there).
   // Manually-added ships: board edits.
   const touched = touchedStamp(v);
   if (!touched) return true;
-  return (now - new Date(touched).getTime()) / 86400000 > STALE_ETA_DAYS;
+  return (now - new Date(touched).getTime()) / 86400000 > STALE_QUIET_DAYS;
 }
 function touchedStamp(v) {
   const fromSheet = v.csv_status != null || !!v.csv_updated;
@@ -603,7 +602,7 @@ function describeStaleness(v, nowMs) {
   const touched = touchedStamp(v);
   const days = iso => iso ? Math.floor((now - new Date(iso.length === 10 ? iso + 'T00:00:00Z' : iso).getTime()) / 86400000) : null;
   return `pos_ref=${ref ?? '∅'}${ref ? ' (' + days(ref) + 'd ago)' : ''} · touched=${touched ?? '∅'}${touched ? ' (' + days(touched) + 'd ago)' : ''}`
-    + ` · stale=${isStalePosition(v, now) ? 'YES' : 'no'} (rule: pos_ref >${STALE_ETA_DAYS}d past AND untouched >${STALE_ETA_DAYS}d)`;
+    + ` · stale=${isStalePosition(v, now) ? 'YES' : 'no'} (rule: pos_ref passed AND untouched >${STALE_QUIET_DAYS}d)`;
 }
 function sweepStalePositions(nowMs) {
   let swept = 0;
@@ -614,12 +613,12 @@ function sweepStalePositions(nowMs) {
     const ov = (v.field_overrides || {}).status;
     if (ov && ov.slice(0, 10) >= positionRefDate(v)) continue;
     if (!isStalePosition(v, nowMs)) continue;
+    if (typeof console !== 'undefined') console.log('[board] stale → withdrawn: ' + v.vessel_name + ' · ' + describeStaleness(v, nowMs));
     v.status = 'WITHDRAWN';
     v.withdrawn_reason = STALE_REASON;
     v.withdrawn_at = nowIso;
     v.last_updated = nowIso;
     swept++;
-    if (typeof console !== 'undefined') console.log('[board] stale → withdrawn: ' + v.vessel_name + ' · ' + describeStaleness(v, nowMs));
   }
   return swept;
 }

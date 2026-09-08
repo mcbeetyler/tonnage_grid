@@ -146,7 +146,7 @@ OPEN → FIXED   (vessel was taken, fixture agreed)
 OPEN → FAILED  (negotiations broke down)
 OPEN → WITHDRAWN (owner pulled vessel from market; also automatic when the
                   ship drops off the ECSA grid feed, or when her ETA/layday has
-                  passed and her sheet row sat untouched for 7 days — assumed
+                  passed and her row has sat untouched for 7 days — assumed
                   fixed on an alternate route)
 ```
 

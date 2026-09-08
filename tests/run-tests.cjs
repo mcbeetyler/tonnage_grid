@@ -317,15 +317,20 @@ section('csv-import + app');
     vessels.push({ vessel_name: 'STILL THERE', status: 'OPEN', eta_ecsa: dIso(12), csv_updated: dIso(2) + 'T00:00:00Z' });   // desk touched her this week
     vessels.push({ vessel_name: 'MANUAL TOUCHED', status: 'OPEN', eta_ecsa: dIso(12), last_updated: dIso(3) + 'T00:00:00Z' });
     vessels.push({ vessel_name: 'BAD STAMP', status: 'OPEN', eta_ecsa: dIso(12), csv_status: '1', last_updated: dIso(1) + 'T00:00:00Z' });   // sheet ship, UPDATE cell unparseable
-    vessels.push({ vessel_name: 'LATE LAYDAY', status: 'OPEN', eta_ecsa: dIso(40), open_date: dIso(3) });   // layday later than ETA → still live
-    vessels.push({ vessel_name: 'JUST PAST', status: 'OPEN', eta_ecsa: dIso(4) });
+    vessels.push({ vessel_name: 'LATE LAYDAY', status: 'OPEN', eta_ecsa: dIso(40), open_date: dIso(-2) });   // layday ahead of ETA → still live
+    vessels.push({ vessel_name: 'JUST PAST', status: 'OPEN', eta_ecsa: dIso(4), csv_updated: dIso(3) + 'T00:00:00Z' });   // ETA passed, touched this week
+    vessels.push({ vessel_name: 'EARLY SEP', status: 'OPEN', eta_ecsa: dIso(4), csv_updated: dIso(12) + 'T00:00:00Z' });   // ETA just passed, quiet 12d → gone
+    vessels.push({ vessel_name: 'ETA TODAY', status: 'OPEN', eta_ecsa: dIso(0), csv_updated: dIso(20) + 'T00:00:00Z' });
+    vessels.push({ vessel_name: 'ETA AHEAD', status: 'OPEN', eta_ecsa: dIso(-3), csv_updated: dIso(20) + 'T00:00:00Z' });
     vessels.push({ vessel_name: 'NO DATES', status: 'OPEN' });
     vessels.push({ vessel_name: 'KEPT BY DESK', status: 'OPEN', eta_ecsa: dIso(40), field_overrides: { status: dIso(3) + 'T00:00:00Z' } });
     vessels.push({ vessel_name: 'OLD FLIP', status: 'OPEN', eta_ecsa: dIso(40), last_updated: dIso(30) + 'T00:00:00Z', field_overrides: { status: dIso(90) + 'T00:00:00Z' } });
     vessels.push({ vessel_name: 'FIXED OLD', status: 'FIXED', eta_ecsa: dIso(45) });
     const sp = sweepStalePositions();
     const st = n => vessels.find(v => v.vessel_name === n).status;
-    A(sp === 4 && st('JULY GHOST') === 'WITHDRAWN' && st('WHATSAPP GHOST') === 'WITHDRAWN' && st('OLD FLIP') === 'WITHDRAWN', 'stale + untouched withdrawn (sheet + manual ships): ' + sp);
+    A(sp === 5 && st('JULY GHOST') === 'WITHDRAWN' && st('WHATSAPP GHOST') === 'WITHDRAWN' && st('OLD FLIP') === 'WITHDRAWN', 'stale + untouched withdrawn (sheet + manual ships): ' + sp);
+    A(st('EARLY SEP') === 'WITHDRAWN', 'ETA just passed + a quiet week → withdrawn');
+    A(st('ETA TODAY') === 'OPEN' && st('ETA AHEAD') === 'OPEN', 'ETA today / ahead never stale however quiet');
     A(st('BAD STAMP') === 'WITHDRAWN', 'sheet ship with unparseable UPDATE: last_updated is no proxy → swept');
     A(/stale=YES/.test(describeStaleness(vessels[0])) && /stale=no/.test(describeStaleness(vessels.find(v => v.vessel_name === 'STILL THERE'))), 'staleness verdict line');
     A(/fixed elsewhere/.test(vessels[0].withdrawn_reason) && vessels[0].withdrawn_at, 'stale reason + stamp');
