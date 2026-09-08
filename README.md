@@ -145,8 +145,9 @@ The P6 route (P8 in Baltic notation) is:
 OPEN → FIXED   (vessel was taken, fixture agreed)
 OPEN → FAILED  (negotiations broke down)
 OPEN → WITHDRAWN (owner pulled vessel from market; also automatic when the
-                  ship drops off the ECSA grid feed, or when her ETA/layday is
-                  more than 21 days past with no fixture — "stale position")
+                  ship drops off the ECSA grid feed, or when her ETA/layday has
+                  passed and her sheet row sat untouched for 7 days — assumed
+                  fixed on an alternate route)
 ```
 
 ### Commission Structure

@@ -442,6 +442,9 @@ function syncCSVVessels(newVessels, opts) {
       if (isProtected(f)) { protectedFields++; continue; }
       if (existing[f] !== nv[f]) { existing[f] = nv[f]; changed = true; }
     }
+    // Carry the sheet's own UPDATE stamp forward — it's the "row last
+    // touched" signal the stale sweep and fixture retraction read.
+    if (nv.csv_updated && nv.csv_updated !== existing.csv_updated) existing.csv_updated = nv.csv_updated;
     // Specs merge (TPC, cubic, speeds/consumptions)
     if (nv.specs && Object.keys(nv.specs).length) {
       existing.specs = Object.assign({}, existing.specs, nv.specs);
@@ -557,15 +560,18 @@ function syncCSVVessels(newVessels, opts) {
   return { added, updated, unchanged, protectedFields, withdrawCandidates, autoWithdrawn, reopened };
 }
 
-// Stale positions: an OPEN ship whose ETA / layday passed weeks ago without
-// a fixture isn't a position any more — she fixed elsewhere, or the row is
-// dead. The grid feed only withdraws ships that DROP OFF the sheet; rows
-// left sitting there with a July ETA in September stayed OPEN forever.
-// Swept on every ECSA feed apply and on boot. Reversible: a manual status
-// flip stamps an override the feed respects, and the sync reopens her the
-// moment the sheet moves her ETA forward.
-const STALE_ETA_DAYS = 21;
-const STALE_REASON = 'stale position';
+// Stale positions: an OPEN ship whose ETA / layday has passed AND whose row
+// nobody has touched for a week isn't a position any more — owners rarely
+// just pull a ship; she fixed an alternate route (Pac RV, coastal, India)
+// or went on period. The desk updates a ship within days if she's still
+// there, so a week of silence past her ETA is the tell. The grid feed only
+// withdraws ships that DROP OFF the sheet; rows left sitting with a July
+// ETA in September stayed OPEN forever. Swept on every ECSA feed apply.
+// Reversible: a manual status flip stamps an override the sweep respects,
+// and the sync reopens her the moment the sheet touches her row again
+// (coastal trips reopen her inside a couple of weeks).
+const STALE_ETA_DAYS = 7;
+const STALE_REASON = 'stale — assumed fixed elsewhere';
 function positionRefDate(v) {
   const ds = [v.eta_ecsa, v.eta_ecsa_end, v.open_date]
     .map(d => d ? String(d).slice(0, 10) : null)
@@ -575,8 +581,14 @@ function positionRefDate(v) {
 function isStalePosition(v, nowMs) {
   const ref = positionRefDate(v);
   if (!ref) return false;
-  const age = ((nowMs || Date.now()) - new Date(ref + 'T00:00:00Z').getTime()) / 86400000;
-  return age > STALE_ETA_DAYS;
+  const now = nowMs || Date.now();
+  const etaAge = (now - new Date(ref + 'T00:00:00Z').getTime()) / 86400000;
+  if (etaAge <= STALE_ETA_DAYS) return false;
+  // Row touched within the week (sheet UPDATE stamp; board edits for
+  // manually-added ships) = she's still there
+  const touched = v.csv_updated || v.last_updated;
+  if (!touched) return true;
+  return (now - new Date(touched).getTime()) / 86400000 > STALE_ETA_DAYS;
 }
 function sweepStalePositions(nowMs) {
   let swept = 0;

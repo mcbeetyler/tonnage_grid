@@ -308,34 +308,40 @@ section('csv-import + app');
     markFixturesFromCSV(parseCSVVessels([roFxHdr, rtFx].join('\\n')).vessels);
     A(vessels[2].status === 'OPEN', 'pre-reopen fixture still ignored');
 
-    // STALE POSITIONS: ETA/layday weeks in the past with no fixture → WITHDRAWN
+    // STALE POSITIONS: ETA/layday passed AND row untouched for a week →
+    // WITHDRAWN (assumed fixed on an alternate route)
     const dIso = d => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
     vessels.length = 0;
     vessels.push({ vessel_name: 'JULY GHOST', status: 'OPEN', eta_ecsa: dIso(45), csv_updated: dIso(50) + 'T00:00:00Z' });
-    vessels.push({ vessel_name: 'WHATSAPP GHOST', status: 'OPEN', eta_ecsa: dIso(40) });
-    vessels.push({ vessel_name: 'LATE LAYDAY', status: 'OPEN', eta_ecsa: dIso(40), open_date: dIso(5) });   // layday later than ETA → still live
-    vessels.push({ vessel_name: 'JUST PAST', status: 'OPEN', eta_ecsa: dIso(10) });
+    vessels.push({ vessel_name: 'WHATSAPP GHOST', status: 'OPEN', eta_ecsa: dIso(12) });
+    vessels.push({ vessel_name: 'STILL THERE', status: 'OPEN', eta_ecsa: dIso(12), csv_updated: dIso(2) + 'T00:00:00Z' });   // desk touched her this week
+    vessels.push({ vessel_name: 'MANUAL TOUCHED', status: 'OPEN', eta_ecsa: dIso(12), last_updated: dIso(3) + 'T00:00:00Z' });
+    vessels.push({ vessel_name: 'LATE LAYDAY', status: 'OPEN', eta_ecsa: dIso(40), open_date: dIso(3) });   // layday later than ETA → still live
+    vessels.push({ vessel_name: 'JUST PAST', status: 'OPEN', eta_ecsa: dIso(4) });
     vessels.push({ vessel_name: 'NO DATES', status: 'OPEN' });
     vessels.push({ vessel_name: 'KEPT BY DESK', status: 'OPEN', eta_ecsa: dIso(40), field_overrides: { status: dIso(3) + 'T00:00:00Z' } });
-    vessels.push({ vessel_name: 'OLD FLIP', status: 'OPEN', eta_ecsa: dIso(40), field_overrides: { status: dIso(90) + 'T00:00:00Z' } });
+    vessels.push({ vessel_name: 'OLD FLIP', status: 'OPEN', eta_ecsa: dIso(40), last_updated: dIso(30) + 'T00:00:00Z', field_overrides: { status: dIso(90) + 'T00:00:00Z' } });
     vessels.push({ vessel_name: 'FIXED OLD', status: 'FIXED', eta_ecsa: dIso(45) });
     const sp = sweepStalePositions();
     const st = n => vessels.find(v => v.vessel_name === n).status;
-    A(sp === 3 && st('JULY GHOST') === 'WITHDRAWN' && st('WHATSAPP GHOST') === 'WITHDRAWN' && st('OLD FLIP') === 'WITHDRAWN', 'stale ETAs withdrawn (sheet + manual ships): ' + sp);
-    A(vessels[0].withdrawn_reason === 'stale position' && vessels[0].withdrawn_at, 'stale reason + stamp');
+    A(sp === 3 && st('JULY GHOST') === 'WITHDRAWN' && st('WHATSAPP GHOST') === 'WITHDRAWN' && st('OLD FLIP') === 'WITHDRAWN', 'stale + untouched withdrawn (sheet + manual ships): ' + sp);
+    A(/fixed elsewhere/.test(vessels[0].withdrawn_reason) && vessels[0].withdrawn_at, 'stale reason + stamp');
+    A(st('STILL THERE') === 'OPEN' && st('MANUAL TOUCHED') === 'OPEN', 'ETA passed but row touched this week → still there');
     A(st('LATE LAYDAY') === 'OPEN' && st('JUST PAST') === 'OPEN' && st('NO DATES') === 'OPEN', 'live / recent / undated stay OPEN');
     A(st('KEPT BY DESK') === 'OPEN' && st('FIXED OLD') === 'FIXED', 'desk flip after ETA + non-OPEN untouched');
-    // The sheet still lists her with the dead ETA → she stays down; ETA moved forward → back OPEN
+    // Sheet still lists her, row untouched → she stays down. Row touched
+    // again (desk updated her) → back OPEN, and the fresh stamp carries.
     const fmt = iso => { const d = new Date(iso + 'T00:00:00Z'); return d.getUTCDate() + '-' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()]; };
     const sHdr = ['UPDATE', 'VESSEL', 'DWT', 'AGE', 'LAYDAY', 'ETA', 'OWNER', 'STATUS'].join('\\t');
-    const sOld = [fmt(dIso(0)) + ' 08:00', 'July Ghost', '82,000', 'Jan-2018', fmt(dIso(50)), fmt(dIso(45)), 'OWNERCO', '1'].join('\\t');
+    const sOld = [fmt(dIso(50)) + ' 08:00', 'July Ghost', '82,000', 'Jan-2018', fmt(dIso(50)), fmt(dIso(45)), 'OWNERCO', '1'].join('\\t');
     syncCSVVessels(parseCSVVessels([sHdr, sOld].join('\\n')).vessels, { autoWithdraw: true });
-    A(st('JULY GHOST') === 'WITHDRAWN', 'stale-swept ship does not bounce back while the row keeps the dead ETA');
+    A(st('JULY GHOST') === 'WITHDRAWN', 'stale-swept ship does not bounce back while the row sits untouched');
     const sNew = [fmt(dIso(0)) + ' 09:00', 'July Ghost', '82,000', 'Jan-2018', fmt(dIso(-10)), fmt(dIso(-5)), 'OWNERCO', '1'].join('\\t');
     syncCSVVessels(parseCSVVessels([sHdr, sNew].join('\\n')).vessels, { autoWithdraw: true });
     const jg = vessels.find(v => v.vessel_name === 'JULY GHOST');
-    A(jg.status === 'OPEN' && !jg.withdrawn_reason, 'ETA moved forward → reopened, reason cleared');
-    A(sweepStalePositions() === 0, 'reopened with a live ETA is not re-swept');
+    A(jg.status === 'OPEN' && !jg.withdrawn_reason, 'row touched with a new ETA → reopened, reason cleared');
+    A(jg.csv_updated && jg.csv_updated.slice(0, 10) === dIso(0), 'sheet UPDATE stamp carried forward on sync: ' + jg.csv_updated);
+    A(sweepStalePositions() === 0, 'reopened + touched is not re-swept');
 
     // QUOTE RESIDUE: a ship reentering the grid must not resurrect a rate
     // from her previous cycle when her return row carries no rate
