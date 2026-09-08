@@ -60,11 +60,12 @@ function applyEcsa(data) {
   // autoWithdraw: sheet-managed ships that vanished from the sheet get
   // marked WITHDRAWN; manually-added ships are never auto-touched
   const r = syncCSVVessels(parsed, { autoWithdraw: true });
+  const stale = (typeof sweepStalePositions === 'function') ? sweepStalePositions() : 0;
   save();
   if (typeof renderTable === 'function') renderTable();
   if (typeof updateStats === 'function') updateStats();
   const suspects = (typeof isFixSuspect === 'function') ? vessels.filter(isFixSuspect).length : 0;
-  return `${parsed.length} rows (${r.added} new, ${r.updated} updated${r.autoWithdrawn ? ', ' + r.autoWithdrawn + ' auto-withdrawn' : ''}${r.reopened ? ', ' + r.reopened + ' reopened after fixture' : ''})${suspects ? ` · ⚠ ${suspects} FIXED but still trading — review FAILED? flags` : ''}`;
+  return `${parsed.length} rows (${r.added} new, ${r.updated} updated${r.autoWithdrawn ? ', ' + r.autoWithdrawn + ' auto-withdrawn' : ''}${stale ? ', ' + stale + ' stale → withdrawn' : ''}${r.reopened ? ', ' + r.reopened + ' reopened after fixture' : ''})${suspects ? ` · ⚠ ${suspects} FIXED but still trading — review FAILED? flags` : ''}`;
 }
 
 function applyCargo(data) {

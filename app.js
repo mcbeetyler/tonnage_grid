@@ -2367,6 +2367,11 @@ async function init() {
     const swept = sweepStaleFixtureResidue();
     if (swept) { console.log('[board] archived stale fixture residue on ' + swept + ' reopened ship(s)'); save(); }
   }
+  // OPEN ships whose ETA passed weeks ago → WITHDRAWN (stale position)
+  if (typeof sweepStalePositions === 'function') {
+    const stale = sweepStalePositions();
+    if (stale) { console.log('[board] withdrew ' + stale + ' stale position(s)'); save(); }
+  }
   // Restore persisted filter toggle states
   const p6Btn = document.getElementById('p6OfferToggle');
   if (p6Btn && p6OfferOnly) p6Btn.classList.add('active');

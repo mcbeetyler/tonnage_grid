@@ -470,8 +470,12 @@ function syncCSVVessels(newVessels, opts) {
     // Status: '1' = active.
     if (nv.csv_status === '0' && existing.status === 'OPEN' && !isProtected('status')) {
       existing.status = 'WITHDRAWN'; changed = true;
-    } else if (nv.csv_status === '1' && existing.status === 'WITHDRAWN' && !isProtected('status')) {
+    } else if (nv.csv_status === '1' && existing.status === 'WITHDRAWN' && !isProtected('status')
+               && !(existing.withdrawn_reason === STALE_REASON && isStalePosition(existing))) {
+      // (a stale-swept ship whose row still carries the dead ETA stays
+      // withdrawn — the desk moving her ETA forward is what reopens her)
       existing.status = 'OPEN';
+      delete existing.withdrawn_reason;
       // Back on the sheet as a live position: old fixture residue (she may
       // have gone FIXED → withdrawn-from-grid → returned) is history now
       if (existing.date_fixed && nv.open_date && nv.open_date > existing.date_fixed) {
@@ -551,6 +555,45 @@ function syncCSVVessels(newVessels, opts) {
   }
 
   return { added, updated, unchanged, protectedFields, withdrawCandidates, autoWithdrawn, reopened };
+}
+
+// Stale positions: an OPEN ship whose ETA / layday passed weeks ago without
+// a fixture isn't a position any more — she fixed elsewhere, or the row is
+// dead. The grid feed only withdraws ships that DROP OFF the sheet; rows
+// left sitting there with a July ETA in September stayed OPEN forever.
+// Swept on every ECSA feed apply and on boot. Reversible: a manual status
+// flip stamps an override the feed respects, and the sync reopens her the
+// moment the sheet moves her ETA forward.
+const STALE_ETA_DAYS = 21;
+const STALE_REASON = 'stale position';
+function positionRefDate(v) {
+  const ds = [v.eta_ecsa, v.eta_ecsa_end, v.open_date]
+    .map(d => d ? String(d).slice(0, 10) : null)
+    .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d || ''));
+  return ds.length ? ds.sort().pop() : null;
+}
+function isStalePosition(v, nowMs) {
+  const ref = positionRefDate(v);
+  if (!ref) return false;
+  const age = ((nowMs || Date.now()) - new Date(ref + 'T00:00:00Z').getTime()) / 86400000;
+  return age > STALE_ETA_DAYS;
+}
+function sweepStalePositions(nowMs) {
+  let swept = 0;
+  const nowIso = new Date(nowMs || Date.now()).toISOString();
+  for (const v of vessels) {
+    if (v.status !== 'OPEN') continue;
+    // Desk flipped her status on/after the ETA passed = "she's still here" — respect it
+    const ov = (v.field_overrides || {}).status;
+    if (ov && ov.slice(0, 10) >= positionRefDate(v)) continue;
+    if (!isStalePosition(v, nowMs)) continue;
+    v.status = 'WITHDRAWN';
+    v.withdrawn_reason = STALE_REASON;
+    v.withdrawn_at = nowIso;
+    v.last_updated = nowIso;
+    swept++;
+  }
+  return swept;
 }
 
 // Archive a previous fixture's residue when a ship comes back as a fresh
@@ -686,13 +729,15 @@ function markFixturesFromCSV(parsed) {
     if (o.status && o.status > fixTs) continue;             // manual status is newer
     // Stale fixture guard: a ship that reopened after a Pacific round would
     // otherwise be instantly re-fixed by her OLD fixture still sitting in
-    // the tab's history. A fixture dated before her current opening is
-    // about the previous employment — skip it.
-    const openRef = v.open_date || (v.reopened_at ? String(v.reopened_at).slice(0, 10) : null);
+    // the tab's history. A fixture dated before she REOPENED is about the
+    // previous employment — skip it. (Not the layday: ships fix before
+    // their layday as a rule, so that reference skipped real fixtures and
+    // left grid-dropped ships parked on WITHDRAWN.)
+    const openRef = v.reopened_at ? String(v.reopened_at).slice(0, 10) : null;
     if (openRef && fixTs.slice(0, 10) < openRef) continue;
-    // Second guard when open_date is missing: a fixture months older than
-    // the ship's current ETA is plainly the previous voyage (Darya Lachmi:
-    // Apr fixture vs 25 Aug ETA)
+    // Second guard when there's no reopening stamp: a fixture months older
+    // than the ship's current ETA is plainly the previous voyage (Darya
+    // Lachmi: Apr fixture vs 25 Aug ETA)
     if (!openRef && v.eta_ecsa) {
       const gapDays = (new Date(String(v.eta_ecsa).slice(0, 10)) - new Date(fixTs.slice(0, 10))) / 86400000;
       if (gapDays > 60) continue;
