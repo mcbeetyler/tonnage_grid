@@ -584,11 +584,26 @@ function isStalePosition(v, nowMs) {
   const now = nowMs || Date.now();
   const etaAge = (now - new Date(ref + 'T00:00:00Z').getTime()) / 86400000;
   if (etaAge <= STALE_ETA_DAYS) return false;
-  // Row touched within the week (sheet UPDATE stamp; board edits for
-  // manually-added ships) = she's still there
-  const touched = v.csv_updated || v.last_updated;
+  // Row touched within the week = she's still there. Sheet ships: the
+  // sheet's own UPDATE stamp (an unparseable stamp protects nothing — the
+  // sync bumps last_updated on any cell change, so it's no proxy there).
+  // Manually-added ships: board edits.
+  const touched = touchedStamp(v);
   if (!touched) return true;
   return (now - new Date(touched).getTime()) / 86400000 > STALE_ETA_DAYS;
+}
+function touchedStamp(v) {
+  const fromSheet = v.csv_status != null || !!v.csv_updated;
+  return v.csv_updated || (fromSheet ? null : v.last_updated) || null;
+}
+// One-line verdict for the ship's debug panel: why she is / isn't stale
+function describeStaleness(v, nowMs) {
+  const now = nowMs || Date.now();
+  const ref = positionRefDate(v);
+  const touched = touchedStamp(v);
+  const days = iso => iso ? Math.floor((now - new Date(iso.length === 10 ? iso + 'T00:00:00Z' : iso).getTime()) / 86400000) : null;
+  return `pos_ref=${ref ?? '∅'}${ref ? ' (' + days(ref) + 'd ago)' : ''} · touched=${touched ?? '∅'}${touched ? ' (' + days(touched) + 'd ago)' : ''}`
+    + ` · stale=${isStalePosition(v, now) ? 'YES' : 'no'} (rule: pos_ref >${STALE_ETA_DAYS}d past AND untouched >${STALE_ETA_DAYS}d)`;
 }
 function sweepStalePositions(nowMs) {
   let swept = 0;
@@ -604,6 +619,7 @@ function sweepStalePositions(nowMs) {
     v.withdrawn_at = nowIso;
     v.last_updated = nowIso;
     swept++;
+    if (typeof console !== 'undefined') console.log('[board] stale → withdrawn: ' + v.vessel_name + ' · ' + describeStaleness(v, nowMs));
   }
   return swept;
 }

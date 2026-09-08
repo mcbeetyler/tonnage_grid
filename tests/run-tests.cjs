@@ -316,6 +316,7 @@ section('csv-import + app');
     vessels.push({ vessel_name: 'WHATSAPP GHOST', status: 'OPEN', eta_ecsa: dIso(12) });
     vessels.push({ vessel_name: 'STILL THERE', status: 'OPEN', eta_ecsa: dIso(12), csv_updated: dIso(2) + 'T00:00:00Z' });   // desk touched her this week
     vessels.push({ vessel_name: 'MANUAL TOUCHED', status: 'OPEN', eta_ecsa: dIso(12), last_updated: dIso(3) + 'T00:00:00Z' });
+    vessels.push({ vessel_name: 'BAD STAMP', status: 'OPEN', eta_ecsa: dIso(12), csv_status: '1', last_updated: dIso(1) + 'T00:00:00Z' });   // sheet ship, UPDATE cell unparseable
     vessels.push({ vessel_name: 'LATE LAYDAY', status: 'OPEN', eta_ecsa: dIso(40), open_date: dIso(3) });   // layday later than ETA → still live
     vessels.push({ vessel_name: 'JUST PAST', status: 'OPEN', eta_ecsa: dIso(4) });
     vessels.push({ vessel_name: 'NO DATES', status: 'OPEN' });
@@ -324,7 +325,9 @@ section('csv-import + app');
     vessels.push({ vessel_name: 'FIXED OLD', status: 'FIXED', eta_ecsa: dIso(45) });
     const sp = sweepStalePositions();
     const st = n => vessels.find(v => v.vessel_name === n).status;
-    A(sp === 3 && st('JULY GHOST') === 'WITHDRAWN' && st('WHATSAPP GHOST') === 'WITHDRAWN' && st('OLD FLIP') === 'WITHDRAWN', 'stale + untouched withdrawn (sheet + manual ships): ' + sp);
+    A(sp === 4 && st('JULY GHOST') === 'WITHDRAWN' && st('WHATSAPP GHOST') === 'WITHDRAWN' && st('OLD FLIP') === 'WITHDRAWN', 'stale + untouched withdrawn (sheet + manual ships): ' + sp);
+    A(st('BAD STAMP') === 'WITHDRAWN', 'sheet ship with unparseable UPDATE: last_updated is no proxy → swept');
+    A(/stale=YES/.test(describeStaleness(vessels[0])) && /stale=no/.test(describeStaleness(vessels.find(v => v.vessel_name === 'STILL THERE'))), 'staleness verdict line');
     A(/fixed elsewhere/.test(vessels[0].withdrawn_reason) && vessels[0].withdrawn_at, 'stale reason + stamp');
     A(st('STILL THERE') === 'OPEN' && st('MANUAL TOUCHED') === 'OPEN', 'ETA passed but row touched this week → still there');
     A(st('LATE LAYDAY') === 'OPEN' && st('JUST PAST') === 'OPEN' && st('NO DATES') === 'OPEN', 'live / recent / undated stay OPEN');

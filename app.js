@@ -202,7 +202,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-08-19.13';
+const APP_REV = '2026-09-08.1';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');
@@ -374,7 +374,8 @@ function openHistoryModal(globalIdx) {
       charterer=${v.charterer ?? '∅'} · p6_offer=${v.market_colour?.[0]?.p6_offer ?? '∅'} ·
       overrides=${JSON.stringify(v.field_overrides || {})} · fixture_hist=${(v.fixture_history || []).length} ·
       reopened_at=${v.reopened_at ?? '∅'} · offer_updated_at=${v.offer_updated_at ?? '∅'} ·
-      hire_offer=${v.hire_offer ?? '∅'} · hire_ta=${v.hire_ta ?? '∅'} · csv_updated=${v.csv_updated ?? '∅'}
+      hire_offer=${v.hire_offer ?? '∅'} · hire_ta=${v.hire_ta ?? '∅'} · csv_updated=${v.csv_updated ?? '∅'} ·
+      last_updated=${v.last_updated ?? '∅'} · ${typeof describeStaleness === 'function' ? describeStaleness(v) : ''}
     </div>
     ${v.status === 'OPEN' && (v.hire_offer != null || v.hire_ta != null || v.market_colour?.[0]?.p6_offer != null)
       ? `<button class="filter-pill" style="font-size:11px;padding:4px 12px;margin-bottom:12px"

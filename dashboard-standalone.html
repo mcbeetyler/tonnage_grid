@@ -3009,11 +3009,26 @@ function isStalePosition(v, nowMs) {
   const now = nowMs || Date.now();
   const etaAge = (now - new Date(ref + 'T00:00:00Z').getTime()) / 86400000;
   if (etaAge <= STALE_ETA_DAYS) return false;
-  // Row touched within the week (sheet UPDATE stamp; board edits for
-  // manually-added ships) = she's still there
-  const touched = v.csv_updated || v.last_updated;
+  // Row touched within the week = she's still there. Sheet ships: the
+  // sheet's own UPDATE stamp (an unparseable stamp protects nothing — the
+  // sync bumps last_updated on any cell change, so it's no proxy there).
+  // Manually-added ships: board edits.
+  const touched = touchedStamp(v);
   if (!touched) return true;
   return (now - new Date(touched).getTime()) / 86400000 > STALE_ETA_DAYS;
+}
+function touchedStamp(v) {
+  const fromSheet = v.csv_status != null || !!v.csv_updated;
+  return v.csv_updated || (fromSheet ? null : v.last_updated) || null;
+}
+// One-line verdict for the ship's debug panel: why she is / isn't stale
+function describeStaleness(v, nowMs) {
+  const now = nowMs || Date.now();
+  const ref = positionRefDate(v);
+  const touched = touchedStamp(v);
+  const days = iso => iso ? Math.floor((now - new Date(iso.length === 10 ? iso + 'T00:00:00Z' : iso).getTime()) / 86400000) : null;
+  return `pos_ref=${ref ?? '∅'}${ref ? ' (' + days(ref) + 'd ago)' : ''} · touched=${touched ?? '∅'}${touched ? ' (' + days(touched) + 'd ago)' : ''}`
+    + ` · stale=${isStalePosition(v, now) ? 'YES' : 'no'} (rule: pos_ref >${STALE_ETA_DAYS}d past AND untouched >${STALE_ETA_DAYS}d)`;
 }
 function sweepStalePositions(nowMs) {
   let swept = 0;
@@ -3029,6 +3044,7 @@ function sweepStalePositions(nowMs) {
     v.withdrawn_at = nowIso;
     v.last_updated = nowIso;
     swept++;
+    if (typeof console !== 'undefined') console.log('[board] stale → withdrawn: ' + v.vessel_name + ' · ' + describeStaleness(v, nowMs));
   }
   return swept;
 }
@@ -4047,7 +4063,7 @@ function fmtTimestamp(iso) {
 
 // Version stamp — bumped on every change so "which code is my browser
 // running?" is answered by hovering the Synced badge or reading the console.
-const APP_REV = '2026-08-19.13';
+const APP_REV = '2026-09-08.1';
 console.log('[board] revision', APP_REV);
 document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('syncBadge');
@@ -4219,7 +4235,8 @@ function openHistoryModal(globalIdx) {
       charterer=${v.charterer ?? '∅'} · p6_offer=${v.market_colour?.[0]?.p6_offer ?? '∅'} ·
       overrides=${JSON.stringify(v.field_overrides || {})} · fixture_hist=${(v.fixture_history || []).length} ·
       reopened_at=${v.reopened_at ?? '∅'} · offer_updated_at=${v.offer_updated_at ?? '∅'} ·
-      hire_offer=${v.hire_offer ?? '∅'} · hire_ta=${v.hire_ta ?? '∅'} · csv_updated=${v.csv_updated ?? '∅'}
+      hire_offer=${v.hire_offer ?? '∅'} · hire_ta=${v.hire_ta ?? '∅'} · csv_updated=${v.csv_updated ?? '∅'} ·
+      last_updated=${v.last_updated ?? '∅'} · ${typeof describeStaleness === 'function' ? describeStaleness(v) : ''}
     </div>
     ${v.status === 'OPEN' && (v.hire_offer != null || v.hire_ta != null || v.market_colour?.[0]?.p6_offer != null)
       ? `<button class="filter-pill" style="font-size:11px;padding:4px 12px;margin-bottom:12px"
@@ -14366,7 +14383,10 @@ function applyFixtures(data) {
 
 const APPLIERS = { ecsa: applyEcsa, fixtures: applyFixtures, cargo: applyCargo, natl: applyNatl };
 
-async function refreshFeeds(manual) {
+// reapplyEcsa: re-run the grid sync even when this browser already applied
+// the latest payload — the sync is idempotent and it's what runs the
+// stale-position sweep, so every page load gets a current board.
+async function refreshFeeds(manual, reapplyEcsa) {
   setBadge('Feeds…', 'pend');
   let results = [], anyFresh = false, anyErr = false;
   try {
@@ -14377,11 +14397,12 @@ async function refreshFeeds(manual) {
     const applied = appliedStamps();
     for (const src of ['ecsa', 'fixtures', 'natl', 'cargo']) {
       if (!stamps[src]) { results.push(src + ': no feed yet'); continue; }
-      if (applied[src] === stamps[src] && !manual) continue;   // already applied
+      const force = manual || (reapplyEcsa && src === 'ecsa');
+      if (applied[src] === stamps[src] && !force) continue;   // already applied
       try {
         const payload = await fetchSource(src);
         if (!payload.ts || payload.data == null) { results.push(src + ': empty'); continue; }
-        if (applied[src] === payload.ts && !manual) continue;
+        if (applied[src] === payload.ts && !force) continue;
         const summary = APPLIERS[src](payload.data);
         markApplied(src, payload.ts);
         anyFresh = true;
@@ -14468,7 +14489,7 @@ function injectBadge() {
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', () => {
     injectBadge();
-    refreshFeeds(false);                       // apply anything fresh on load
+    refreshFeeds(false, true);                 // apply anything fresh on load; always re-sync the grid
     setInterval(() => refreshFeeds(false), 10 * 60 * 1000);  // re-check every 10 min
   });
 }

@@ -101,7 +101,10 @@ function applyFixtures(data) {
 
 const APPLIERS = { ecsa: applyEcsa, fixtures: applyFixtures, cargo: applyCargo, natl: applyNatl };
 
-async function refreshFeeds(manual) {
+// reapplyEcsa: re-run the grid sync even when this browser already applied
+// the latest payload — the sync is idempotent and it's what runs the
+// stale-position sweep, so every page load gets a current board.
+async function refreshFeeds(manual, reapplyEcsa) {
   setBadge('Feeds…', 'pend');
   let results = [], anyFresh = false, anyErr = false;
   try {
@@ -112,11 +115,12 @@ async function refreshFeeds(manual) {
     const applied = appliedStamps();
     for (const src of ['ecsa', 'fixtures', 'natl', 'cargo']) {
       if (!stamps[src]) { results.push(src + ': no feed yet'); continue; }
-      if (applied[src] === stamps[src] && !manual) continue;   // already applied
+      const force = manual || (reapplyEcsa && src === 'ecsa');
+      if (applied[src] === stamps[src] && !force) continue;   // already applied
       try {
         const payload = await fetchSource(src);
         if (!payload.ts || payload.data == null) { results.push(src + ': empty'); continue; }
-        if (applied[src] === payload.ts && !manual) continue;
+        if (applied[src] === payload.ts && !force) continue;
         const summary = APPLIERS[src](payload.data);
         markApplied(src, payload.ts);
         anyFresh = true;
@@ -203,7 +207,7 @@ function injectBadge() {
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', () => {
     injectBadge();
-    refreshFeeds(false);                       // apply anything fresh on load
+    refreshFeeds(false, true);                 // apply anything fresh on load; always re-sync the grid
     setInterval(() => refreshFeeds(false), 10 * 60 * 1000);  // re-check every 10 min
   });
 }
