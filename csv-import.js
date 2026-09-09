@@ -483,6 +483,11 @@ function syncCSVVessels(newVessels, opts) {
       // have gone FIXED → withdrawn-from-grid → returned) is history now
       if (existing.date_fixed && nv.open_date && nv.open_date > existing.date_fixed) {
         archiveFixtureResidue(existing);
+      } else if (!existing.date_fixed) {
+        // No fixture residue to archive, but a route tag (Coastal / India)
+        // from her last cycle would hide her from the ECSA FH report —
+        // a reopened position's route is unknown until she's quoted again
+        existing.route = null; existing.fixed_route = null;
       }
       // Her return row has no rate → the sheet says no rate. Don't let a
       // quote from her previous cycle walk back in with her.
@@ -492,22 +497,23 @@ function syncCSVVessels(newVessels, opts) {
       // A fixed (or long-stuck on-subs) ship back on the grid: reopen ONLY if her new layday is
       // clearly after the fixture (Pacific round done, ballasting back) —
       // not when the sheet is just lagging behind a fresh fixture.
-      // The old fixture is archived, never destroyed: it's rate history.
-      const REOPEN_GAP_DAYS = 21;
+      // ECSA FH fixtures are months-long, so 21 days separates lag from a
+      // real return. An alternate-route fixture (coastal / India, tagged by
+      // the desk) can be back inside two weeks — any layday after the fix
+      // date is her next position.
+      const routeTag = (existing.route || '').toUpperCase();
+      const altRoute = !!routeTag && routeTag !== 'ECSA FH';
+      const REOPEN_GAP_DAYS = altRoute ? 1 : 21;
       const newOpen = nv.open_date || null;
       const fixedOn = existing.date_fixed || null;
       const gap = (newOpen && fixedOn)
         ? (new Date(newOpen + 'T00:00:00Z') - new Date(fixedOn + 'T00:00:00Z')) / 86400000
         : null;
       if (gap != null && gap >= REOPEN_GAP_DAYS) {
-        existing.fixture_history = existing.fixture_history || [];
-        existing.fixture_history.push({
-          date_fixed: existing.date_fixed, fixed_price: existing.fixed_price ?? null,
-          charterer: existing.charterer ?? null, fix_msg: existing.fix_msg ?? null,
-        });
+        // Archive (records the route she fixed) and clear — incl. the route
+        // tag, which would otherwise hide her from the ECSA FH report
+        archiveFixtureResidue(existing);
         existing.status = 'OPEN';
-        existing.date_fixed = null; existing.fixed_price = null;
-        existing.fix_msg = null; existing.charterer = null;
         existing.reopened_at = rowTs;
         // Fresh position after the round trip — quotes from the cycle she
         // just completed are dead unless her return row carries a new rate

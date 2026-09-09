@@ -1792,8 +1792,11 @@ function setVesselStatus(idx, next) {
 
   // Reopening a previously-fixed ship = a NEW position: archive the old
   // fixture (date/price/charterer move to fixture_history, fields clear)
-  if (next === 'OPEN' && typeof archiveFixtureResidue === 'function') {
-    archiveFixtureResidue(v);
+  if (next === 'OPEN') {
+    if (typeof archiveFixtureResidue === 'function') archiveFixtureResidue(v);
+    // Even with nothing to archive, her last cycle's route tag (Coastal /
+    // India) must not follow her — it hides her from the ECSA FH report
+    v.route = null; v.fixed_route = null;
   }
 
   // Prompt for fixed price and charterer when moving to FIXED

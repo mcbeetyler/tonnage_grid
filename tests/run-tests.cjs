@@ -351,6 +351,37 @@ section('csv-import + app');
     A(jg.csv_updated && jg.csv_updated.slice(0, 10) === dIso(0), 'sheet UPDATE stamp carried forward on sync: ' + jg.csv_updated);
     A(sweepStalePositions() === 0, 'reopened + touched is not re-swept');
 
+    // ROUTE TAG MUST NOT FOLLOW HER BACK: ship fixed coastal (desk-tagged),
+    // back on the grid two weeks later for ECSA FH
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'COASTAL RETURN', status: 'FIXED', route: 'COASTAL', date_fixed: dIso(12),
+      fixed_price: 15000, charterer: 'LOCALCO', csv_updated: dIso(12) + 'T00:00:00Z' });
+    vessels.push({ vessel_name: 'FH LAG', status: 'FIXED', date_fixed: dIso(12), fixed_price: 21000, csv_updated: dIso(12) + 'T00:00:00Z' });
+    vessels.push({ vessel_name: 'TAGGED GHOST', status: 'WITHDRAWN', route: 'INDIA', withdrawn_reason: 'stale — assumed fixed elsewhere',
+      eta_ecsa: dIso(20), csv_updated: dIso(20) + 'T00:00:00Z', csv_status: '1' });
+    const crHdr = ['UPDATE', 'VESSEL', 'DWT', 'AGE', 'LAYDAY', 'ETA', 'OWNER', 'STATUS'].join('\\t');
+    const crRows = [
+      [fmt(dIso(0)) + ' 08:00', 'Coastal Return', '82,000', 'Jan-2018', fmt(dIso(-2)), fmt(dIso(-5)), 'OWNERCO', '1'],
+      [fmt(dIso(0)) + ' 08:00', 'FH Lag', '82,000', 'Jan-2018', fmt(dIso(-2)), fmt(dIso(-5)), 'OWNERCO', '1'],
+      [fmt(dIso(0)) + ' 08:00', 'Tagged Ghost', '82,000', 'Jan-2018', fmt(dIso(-4)), fmt(dIso(-8)), 'OWNERCO', '1'],
+    ].map(r => r.join('\\t'));
+    syncCSVVessels(parseCSVVessels([crHdr, ...crRows].join('\\n')).vessels, { autoWithdraw: true });
+    const cr = vessels.find(v => v.vessel_name === 'COASTAL RETURN');
+    A(cr.status === 'OPEN' && cr.route === null, 'coastal fixture reopens on a 14d gap, route tag cleared');
+    A(cr.fixture_history.length === 1 && cr.fixture_history[0].route === 'COASTAL' && cr.fixture_history[0].fixed_price === 15000, 'coastal fixture archived with its route');
+    A(vessels.find(v => v.vessel_name === 'FH LAG').status === 'FIXED', 'ECSA FH fixture: 14d gap is still sheet lag');
+    const tg = vessels.find(v => v.vessel_name === 'TAGGED GHOST');
+    A(tg.status === 'OPEN' && tg.route === null, 'stale-withdrawn ship back on the grid: route tag cleared');
+    A(getEffectiveRoute(cr) === 'ECSA FH' && getEffectiveRoute(tg) === 'ECSA FH', 'both count as ECSA FH candidates again');
+    // Manual flip to OPEN clears the tag too, even with nothing to archive
+    vessels.push({ vessel_name: 'HAND FLIP', status: 'WITHDRAWN', route: 'COASTAL' });
+    global.prompt = () => null;
+    const _rt = renderTable, _us = updateStats, _sv = save;
+    renderTable = () => {}; updateStats = () => {}; save = () => {};
+    setVesselStatus(vessels.length - 1, 'OPEN');
+    renderTable = _rt; updateStats = _us; save = _sv;
+    A(vessels[vessels.length - 1].status === 'OPEN' && vessels[vessels.length - 1].route === null, 'manual reopen clears route tag');
+
     // QUOTE RESIDUE: a ship reentering the grid must not resurrect a rate
     // from her previous cycle when her return row carries no rate
     vessels.length = 0;
