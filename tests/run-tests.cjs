@@ -881,6 +881,11 @@ section('S&D snapshot');
   A(sd.basinOfZone('E MED') === 'Bsea/Med' && sd.basinOfZone('RSEA') === null, 'Med zones roll up; Red Sea is not a basin');
   A(sd.basinOfStem('Cont/Baltic Fronthaul') === 'Cont/Baltic' && sd.basinOfStem('Bsea/Med TA') === 'Bsea/Med', 'stems → basin');
   A(sd.basinOfStem('EC CAN TA') === 'EC CAN' && sd.basinOfStem('ECSA Fronthaul') === 'ECSA', 'EC CAN / ECSA stems');
+  A(sd.sizeClass(82000) === 'kmx' && sd.sizeClass(76000) === 'pmx' && sd.sizeClass(null) === null, 'size class');
+  A(sd.commodityFamily('iron ore') === 'minerals' && sd.commodityFamily('HSS') === 'grain' && sd.commodityFamily('petcoke') === 'coal', 'commodity families');
+  A(sd.commodityFamily('') === 'unspecified' && sd.commodityFamily('widgets') === 'other', 'blank / unknown commodity');
+  A(sd.destRegion('Qingdao', global.Zones) === 'Far East' && sd.destRegion('Alger', global.Zones) === 'Med' && sd.destRegion('WC India', global.Zones) === 'India/PG', 'destination regions');
+  A(sd.destRegion('', global.Zones) === null && sd.destRegion('tbn', global.Zones) === null, 'unknown destination stays out');
 
   // Laycan start: year is the one nearest the day the cargo entered
   A(sd.laycanStart('15-30 Jul', '2026-07-01') === '2026-07-15', 'laycan day-month → same year');
@@ -888,75 +893,99 @@ section('S&D snapshot');
   A(sd.laycanStart('end aug', '2026-08-01') === '2026-08-16', 'bare month, late → 16th');
   A(sd.laycanStart('tbn', '2026-08-01') === null, 'no month → null');
 
-  // Supply now from both boards; ECSA only from the ECSA board
-  const sNow = sd.supplyNow(today, {
+  // Tonnage now from both boards, keyed by zone and zone~size; ECSA only from the ECSA board
+  const tNow = sd.tonnageNow(today, {
     ecsa: [
-      { vessel_name: 'A', status: 'OPEN', eta_ecsa: iso(-5) },      // 5d out → n15, n30
-      { vessel_name: 'B', status: 'OPEN', eta_ecsa: iso(-25) },     // 25d out → n30 only
-      { vessel_name: 'C', status: 'OPEN' },                         // undated → open only
+      { vessel_name: 'A', status: 'OPEN', dwt: 82000, eta_ecsa: iso(-5) },      // 5d out → n15, n30
+      { vessel_name: 'B', status: 'OPEN', dwt: 76000, eta_ecsa: iso(-25) },     // 25d out → n30 only
+      { vessel_name: 'C', status: 'OPEN' },                                     // undated, no dwt → open only
       { vessel_name: 'D', status: 'IN HOUSE', eta_ecsa: iso(-3) },
     ],
     natl: { vessels: [
-      { name: 'N1', dely_port: 'Hamburg', lay: iso(-2), region: 'ARAG/CONTI' },
-      { name: 'N2', dely_port: 'Riga', lay: iso(-20), region: 'BALTIC' },
-      { name: 'N3', dely_port: 'Piraeus', lay: iso(3), region: 'EMED' },   // layday passed → still prompt
+      { name: 'N1', dely_port: 'Hamburg', dwt: 82000, lay: iso(-2), region: 'ARAG/CONTI' },
+      { name: 'N2', dely_port: 'Riga', dwt: 81000, lay: iso(-20), region: 'BALTIC' },
+      { name: 'N3', dely_port: 'Piraeus', dwt: 75000, lay: iso(3), region: 'EMED' },   // layday passed → still prompt
       { name: 'N4', dely_port: 'Hamburg', lay: iso(-2), region: 'FIXED' },
       { name: 'N5', dely_port: 'Santos', lay: iso(-2), region: 'APS ECSA' }, // ECSA on the NATL list: ignored
     ] },
   });
-  A(sNow.ECSA.open === 3 && sNow.ECSA.n15 === 1 && sNow.ECSA.n30 === 2, 'ECSA open/n15/n30: ' + JSON.stringify(sNow.ECSA));
-  A(sNow['Cont/Baltic'].open === 2 && sNow['Cont/Baltic'].n15 === 1 && sNow['Cont/Baltic'].zones['N CONT'] === 1 && sNow['Cont/Baltic'].zones['BALTIC'] === 1, 'Cont/Baltic from two zones');
-  A(sNow['Bsea/Med'].open === 1 && sNow['Bsea/Med'].n15 === 1, 'passed layday counts as prompt');
-  A(sNow.ECSA.open === 3, 'NATL-list ECSA ship not double counted');
+  A(tNow.ECSA.open === 3 && tNow.ECSA.n15 === 1 && tNow.ECSA.n30 === 2, 'ECSA open/n15/n30: ' + JSON.stringify(tNow.ECSA));
+  A(tNow['ECSA~kmx'].n30 === 1 && tNow['ECSA~pmx'].n30 === 1 && tNow['ECSA~kmx'].open === 1, 'size keys');
+  A(tNow['N CONT'].open === 1 && tNow['BALTIC'].open === 1 && tNow['N CONT'].n15 === 1 && tNow['BALTIC'].n15 === 0, 'Cont and Baltic zones separately');
+  A(tNow['E MED'].n15 === 1, 'passed layday counts as prompt');
+  A(!Object.keys(tNow).some(k => k.startsWith('ECSA') && tNow[k].open > 3), 'NATL-list ECSA ship not double counted');
 
-  // Demand spans + series with a horizon
+  // Cargo spans + series with a horizon; breakdown keys
   const hist = [
-    { id: 'c1', charterer: 'X', stem: 'ECSA Fronthaul', load: 'Santos', disch: 'Qingdao', laycan: '25-30 Sep', entered_market: iso(10), departed_at: null },
-    { id: 'c1b', charterer: 'X', stem: 'ECSA Fronthaul', load: 'Santos', disch: 'Qingdao', laycan: '25-30 Sep', entered_market: iso(8), departed_at: null },  // retouch: same cargo
-    { id: 'c2', charterer: 'Y', stem: 'ECSA Fronthaul', load: 'Santos', disch: 'Qingdao', laycan: '1-10 Nov', entered_market: iso(6), departed_at: null },   // deferred
-    { id: 'c3', charterer: 'Z', stem: 'Cont/Baltic TA', load: 'Rouen', disch: 'Alger', laycan: '20-25 Sep', entered_market: iso(20), departed_at: iso(3) },  // gone
-    { id: 'c4', charterer: 'W', stem: '', load: 'Hamburg', disch: 'Dakar', laycan: '1 Oct', entered_market: iso(2), departed_at: null },                // no stem → load port zone
+    { id: 'c1', charterer: 'Bunge', stem: 'ECSA Fronthaul', load: 'Santos', disch: 'Qingdao', cargo: 'grain', laycan: '25-30 Sep', entered_market: iso(10), departed_at: null },
+    { id: 'c1b', charterer: 'Bunge', stem: 'ECSA Fronthaul', load: 'Santos', disch: 'Qingdao', cargo: 'grain', laycan: '25-30 Sep', entered_market: iso(8), departed_at: null },  // retouch: same cargo
+    { id: 'c2', charterer: 'Y', stem: 'ECSA Fronthaul', load: 'Santos', disch: 'Qingdao', cargo: 'sbm', laycan: '1-10 Nov', entered_market: iso(6), departed_at: null },   // deferred
+    { id: 'c3', charterer: 'Z', stem: 'Cont/Baltic TA', load: 'Rouen', disch: 'Alger', cargo: 'wheat', laycan: '20-25 Sep', entered_market: iso(20), departed_at: iso(3) },  // gone
+    { id: 'c4', charterer: 'W', stem: '', load: 'Hamburg', disch: 'Dakar', cargo: 'fert', laycan: '1 Oct', entered_market: iso(2), departed_at: null },                 // no stem → load port zone
+    { id: 'c5', charterer: 'V', stem: 'Bsea/Med TA', load: 'tbn', disch: 'Alger', cargo: 'ore', laycan: '1 Oct', entered_market: iso(2), departed_at: null },           // no load port → stem basin, no zone
   ];
-  const cur = ['c1', 'c1b', 'c2', 'c4'];
-  const spans = sd.demandSpans(hist, cur, today);
+  const cur = ['c1', 'c1b', 'c2', 'c4', 'c5'];
+  const spans = sd.cargoSpans(hist, cur, today);
   A(spans.filter(s => s.basin === 'ECSA').length === 2, 'retouched cargo merged into one span');
-  const dAll = sd.demandNow(spans, null, today);
-  const d15 = sd.demandNow(spans, 15, today);
-  A(dAll.ECSA.n === 2 && d15.ECSA.n === 1, 'horizon: deferred Nov cargo drops out of prompt 15d');
-  A(dAll['Cont/Baltic'].n === 1 && dAll['Cont/Baltic'].TA === 0 && !dAll['Cont/Baltic'].FH, 'stemless cargo lands via load port, no leg');
-  A(dAll.ECSA.FH === 2, 'FH/TA split');
-  const series = sd.demandSeries(spans, 28, null, today);
-  const cb = series['Cont/Baltic'];
+  const c4s = spans.find(s => s.charterer === 'w');
+  A(c4s.basin === 'Cont/Baltic' && c4s.zone === 'N CONT' && c4s.leg === null && c4s.family === 'fert' && c4s.dest === 'WAfr', 'stemless cargo lands via load port; family/dest derived');
+  const c5s = spans.find(s => s.charterer === 'v');
+  A(c5s.basin === 'Bsea/Med' && c5s.zone === null && c5s.family === 'minerals', 'stem basin with unknown load port has no zone');
+  const byBasinAll = sd.seriesBy(spans, s => s.basin, 28, null, today);
+  const byBasin15 = sd.seriesBy(spans, s => s.basin, 28, 15, today);
+  const last = ser => ser[ser.length - 1].n;
+  A(last(byBasinAll.ECSA) === 2 && last(byBasin15.ECSA) === 1, 'horizon: deferred Nov cargo drops out of prompt 15d');
+  const cb = byBasinAll['Cont/Baltic'];
   A(cb.length === 29 && cb[cb.length - 1].date === today, 'series covers the window through today');
   const onDay = d => cb.find(x => x.date === iso(d)).n;
   A(onDay(10) === 1 && onDay(4) === 1 && onDay(3) === 0 && onDay(0) === 1, 'gone cargo live until its departure day (exclusive); stemless one live today: ' + [onDay(10), onDay(4), onDay(3), onDay(0)]);
   A(onDay(25) === 0, 'nothing before it entered');
+  const byLeg = sd.seriesBy(spans, s => s.basin + '|' + s.leg, 28, null, today);
+  A(last(byLeg['ECSA|FH']) === 2 && !byLeg['ECSA|TA'], 'leg breakdown keys');
 
   // Index + words
   const past = Array.from({ length: 10 }, (_, i) => ({ date: iso(i + 1), n: 10 }));
   A(sd.indexOf(14, past).idx === 140 && sd.verdict('supply', 140).word === 'deep', 'index 140 → deep');
   A(sd.indexOf(6, past).idx === 60 && sd.verdict('demand', 60).word === 'dried up', 'index 60 → dried up');
   A(sd.indexOf(10, past.slice(0, 3)).idx === null && sd.verdict('supply', null).word === 'collecting', '<5 samples → collecting');
+  A(sd.changeText({ idx: 140, avg: 10, now: 14 }) === '+40%' && sd.changeText({ idx: 300, avg: 0.5, now: 1.5 }) === '+1.0' && sd.changeText({ idx: null }) === '', 'change text: % vs units vs collecting');
 
-  // Snapshot merge is max per basin per field
+  // Snapshot merge is max per key per field
   const merged = sd.mergeDays({ '2026-09-01': { ECSA: { open: 40, n30: 20 } } },
-    { '2026-09-01': { ECSA: { open: 35, n30: 25, n15: 9 }, USG: { open: 3 } }, 'bad-date': { ECSA: { open: 99 } } });
+    { '2026-09-01': { ECSA: { open: 35, n30: 25, n15: 9 }, 'USG~kmx': { open: 3 } }, 'bad-date': { ECSA: { open: 99 } } });
   A(merged['2026-09-01'].ECSA.open === 40 && merged['2026-09-01'].ECSA.n30 === 25 && merged['2026-09-01'].ECSA.n15 === 9, 'merge keeps the max per field');
-  A(merged['2026-09-01'].USG.open === 3 && !merged['bad-date'], 'new basin added, bad date dropped');
+  A(merged['2026-09-01']['USG~kmx'].open === 3 && !merged['bad-date'], 'new key added, bad date dropped');
 
-  // Whole grid: supply history from snapshots, demand from the book
+  // Tonnage series: zone keys summed; legacy basin-keyed day used as fallback
   const days = {};
-  for (let d = 1; d <= 10; d++) days[iso(d)] = { ECSA: { open: 6, n15: 2, n30: 4 }, 'Cont/Baltic': { open: 20, n15: 10, n30: 15 } };
-  const grid = sd.computeGrid({ today, days, supplyNow: sNow, book: { hist, cur },
+  for (let d = 1; d <= 10; d++) days[iso(d)] = { ECSA: { open: 6, n15: 2, n30: 4 }, 'ECSA~kmx': { n30: 3 }, 'N CONT': { n30: 12 }, 'BALTIC': { n30: 3 } };
+  days[iso(11)] = { 'Cont/Baltic': { n30: 20 } };   // first days of snapshots were basin-keyed
+  const cont = sd.tonnageSeries(days, ['N CONT', 'BALTIC'], 'n30', 28, today, 'Cont/Baltic');
+  A(cont.length === 11 && cont[0].n === 20 && cont[10].n === 15, 'zone keys summed, legacy basin day as fallback: ' + cont.map(x => x.n).join(','));
+
+  // Whole grid: tonnage history from snapshots, cargo from the book, breakdowns on both
+  const grid = sd.computeGrid({ today, days, tonnageNow: tNow, book: { hist, cur },
     horizon: { key: '30', label: '30 days', days: 30, field: 'n30' }, lookback: { key: '28', label: '4 wk', days: 28 } });
   const ecsa = grid.rows.find(r => r.basin === 'ECSA');
-  const cont = grid.rows.find(r => r.basin === 'Cont/Baltic');
-  A(ecsa.supply.now === 2 && ecsa.supply.idx === 50 && ecsa.supply.verdict.word === 'thin', 'ECSA supply vs snapshots: ' + ecsa.supply.idx);
-  A(cont.supply.now === 2 && cont.supply.idx === 13, 'Cont supply collapsed vs snapshots: ' + cont.supply.idx);
-  A(ecsa.demand.now === 1 && ecsa.demand.idx != null, 'ECSA demand has an index from book history');
+  const contRow = grid.rows.find(r => r.basin === 'Cont/Baltic');
+  A(ecsa.supply.now === 2 && ecsa.supply.idx === 50 && ecsa.supply.verdict.word === 'thin', 'ECSA tonnage vs snapshots: ' + ecsa.supply.idx);
+  A(contRow.supply.now === 2 && contRow.supply.idx === 13, 'Cont tonnage collapsed vs snapshots: ' + contRow.supply.idx);
+  A(contRow.supply.dims.zone.length === 2 && contRow.supply.dims.zone[0].value === 'Cont' && contRow.supply.dims.zone[0].now === 1 && contRow.supply.dims.zone[0].idx === 8, 'zone breakdown with its own index');
+  A(ecsa.supply.dims.size.find(m => m.value === 'kmx').idx === 33, 'size breakdown with its own index');
+  A(!ecsa.supply.dims.zone, 'single-zone basin has no zone breakdown');
+  A(ecsa.demand.now === 1 && ecsa.demand.idx != null, 'ECSA cargo has an index from book history');
+  A(ecsa.demand.dims.leg[0].value === 'FH' && ecsa.demand.dims.leg[0].now === 1, 'leg breakdown');
+  A(ecsa.demand.dims.family.some(m => m.value === 'grain' && m.now === 1), 'commodity breakdown');
+  A(ecsa.demand.dims.dest[0].value === 'Far East', 'destination breakdown');
+  A(ecsa.demand.dims.charterer.some(m => m.value === 'bunge'), 'charterer breakdown');
+  A(contRow.demand.dims.zone.some(m => m.value === 'Cont' && m.now === 1), 'cargo zone breakdown from load port');
   A(ecsa.balance.ratio === 0.5, 'balance = cargoes per ship');
+  const head = sd.headline(grid, 5);
+  A(head.length >= 1 && head[0].includes('tonnage'), 'headline names a tonnage standout: ' + head[0]);
+  A(head.every(h => !/ECSA cargo|ECSA FH/.test(h)), 'tiny moves (0→1 cargo) never lead the headline');
+  A(head.filter(h => /^(Cont\/Baltic|Cont|Baltic|Cont\/Baltic (kmx|pmx)) tonnage/.test(h)).length <= 2, 'one story per basin/side, not four restatements: ' + head.join(' | '));
   const text = sd.buildText(grid);
-  A(/S&D SNAPSHOT/.test(text) && /\*ECSA\* — ships 2/.test(text), 'WhatsApp text');
+  A(/S&D SNAPSHOT/.test(text) && /\*ECSA\* — ships 2/.test(text) && /FH 1/.test(text), 'WhatsApp text with breakdowns');
   delete global.Zones;
 }
 

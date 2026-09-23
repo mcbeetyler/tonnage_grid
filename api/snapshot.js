@@ -10,9 +10,10 @@ export const config = {
 };
 
 // Daily supply snapshots for the S&D page.
-//   pt_snd_snapshots = { 'YYYY-MM-DD': { BASIN: { open, n15, n30 }, ... }, ... }
+//   pt_snd_snapshots = { "YYYY-MM-DD": { KEY: { open, n15, n30 }, ... }, ... }
+//   where KEY is a zone (N CONT, W MED, ECSA...) or zone~size (N CONT~kmx)
 // Every browser that has both boards loaded posts today's counts on load;
-// several browsers a day are merged by MAX per basin per field, so a tab
+// several browsers a day are merged by MAX per key per field, so a tab
 // with a stale or empty NATL list can never pull a good day's numbers down.
 // Demand needs no snapshot — the cargo book keeps its own history.
 const KEY = 'pt_snd_snapshots';
