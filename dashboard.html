@@ -701,6 +701,7 @@
   </div>
   <div class="tab-group">
     <span class="tab-group-label">Market</span>
+    <button class="tab-btn" onclick="switchTab('snd')" title="Supply and demand by basin against their recent run rate — the snapshot for the call">S&amp;D</button>
     <button class="tab-btn" onclick="switchTab('supply')">Supply</button>
     <button class="tab-btn" onclick="switchTab('market')">Market</button>
     <button class="tab-btn" onclick="switchTab('report')">Report</button>
@@ -1067,6 +1068,10 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 <div id="tab-natlboard" class="tab-panel">
   <div id="nb_root"></div>
 </div><!-- end tab-natlboard -->
+
+<div id="tab-snd" class="tab-panel">
+  <div id="sd_root"></div>
+</div><!-- end tab-snd -->
 
 <div id="tab-supply" class="tab-panel">
   <div id="sp_root"></div>
@@ -1523,6 +1528,7 @@ CSV re-paste safely dedupes by vessel name. Existing P6 Bid, Fixed Price, Charte
 <script src="pairings.js"></script>
 <script src="supply.js"></script>
 <script src="natl-board.js"></script>
+<script src="snd.js"></script>
 <script src="scrubber-calc.js"></script>
 <script src="overview.js"></script>
 <script src="feeds.js"></script>

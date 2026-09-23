@@ -41,6 +41,9 @@ tonnage_grid/
 ├── zones.js                ← port → zone mapping + distance-estimate clusters
 ├── scrubber-calc.js        ← scrubber economics engine + tab (honest all-in benefit)
 ├── overview.js             ← morning overview strip
+├── snd.js                  ← S&D tab: one row per basin, tonnage vs cargo against
+│                             their recent run rate (daily supply snapshot in KV,
+│                             demand rebuilt from the cargo book)
 ├── report.js               ← Tonnage Report tab (best offers/bids per ETA window)
 ├── pairings.js             ← Pairings tab (board ships ↔ cargo book, both ways)
 ├── supply.js               ← Supply tab (rolling depth curve + price ladder)
@@ -50,7 +53,8 @@ tonnage_grid/
 ├── voyages.js / voyage-estimator.js / voyageCalc.js / market.js /
 │   participants.js         ← remaining tabs
 ├── api/                    ← Vercel serverless: vessels (rev-guarded KV sync),
-│                             cargo, voyages, import (feed drop-box), parse (AI)
+│                             cargo, voyages, import (feed drop-box), parse (AI),
+│                             snapshot (daily supply counts by basin, max-merged)
 ├── middleware.js            ← Basic-auth gate for the whole app
 ├── schema.js               ← data-shape documentation (JSDoc)
 ├── tests/run-tests.cjs     ← test suite (`npm test`)
