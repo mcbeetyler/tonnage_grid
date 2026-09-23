@@ -42,8 +42,10 @@ tonnage_grid/
 ├── scrubber-calc.js        ← scrubber economics engine + tab (honest all-in benefit)
 ├── overview.js             ← morning overview strip
 ├── snd.js                  ← S&D tab: one row per basin, tonnage vs cargo against
-│                             their recent run rate (daily supply snapshot in KV,
-│                             demand rebuilt from the cargo book)
+│                             their recent run rate, with zone/size/leg/commodity/
+│                             destination/charterer breakdowns and two Atlantic
+│                             maps (daily supply snapshot in KV, demand rebuilt
+│                             from the cargo book)
 ├── report.js               ← Tonnage Report tab (best offers/bids per ETA window)
 ├── pairings.js             ← Pairings tab (board ships ↔ cargo book, both ways)
 ├── supply.js               ← Supply tab (rolling depth curve + price ladder)

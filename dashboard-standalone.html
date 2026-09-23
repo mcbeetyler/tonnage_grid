@@ -14141,7 +14141,7 @@ const LOOKBACKS = [
   { key: '56', label: '8 wk', days: 56 },
   { key: '91', label: '13 wk', days: 91 },
 ];
-const ui = Object.assign({ horizon: '30', lookback: '28', detail: true },
+const ui = Object.assign({ horizon: '30', lookback: '28', detail: true, map: true },
   IS_BROWSER ? JSON.parse(localStorage.getItem(LS_UI) || '{}') : {});
 function saveUi() { if (IS_BROWSER) localStorage.setItem(LS_UI, JSON.stringify(ui)); }
 const horizon = () => HORIZONS.find(h => h.key === ui.horizon) || HORIZONS[1];
@@ -14585,8 +14585,156 @@ async function syncSnapshots() {
   return local;
 }
 
+// ─── Map: basin polygons, projection, world outline ──────────────────────────
+// Coarse outlines per zone in lon/lat — the coast plus the water the desk
+// means by the name, not a legal boundary. Hand-drawn; edit freely.
+const ZONE_POLYS = {
+  'ECSA':   [[-52, 1], [-30, -4], [-30, -40], [-55, -58], [-68, -56], [-66, -30], [-58, -10]],
+  'NCSA':   [[-86, 20], [-56, 20], [-40, 6], [-52, 1], [-60, -4], [-72, -4], [-84, 8]],
+  'USG':    [[-100, 32], [-80, 32], [-80, 24], [-86, 20], [-100, 20]],
+  'USEC':   [[-84, 46], [-58, 46], [-58, 26], [-80, 24], [-80, 32], [-84, 32]],
+  'EC CAN': [[-75, 63], [-40, 63], [-40, 46], [-58, 46], [-75, 46]],
+  'N CONT': [[-13, 62], [10, 62], [10, 53], [3, 49], [-13, 47]],
+  'BALTIC': [[10, 62], [32, 68], [32, 53], [10, 53]],
+  'W MED':  [[-13, 47], [3, 49], [10, 47], [15, 47], [15, 34], [-13, 34]],
+  'E MED':  [[15, 47], [27, 47], [27, 41], [37, 41], [37, 30], [15, 30], [15, 34]],
+  'BSEA':   [[27, 48], [42, 48], [42, 41], [27, 41]],
+  'WAFR':   [[-20, 27], [15, 27], [15, -19], [-20, -19]],
+};
+// Where a cargo is going, as a point to draw a flow to
+const DEST_POINTS = {
+  'Far East': [122, 30], 'India/PG': [66, 20], 'SE Asia/Oz': [135, -25], 'S Africa': [28, -31],
+  'Med': [14, 38], 'Cont': [3, 54], 'Americas': [-70, 12], 'W Africa': [2, 3],
+};
+// Atlantic viewport, 4 px per degree; destinations beyond it (Far East,
+// India) are drawn to the edge with a label
+const MAP = { w: 680, h: 464, lonMin: -110, lonMax: 60, latMax: 68, latMin: -48 };
+function project(lon, lat) {
+  const x = (lon - MAP.lonMin) / (MAP.lonMax - MAP.lonMin) * MAP.w;
+  const y = (MAP.latMax - lat) / (MAP.latMax - MAP.latMin) * MAP.h;
+  return [x, y];
+}
+function centroid(poly) {
+  const n = poly.length;
+  return [poly.reduce((s, p) => s + p[0], 0) / n, poly.reduce((s, p) => s + p[1], 0) / n];
+}
+function pathOf(ring) { return ring.map((p, i) => (i ? 'L' : 'M') + project(p[0], p[1]).map(v => v.toFixed(1)).join(' ')).join('') + 'Z'; }
+
+// TopoJSON → rings of [lon, lat]. Enough of the spec for world-atlas land:
+// quantized delta-encoded arcs, negative index = reversed arc.
+function decodeTopo(topo) {
+  const tr = topo.transform;
+  const arcs = topo.arcs.map(arc => {
+    let x = 0, y = 0;
+    return arc.map(([dx, dy]) => {
+      x += dx; y += dy;
+      return tr ? [x * tr.scale[0] + tr.translate[0], y * tr.scale[1] + tr.translate[1]] : [x, y];
+    });
+  });
+  const ring = idxs => {
+    const out = [];
+    for (const i of idxs) {
+      const a = i < 0 ? arcs[~i].slice().reverse() : arcs[i];
+      for (let k = out.length ? 1 : 0; k < a.length; k++) out.push(a[k]);
+    }
+    return out;
+  };
+  const rings = [];
+  const walk = g => {
+    if (!g) return;
+    if (g.type === 'GeometryCollection') g.geometries.forEach(walk);
+    else if (g.type === 'Polygon') rings.push(ring(g.arcs[0]));
+    else if (g.type === 'MultiPolygon') g.arcs.forEach(p => rings.push(ring(p[0])));
+  };
+  Object.values(topo.objects || {}).forEach(walk);
+  return rings;
+}
+
+const LAND_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/land-110m.json';
+const LS_LAND = 'snd_land_v1';
+async function loadLand() {
+  if (SD.land) return SD.land;
+  let topo = null;
+  try { const c = localStorage.getItem(LS_LAND); if (c) topo = JSON.parse(c); } catch (e) { /* ignore */ }
+  if (!topo) {
+    try {
+      const r = await fetch(LAND_URL);
+      if (r.ok) { topo = await r.json(); try { localStorage.setItem(LS_LAND, JSON.stringify(topo)); } catch (e) { /* quota: fine */ } }
+    } catch (e) { /* offline: polygons draw over a plain sea */ }
+  }
+  SD.land = topo ? decodeTopo(topo) : [];
+  return SD.land;
+}
+
+// Fill opacity from how far off average: nothing at ±12, full at ±60
+function heat(m) {
+  if (m.idx == null) return 0;
+  return Math.min(1, Math.max(0, (Math.abs(m.idx - 100) - 12) / 48)) * 0.7 + 0.15;
+}
+
+function mapSvg(grid, side, land) {
+  const landPath = land && land.length ? `<path class="sd-land" d="${land.map(pathOf).join('')}"/>` : '';
+  const polys = [], labels = [], flows = [];
+  for (const r of grid.rows) {
+    const m = r[side];
+    const zones = BASIN_ZONES[r.basin];
+    // Per-zone fill where the basin has a zone breakdown, else the basin's
+    const fillFor = z => (m.dims.zone && m.dims.zone.find(x => x.value === (ZONE_LABEL[z] || z))) || m;
+    for (const z of zones) {
+      const poly = ZONE_POLYS[z]; if (!poly) continue;
+      const zm = fillFor(z);
+      polys.push(`<path class="sd-zone sd-fill-${zm.verdict.tone}" style="fill-opacity:${heat(zm).toFixed(2)}" d="${pathOf(poly)}" data-basin="${esc(r.basin)}"><title>${esc(ZONE_LABEL[z] || z)}: ${zm.now}${changeText(zm) ? ' ' + changeText(zm) : ''}</title></path>`);
+    }
+    const all = zones.flatMap(z => ZONE_POLYS[z] || []);
+    if (!all.length) continue;
+    const [cx, cy] = project(...centroid(all));
+    const ch = changeText(m);
+    labels.push(`<g class="sd-lbl" transform="translate(${cx.toFixed(1)},${cy.toFixed(1)})" data-basin="${esc(r.basin)}">` +
+      `<rect x="-30" y="-14" width="60" height="28" rx="4"/>` +
+      `<text y="-2" class="sd-lbl-n">${m.now}</text><text y="10" class="sd-lbl-c sd-fill-${m.verdict.tone}">${esc(ch || m.verdict.word)}</text></g>`);
+    if (side === 'demand') {
+      for (const d of (m.dims.dest || [])) {
+        const to = DEST_POINTS[d.value] || (() => { const z = Object.keys(ZONE_LABEL).find(k => ZONE_LABEL[k] === d.value); return z && ZONE_POLYS[z] ? centroid(ZONE_POLYS[z]) : null; })();
+        if (!to || !d.now) continue;
+        let [tx, ty] = project(to[0], to[1]);
+        const off = tx < 0 || tx > MAP.w || ty < 0 || ty > MAP.h;
+        if (off) {   // clamp along the line to the viewport edge
+          const dx = tx - cx, dy = ty - cy;
+          let k = 1;
+          if (tx > MAP.w) k = Math.min(k, (MAP.w - 6 - cx) / dx);
+          if (tx < 0) k = Math.min(k, (6 - cx) / dx);
+          if (ty > MAP.h) k = Math.min(k, (MAP.h - 6 - cy) / dy);
+          if (ty < 0) k = Math.min(k, (6 - cy) / dy);
+          tx = cx + dx * k; ty = cy + dy * k;
+        }
+        const mx = (cx + tx) / 2, my = Math.min(cy, ty) - Math.abs(tx - cx) * 0.18;
+        flows.push(`<path class="sd-flow" style="stroke-width:${(0.8 + Math.min(d.now, 8) * 0.55).toFixed(1)}" d="M${cx.toFixed(1)} ${cy.toFixed(1)} Q${mx.toFixed(1)} ${my.toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)}"><title>${esc(r.basin)} → ${esc(d.value)}: ${d.now}</title></path>` +
+          `<circle class="sd-flow-end" cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="2.2"/>` +
+          (off ? `<text class="sd-flow-lbl" x="${(tx - 4).toFixed(1)}" y="${(ty - 4).toFixed(1)}">${esc(d.value)} ${d.now}</text>` : ''));
+      }
+    }
+  }
+  return `<svg class="sd-map" viewBox="0 0 ${MAP.w} ${MAP.h}" preserveAspectRatio="xMidYMid meet">` +
+    `<rect class="sd-sea" width="${MAP.w}" height="${MAP.h}"/>${landPath}${polys.join('')}${flows.join('')}${labels.join('')}</svg>`;
+}
+
+function renderMaps(grid) {
+  const el = document.getElementById('sd_maps');
+  if (!el) return;
+  if (!ui.map) { el.innerHTML = ''; return; }
+  const land = SD.land || [];
+  el.innerHTML = `
+    <div class="sd-mapcard"><div class="sd-maptitle">Tonnage <span class="sd-th-sub">open ships vs run rate · blue deep, amber thin</span></div>${mapSvg(grid, 'supply', land)}</div>
+    <div class="sd-mapcard"><div class="sd-maptitle">Cargo <span class="sd-th-sub">live cargoes vs run rate · lines = where they're going</span></div>${mapSvg(grid, 'demand', land)}</div>`;
+  el.querySelectorAll('[data-basin]').forEach(n => n.addEventListener('click', () => {
+    const row = document.getElementById('sd_row_' + n.dataset.basin.replace(/[^a-z0-9]/gi, '_'));
+    if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); row.classList.add('sd-flash'); setTimeout(() => row.classList.remove('sd-flash'), 1600); }
+  }));
+  if (!SD.land) loadLand().then(() => renderMaps(grid));
+}
+
 // ─── Render ──────────────────────────────────────────────────────────────────
-const SD = { initialised: false, days: null };
+const SD = { initialised: false, days: null, land: null };
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
@@ -14652,7 +14800,7 @@ function render() {
       : `<div class="sd-cell"><div class="sd-now">${b.ratio.toFixed(2)}</div>
            <div class="sd-meta">${changeLabel(Object.assign({ now: b.ratio }, b))}</div>
            <div class="sd-word sd-tone-${b.verdict.tone}">${esc(b.verdict.word)}</div></div>`;
-    return `<tr>
+    return `<tr id="sd_row_${r.basin.replace(/[^a-z0-9]/gi, '_')}">
       <td class="sd-basin"><div class="sd-basin-name">${esc(r.basin)}</div>
         <div class="sd-sub">${s.open ? `${s.open} open` : 'no open ships'}${s.open && s.open !== s.now ? `, ${s.now} inside ${esc(H.label.toLowerCase())}` : ''}</div></td>
       <td>${cell(s, sLines)}</td>
@@ -14666,11 +14814,13 @@ function render() {
     <div class="sd-toolbar">
       <div class="sd-filter"><span class="toolbar-label">Laydays</span>${pills(HORIZONS, 'horizon')}</div>
       <div class="sd-filter"><span class="toolbar-label">Versus</span>${pills(LOOKBACKS, 'lookback')}</div>
+      <button class="filter-pill${ui.map ? ' active' : ''}" id="sd_map" title="Basins on a map, tonnage and cargo side by side">Map</button>
       <button class="filter-pill${ui.detail ? ' active' : ''}" id="sd_detail" title="Zone, size, leg, commodity, destination and charterer breakdowns under each cell">Breakdowns</button>
       <div class="sd-spacer"></div>
       <button class="filter-pill" id="sd_copy">Copy for WhatsApp</button>
     </div>
     ${head.length ? `<div class="sd-headline">${head.map(esc).join(' <span class="sd-dim">·</span> ')}</div>` : ''}
+    <div class="sd-maps" id="sd_maps"></div>
     <div class="sd-wrap"><table class="sd-table">
       <thead><tr>
         <th>Basin</th>
@@ -14688,6 +14838,8 @@ function render() {
     ui[b.dataset.k] = b.dataset.v; saveUi(); render();
   }));
   document.getElementById('sd_detail').addEventListener('click', () => { ui.detail = !ui.detail; saveUi(); render(); });
+  document.getElementById('sd_map').addEventListener('click', () => { ui.map = !ui.map; saveUi(); render(); });
+  renderMaps(grid);
   const copy = document.getElementById('sd_copy');
   copy.addEventListener('click', () => {
     const text = buildText(grid);
@@ -14737,6 +14889,26 @@ function injectCss() {
     .sd-tone-up{color:var(--accent)} .sd-tone-down{color:var(--amber)} .sd-tone-flat{color:var(--text-dim)} .sd-tone-dim{color:var(--text-dim)}
     .sd-dim{color:var(--text-dim)}
     .sd-foot{font-size:11px;color:var(--text-dim);margin-top:10px;line-height:1.5;max-width:100ch}
+    .sd-maps{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+    @media (max-width:1100px){.sd-maps{grid-template-columns:1fr}}
+    .sd-mapcard{border:1px solid var(--border);border-radius:var(--radius);background:var(--bg2);padding:8px 10px 6px}
+    .sd-maptitle{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin-bottom:6px}
+    .sd-map{width:100%;height:auto;display:block;border-radius:4px}
+    .sd-sea{fill:var(--bg3)}
+    .sd-land{fill:var(--border);stroke:none}
+    .sd-zone{stroke:var(--text-dim);stroke-width:.6;cursor:pointer;fill:var(--text-dim)}
+    .sd-zone:hover{stroke:var(--text-bright);stroke-width:1.2}
+    .sd-fill-up{fill:var(--accent)} .sd-fill-down{fill:var(--amber)} .sd-fill-flat{fill:var(--text-dim)} .sd-fill-dim{fill:var(--text-dim)}
+    .sd-lbl{cursor:pointer}
+    .sd-lbl rect{fill:var(--bg2);stroke:var(--border);stroke-width:.6;opacity:.92}
+    .sd-lbl text{text-anchor:middle;font-family:var(--mono);pointer-events:none}
+    .sd-lbl-n{font-size:11px;font-weight:700;fill:var(--text-bright)}
+    .sd-lbl-c{font-size:7.5px;font-weight:600}
+    .sd-flow-lbl{font-family:var(--mono);font-size:8px;font-weight:600;fill:var(--accent);text-anchor:end}
+    text.sd-fill-up{fill:var(--accent)} text.sd-fill-down{fill:var(--amber)} text.sd-fill-flat,text.sd-fill-dim{fill:var(--text-dim)}
+    .sd-flow{fill:none;stroke:var(--accent);stroke-opacity:.55;stroke-linecap:round}
+    .sd-flow-end{fill:var(--accent);fill-opacity:.8}
+    .sd-flash td{background:var(--accent-light)!important;transition:background .3s}
   `;
   document.head.appendChild(st);
 }
@@ -14764,6 +14936,7 @@ if (typeof module !== 'undefined' && module.exports) {
     _test: {
       BASINS, BASIN_ZONES, basinOfZone, basinOfStem, sizeClass, commodityFamily, destRegion, laycanStart,
       tonnageNow, cargoSpans, seriesBy, tonnageSeries, indexOf, verdict, mergeDays, computeGrid, headline, buildText, changeText,
+      ZONE_POLYS, DEST_POINTS, project, decodeTopo, heat,
       setUi: u => Object.assign(ui, u),
     },
   };

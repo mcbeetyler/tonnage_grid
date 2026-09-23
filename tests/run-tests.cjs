@@ -986,6 +986,24 @@ section('S&D snapshot');
   A(head.filter(h => /^(Cont\/Baltic|Cont|Baltic|Cont\/Baltic (kmx|pmx)) tonnage/.test(h)).length <= 2, 'one story per basin/side, not four restatements: ' + head.join(' | '));
   const text = sd.buildText(grid);
   A(/S&D SNAPSHOT/.test(text) && /\*ECSA\* — ships 2/.test(text) && /FH 1/.test(text), 'WhatsApp text with breakdowns');
+
+  // Map: every zone has a polygon, every destination a point, projection is sane
+  A(Object.values(sd.BASIN_ZONES).flat().every(z => Array.isArray(sd.ZONE_POLYS[z]) && sd.ZONE_POLYS[z].length >= 4), 'every zone has a polygon');
+  A(['Far East', 'India/PG', 'Med', 'Cont', 'Americas', 'W Africa'].every(k => sd.DEST_POINTS[k]), 'destination regions have points');
+  const [px, py] = sd.project(0, 0);
+  A(px === 440 && py === 272, 'equirectangular, 4 px/deg on an Atlantic viewport: 0,0 → ' + [px, py]);
+  A(sd.project(-110, 68)[0] === 0 && sd.project(-110, 68)[1] === 0, 'top-left corner');
+  A(sd.project(122, 30)[0] > 680, 'Far East projects off the right edge (drawn to the edge with a label)');
+  // TopoJSON decode: two arcs, one polygon using the second reversed
+  const rings = sd.decodeTopo({
+    type: 'Topology', transform: { scale: [0.5, 0.5], translate: [10, 20] },
+    objects: { land: { type: 'GeometryCollection', geometries: [{ type: 'Polygon', arcs: [[0, -2]] }] } },
+    arcs: [[[0, 0], [2, 0], [0, 2]], [[0, 0], [2, 4]]],
+  });
+  A(rings.length === 1 && rings[0].length === 4, 'decoded one ring of 4 points: ' + JSON.stringify(rings));
+  A(rings[0][0][0] === 10 && rings[0][0][1] === 20 && rings[0][2][0] === 11 && rings[0][2][1] === 21, 'quantized deltas → lon/lat via transform');
+  A(rings[0][3][0] === 10 && rings[0][3][1] === 20, 'reversed arc closes back to the start');
+  A(sd.heat({ idx: null }) === 0 && sd.heat({ idx: 105 }) === 0.15 && sd.heat({ idx: 160 }) === 0.85 && sd.heat({ idx: 40 }) === 0.85, 'heat: nothing while collecting, flat at ±12, full at ±60');
   delete global.Zones;
 }
 
