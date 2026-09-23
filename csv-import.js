@@ -493,10 +493,13 @@ function syncCSVVessels(newVessels, opts) {
       // quote from her previous cycle walk back in with her.
       if (!rowHasRate(nv)) clearQuoteResidue(existing);
       changed = true;
-    } else if (nv.csv_status === '1' && (existing.status === 'FIXED' || existing.status === 'ON SUBS') && !isProtected('status')) {
-      // A fixed (or long-stuck on-subs) ship back on the grid: reopen ONLY if her new layday is
+    } else if (nv.csv_status === '1' && (existing.status === 'FIXED' || existing.status === 'ON SUBS' || existing.status === 'IN HOUSE') && !isProtected('status')) {
+      // A fixed (or in-house, or long-stuck on-subs) ship back on the grid: reopen ONLY if her new layday is
       // clearly after the fixture (Pacific round done, ballasting back) —
       // not when the sheet is just lagging behind a fresh fixture.
+      // IN HOUSE is a fixture to the owner's own cargo: date_fixed is the day
+      // the desk pulled her, so the same gap test applies. Left out, she
+      // wore the tag forever and never made the report (OPEN-only).
       // ECSA FH fixtures are months-long, so 21 days separates lag from a
       // real return. An alternate-route fixture (coastal / India, tagged by
       // the desk) can be back inside two weeks — any layday after the fix

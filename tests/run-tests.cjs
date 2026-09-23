@@ -382,6 +382,24 @@ section('csv-import + app');
     renderTable = _rt; updateStats = _us; save = _sv;
     A(vessels[vessels.length - 1].status === 'OPEN' && vessels[vessels.length - 1].route === null, 'manual reopen clears route tag');
 
+    // IN HOUSE: owner pulled her for own cargo, then she's back on the sheet
+    // with a later layday. Same reopen rule as FIXED — she used to keep the
+    // IN HOUSE tag forever and never reach the report (OPEN-only).
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'HOUSE RETURN', status: 'IN HOUSE', date_fixed: dIso(40),
+      charterer: 'OWNERCO (in house)', csv_updated: dIso(40) + 'T00:00:00Z',
+      price_history: [{ t: dIso(40) + 'T00:00:00Z', field: 'in_house', value: null, counterparty: 'OWNERCO' }] });
+    vessels.push({ vessel_name: 'HOUSE LAG', status: 'IN HOUSE', date_fixed: dIso(5), charterer: 'OWNERCO (in house)', csv_updated: dIso(5) + 'T00:00:00Z' });
+    const ihRows = [
+      [fmt(dIso(0)) + ' 08:00', 'House Return', '82,000', 'Jan-2018', fmt(dIso(-2)), fmt(dIso(-5)), 'OWNERCO', '1'],
+      [fmt(dIso(0)) + ' 08:00', 'House Lag', '82,000', 'Jan-2018', fmt(dIso(-2)), fmt(dIso(-5)), 'OWNERCO', '1'],
+    ].map(r => r.join('\\t'));
+    const ihRes = syncCSVVessels(parseCSVVessels([crHdr, ...ihRows].join('\\n')).vessels, { autoWithdraw: true });
+    const hr = vessels.find(v => v.vessel_name === 'HOUSE RETURN');
+    A(hr.status === 'OPEN' && hr.charterer === null && hr.date_fixed === null && ihRes.reopened === 1, 'in-house ship back on the sheet 6 weeks later reopens, in-house tag cleared');
+    A(hr.fixture_history.length === 1 && hr.fixture_history[0].charterer === 'OWNERCO (in house)', 'in-house cover archived as fixture history');
+    A(vessels.find(v => v.vessel_name === 'HOUSE LAG').status === 'IN HOUSE', 'in-house 7d gap is still sheet lag');
+
     // QUOTE RESIDUE: a ship reentering the grid must not resurrect a rate
     // from her previous cycle when her return row carries no rate
     vessels.length = 0;
