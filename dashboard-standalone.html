@@ -14159,7 +14159,7 @@ const LOOKBACKS = [
   { key: '56', label: '8 wk', days: 56 },
   { key: '91', label: '13 wk', days: 91 },
 ];
-const ui = Object.assign({ horizon: '30', lookback: '28', detail: true, map: true },
+const ui = Object.assign({ horizon: '30', lookback: '28', detail: true, map: true, arrows: true },
   IS_BROWSER ? JSON.parse(localStorage.getItem(LS_UI) || '{}') : {});
 function saveUi() { if (IS_BROWSER) localStorage.setItem(LS_UI, JSON.stringify(ui)); }
 const horizon = () => HORIZONS.find(h => h.key === ui.horizon) || HORIZONS[1];
@@ -14684,6 +14684,109 @@ function heat(m) {
   return Math.min(1, Math.max(0, (Math.abs(m.idx - 100) - 12) / 48)) * 0.7 + 0.15;
 }
 
+// ─── Cargo routing on the map ────────────────────────────────────────────────
+// Where the cargoes go, drawn the way a Panamax actually sails: no Suez,
+// no Panama. Everything east of the Cape rounds the Cape of Good Hope
+// and leaves the frame there; the Gulf empties past Florida; the Med is
+// entered at Gibraltar. Waypoints are lon/lat at sea.
+const WP = {
+  FLORIDA: [-77, 25], GIB: [-6.5, 35.8], MED: [14, 36.5], CHANNEL: [-4, 49.5], CAPE: [19, -37],
+  EAST_EXIT: [60, -34], WAFR: [-2, 2], CARIB: [-64, 14], ECSA_SEA: [-40, -27], SATL: [-20, -12], NATL: [-30, 25],
+};
+const ORIGIN = {
+  'ECSA': [-42, -25], 'NCSA': [-62, 12], 'USG': [-88, 26], 'USEC': [-72, 35], 'EC CAN': [-57, 46],
+  'Cont/Baltic': [-3, 52], 'WAFR': [-6, 4], 'Bsea/Med': [12, 37],
+};
+// Destination region (from destRegion) → route target
+function routeTarget(dest) {
+  if (!dest) return null;
+  if (/Far East|India|SE Asia|S Africa/.test(dest)) return 'East';
+  if (/^(Med|W Med|E Med|Bsea)$/.test(dest)) return 'Med';
+  if (/^(Cont|Baltic)$/.test(dest)) return 'Cont';
+  if (/^(W Africa|WAfr)$/.test(dest)) return 'W Africa';
+  if (/^(Americas|USG|USEC|NCSA|EC Can|ECSA)$/.test(dest)) return 'Americas';
+  return null;
+}
+const AMERICAN = b => /^(USG|USEC|NCSA|EC CAN|ECSA)$/.test(b);
+function routeFor(basin, target) {
+  const o = ORIGIN[basin]; if (!o) return null;
+  const gulf = basin === 'USG' || basin === 'NCSA';
+  const med = basin === 'Bsea/Med';
+  const out = [o];
+  if (gulf) out.push(WP.FLORIDA);
+  if (med) out.push(WP.GIB);
+  switch (target) {
+    case 'East':
+      if (basin === 'ECSA') out.push(WP.SATL);
+      else if (gulf || basin === 'USEC' || basin === 'EC CAN') out.push(WP.NATL, WP.SATL);
+      else if (basin === 'Cont/Baltic') out.push([-15, 40], [-20, 5], WP.SATL);
+      else if (med) out.push([-15, 25], WP.SATL);
+      else out.push([5, -15]);
+      out.push(WP.CAPE, WP.EAST_EXIT);
+      break;
+    case 'Med':
+      if (med) return null;
+      if (basin === 'Cont/Baltic') out.push([-11, 44]);
+      else if (basin === 'ECSA') out.push([-25, 5]);
+      else if (basin === 'WAFR') out.push([-16, 22]);
+      else out.push(WP.NATL);
+      out.push(WP.GIB, WP.MED);
+      break;
+    case 'Cont':
+      if (basin === 'Cont/Baltic') return null;
+      if (med) out.push([-11, 44]);
+      else if (basin === 'ECSA') out.push([-25, 15]);
+      else if (basin === 'WAFR') out.push([-18, 30]);
+      else out.push([-40, 38]);
+      out.push(WP.CHANNEL);
+      break;
+    case 'W Africa':
+      if (basin === 'WAFR') return null;
+      if (med) out.push([-16, 22]);
+      else if (basin === 'Cont/Baltic') out.push([-12, 40], [-18, 15]);
+      else if (AMERICAN(basin) && basin !== 'ECSA') out.push([-40, 12]);
+      out.push(WP.WAFR);
+      break;
+    case 'Americas':
+      if (AMERICAN(basin)) return null;
+      if (basin === 'Cont/Baltic' || med) out.push([-25, 30]);
+      out.push(WP.CARIB);
+      break;
+    default: return null;
+  }
+  return out;
+}
+// Smooth polyline through waypoints (Catmull-Rom → cubic Bézier)
+function routePath(pts) {
+  const p = pts.map(w => project(w[0], w[1]));
+  if (p.length < 2) return '';
+  let d = `M${p[0][0].toFixed(1)} ${p[0][1].toFixed(1)}`;
+  for (let i = 0; i < p.length - 1; i++) {
+    const p0 = p[i - 1] || p[i], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2] || p2;
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    d += ` C${c1[0].toFixed(1)} ${c1[1].toFixed(1)}, ${c2[0].toFixed(1)} ${c2[1].toFixed(1)}, ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+// One arrow per basin per route target, count summed over the destination
+// regions that share the route
+function routeArrows(grid) {
+  const arrows = [];
+  for (const r of grid.rows) {
+    const sums = {};
+    for (const d of (r.demand.dims.dest || [])) {
+      const t = routeTarget(d.value);
+      if (t && d.now) sums[t] = (sums[t] || 0) + d.now;
+    }
+    for (const [t, n] of Object.entries(sums)) {
+      const pts = routeFor(r.basin, t);
+      if (pts) arrows.push({ basin: r.basin, target: t, n, pts });
+    }
+  }
+  return arrows;
+}
+
 function legLabel(basin, leg) { return basin === 'ECSA' && leg === 'TA' ? 'BH' : leg; }
 
 function mapSvg(grid, side, land) {
@@ -14722,8 +14825,19 @@ function mapSvg(grid, side, land) {
       `<rect x="-32" y="-14" width="64" height="${h}" rx="4"/>` +
       `<text y="-2" class="sd-lbl-n">${m.now}</text><text y="9" class="sd-lbl-c sd-fill-${m.verdict.tone}">${esc(ch || m.verdict.word)}</text>${split}</g>`);
   }
+  let arrows = '';
+  if (side === 'demand' && ui.arrows) {
+    const list = routeArrows(grid);
+    const eastTotal = list.filter(a => a.target === 'East').reduce((s, a) => s + a.n, 0);
+    arrows = list.map(a => `<path class="sd-route" style="stroke-width:${(1 + Math.min(a.n, 10) * 0.5).toFixed(1)}" d="${routePath(a.pts)}" marker-end="url(#sd_arrow)"><title>${esc(a.basin)} → ${esc(a.target)}: ${a.n}</title></path>`).join('');
+    if (eastTotal) {
+      const [ex, ey] = project(WP.EAST_EXIT[0], WP.EAST_EXIT[1]);
+      arrows += `<text class="sd-route-lbl" x="${(ex - 6).toFixed(1)}" y="${(ey + 14).toFixed(1)}">round the Cape → East ${eastTotal}</text>`;
+    }
+  }
   return `<svg class="sd-map" viewBox="0 0 ${MAP.w} ${MAP.h}" preserveAspectRatio="xMidYMid meet">` +
-    `<rect class="sd-sea" width="${MAP.w}" height="${MAP.h}"/>${landPath}${polys.join('')}${labels.join('')}</svg>`;
+    `<defs><marker id="sd_arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse" markerUnits="strokeWidth"><path d="M0 0.5 L8 4 L0 7.5 Z" class="sd-route-head"/></marker></defs>` +
+    `<rect class="sd-sea" width="${MAP.w}" height="${MAP.h}"/>${landPath}${polys.join('')}${arrows}${labels.join('')}</svg>`;
 }
 
 // Hover card: the basin's number, change and every breakdown for that side
@@ -14748,7 +14862,7 @@ function renderMaps(grid) {
   const land = SD.land || [];
   el.innerHTML = `
     <div class="sd-mapcard" data-side="supply"><div class="sd-maptitle">Tonnage <span class="sd-th-sub">open ships vs run rate · blue deep, amber thin · hover for detail</span></div>${mapSvg(grid, 'supply', land)}<div class="sd-tip" hidden></div></div>
-    <div class="sd-mapcard" data-side="demand"><div class="sd-maptitle">Cargo <span class="sd-th-sub">live cargoes vs run rate · bar = fronthaul vs TA · hover for detail</span></div>${mapSvg(grid, 'demand', land)}<div class="sd-tip" hidden></div></div>`;
+    <div class="sd-mapcard" data-side="demand"><div class="sd-maptitle">Cargo <span class="sd-th-sub">live cargoes vs run rate · bar = fronthaul vs TA · arrows = where they're going, round the Cape · hover for detail</span></div>${mapSvg(grid, 'demand', land)}<div class="sd-tip" hidden></div></div>`;
   const rowOf = b => grid.rows.find(r => r.basin === b);
   el.querySelectorAll('.sd-mapcard').forEach(card => {
     const side = card.dataset.side, tip = card.querySelector('.sd-tip');
@@ -14858,6 +14972,7 @@ function render() {
       <div class="sd-filter"><span class="toolbar-label">Laydays</span>${pills(HORIZONS, 'horizon')}</div>
       <div class="sd-filter"><span class="toolbar-label">Versus</span>${pills(LOOKBACKS, 'lookback')}</div>
       <button class="filter-pill${ui.map ? ' active' : ''}" id="sd_map" title="Basins on a map, tonnage and cargo side by side">Map</button>
+      <button class="filter-pill${ui.arrows ? ' active' : ''}" id="sd_arrows" title="Where the cargoes are going, routed round the Cape — no Suez, no Panama">Routes</button>
       <button class="filter-pill${ui.detail ? ' active' : ''}" id="sd_detail" title="Zone, size, leg, commodity, destination and charterer breakdowns under each cell">Breakdowns</button>
       <div class="sd-spacer"></div>
       <button class="filter-pill" id="sd_copy">Copy for WhatsApp</button>
@@ -14882,6 +14997,7 @@ function render() {
   }));
   document.getElementById('sd_detail').addEventListener('click', () => { ui.detail = !ui.detail; saveUi(); render(); });
   document.getElementById('sd_map').addEventListener('click', () => { ui.map = !ui.map; saveUi(); render(); });
+  document.getElementById('sd_arrows').addEventListener('click', () => { ui.arrows = !ui.arrows; saveUi(); render(); });
   renderMaps(grid);
   const copy = document.getElementById('sd_copy');
   copy.addEventListener('click', () => {
@@ -14948,6 +15064,9 @@ function injectCss() {
     .sd-lbl-n{font-size:11px;font-weight:700;fill:var(--text-bright)}
     .sd-lbl-c{font-size:7.5px;font-weight:600}
     text.sd-fill-up{fill:var(--accent)} text.sd-fill-down{fill:var(--amber)} text.sd-fill-flat,text.sd-fill-dim{fill:var(--text-dim)}
+    .sd-route{fill:none;stroke:var(--accent);stroke-opacity:.5;stroke-linecap:round;stroke-linejoin:round}
+    .sd-route-head{fill:var(--accent);fill-opacity:.7}
+    .sd-route-lbl{font-family:var(--mono);font-size:8px;font-weight:600;fill:var(--accent);text-anchor:end}
     .sd-lbl-s{font-size:7px;font-weight:600}
     .sd-lbl-dot{fill:var(--text-dim)}
     .sd-split-fh,.sd-split-fh-t{fill:var(--accent)} .sd-split-ta,.sd-split-ta-t{fill:var(--text-dim)}
@@ -14987,7 +15106,7 @@ if (typeof module !== 'undefined' && module.exports) {
     _test: {
       BASINS, BASIN_ZONES, basinOfZone, basinOfStem, sizeClass, commodityFamily, destRegion, laycanStart,
       tonnageNow, cargoSpans, seriesBy, tonnageSeries, indexOf, verdict, mergeDays, computeGrid, headline, buildText, changeText,
-      ZONE_POLYS, project, decodeTopo, heat, legLabel,
+      ZONE_POLYS, project, decodeTopo, heat, legLabel, routeTarget, routeFor, routeArrows, WP,
       setUi: u => Object.assign(ui, u),
     },
   };

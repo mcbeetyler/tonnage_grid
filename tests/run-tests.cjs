@@ -990,6 +990,19 @@ section('S&D snapshot');
   // Map: every zone has a polygon, every destination a point, projection is sane
   A(Object.values(sd.BASIN_ZONES).flat().every(z => Array.isArray(sd.ZONE_POLYS[z]) && sd.ZONE_POLYS[z].length >= 4), 'every zone has a polygon');
   A(sd.legLabel('ECSA', 'TA') === 'BH' && sd.legLabel('USG', 'TA') === 'TA' && sd.legLabel('ECSA', 'FH') === 'FH', 'ECSA TA reads as backhaul on the map');
+  // Routes: no Suez, no Panama — every eastbound arrow rounds the Cape
+  A(sd.routeTarget('Far East') === 'East' && sd.routeTarget('India/PG') === 'East' && sd.routeTarget('W Med') === 'Med' && sd.routeTarget('Baltic') === 'Cont' && sd.routeTarget(null) === null, 'destination → route target');
+  const viaCape = pts => pts.some(w => w[0] === sd.WP.CAPE[0] && w[1] === sd.WP.CAPE[1]);
+  const noCanal = pts => !pts.some(w => (w[0] > -82 && w[0] < -77 && w[1] > 7 && w[1] < 10) || (w[0] > 31 && w[0] < 34 && w[1] > 29 && w[1] < 32));
+  for (const b of sd.BASINS) {
+    const east = sd.routeFor(b, 'East');
+    A(east && viaCape(east) && noCanal(east) && east[east.length - 1] === sd.WP.EAST_EXIT, b + ' → East rounds the Cape and leaves at the exit');
+  }
+  A(sd.routeFor('USG', 'Med')[1] === sd.WP.FLORIDA && sd.routeFor('USG', 'Med').includes(sd.WP.GIB), 'Gulf → Med leaves past Florida, enters at Gibraltar');
+  A(sd.routeFor('Bsea/Med', 'Med') === null && sd.routeFor('USG', 'Americas') === null, 'no arrow to yourself');
+  A(sd.routeFor('Bsea/Med', 'East')[1] === sd.WP.GIB, 'Med → East leaves through Gibraltar, not Suez');
+  const arrows = sd.routeArrows(grid);
+  A(arrows.some(a => a.basin === 'ECSA' && a.target === 'East' && a.n === 1), 'ECSA → Far East cargo becomes one East arrow: ' + JSON.stringify(arrows.map(a => [a.basin, a.target, a.n])));
   const [px, py] = sd.project(0, 0);
   A(px === 440 && py === 272, 'equirectangular, 4 px/deg on an Atlantic viewport: 0,0 → ' + [px, py]);
   A(sd.project(-110, 68)[0] === 0 && sd.project(-110, 68)[1] === 0, 'top-left corner');
