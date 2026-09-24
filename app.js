@@ -375,7 +375,7 @@ function openHistoryModal(globalIdx) {
       overrides=${JSON.stringify(v.field_overrides || {})} · fixture_hist=${(v.fixture_history || []).length} ·
       reopened_at=${v.reopened_at ?? '∅'} · offer_updated_at=${v.offer_updated_at ?? '∅'} ·
       hire_offer=${v.hire_offer ?? '∅'} · hire_ta=${v.hire_ta ?? '∅'} · csv_updated=${v.csv_updated ?? '∅'} ·
-      last_updated=${v.last_updated ?? '∅'} · ${typeof describeStaleness === 'function' ? describeStaleness(v) : ''}
+      last_updated=${v.last_updated ?? '∅'} · csv_status=${v.csv_status ?? '∅'} · withdrawn=${v.withdrawn_reason ?? '∅'}${v.withdrawn_at ? ' @ ' + v.withdrawn_at : ''} · ${typeof describeStaleness === 'function' ? describeStaleness(v) : ''}
     </div>
     ${v.status === 'OPEN' && (v.hire_offer != null || v.hire_ta != null || v.market_colour?.[0]?.p6_offer != null)
       ? `<button class="filter-pill" style="font-size:11px;padding:4px 12px;margin-bottom:12px"

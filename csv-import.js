@@ -473,12 +473,13 @@ function syncCSVVessels(newVessels, opts) {
     // Status: '1' = active.
     if (nv.csv_status === '0' && existing.status === 'OPEN' && !isProtected('status')) {
       existing.status = 'WITHDRAWN'; changed = true;
+      existing.withdrawn_reason = 'sheet status 0'; existing.withdrawn_at = rowTs;
     } else if (nv.csv_status === '1' && existing.status === 'WITHDRAWN' && !isProtected('status')
                && !(existing.withdrawn_reason === STALE_REASON && isStalePosition(existing))) {
       // (a stale-swept ship whose row still carries the dead ETA stays
       // withdrawn — the desk moving her ETA forward is what reopens her)
       existing.status = 'OPEN';
-      delete existing.withdrawn_reason;
+      delete existing.withdrawn_reason; delete existing.withdrawn_at;
       // Back on the sheet as a live position: old fixture residue (she may
       // have gone FIXED → withdrawn-from-grid → returned) is history now
       if (existing.date_fixed && nv.open_date && nv.open_date > existing.date_fixed) {
@@ -559,6 +560,7 @@ function syncCSVVessels(newVessels, opts) {
     if (autoWithdraw && v.csv_updated) {
       v.status = 'WITHDRAWN';
       v.withdrawn_reason = 'dropped from sheet feed';
+      v.withdrawn_at = nowIso;
       v.last_updated = nowIso;
       autoWithdrawn++;
     } else {
