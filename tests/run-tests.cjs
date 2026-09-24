@@ -989,11 +989,10 @@ section('S&D snapshot');
 
   // Map: every zone has a polygon, every destination a point, projection is sane
   A(Object.values(sd.BASIN_ZONES).flat().every(z => Array.isArray(sd.ZONE_POLYS[z]) && sd.ZONE_POLYS[z].length >= 4), 'every zone has a polygon');
-  A(['Far East', 'India/PG', 'Med', 'Cont', 'Americas', 'W Africa'].every(k => sd.DEST_POINTS[k]), 'destination regions have points');
+  A(sd.legLabel('ECSA', 'TA') === 'BH' && sd.legLabel('USG', 'TA') === 'TA' && sd.legLabel('ECSA', 'FH') === 'FH', 'ECSA TA reads as backhaul on the map');
   const [px, py] = sd.project(0, 0);
   A(px === 440 && py === 272, 'equirectangular, 4 px/deg on an Atlantic viewport: 0,0 → ' + [px, py]);
   A(sd.project(-110, 68)[0] === 0 && sd.project(-110, 68)[1] === 0, 'top-left corner');
-  A(sd.project(122, 30)[0] > 680, 'Far East projects off the right edge (drawn to the edge with a label)');
   // TopoJSON decode: two arcs, one polygon using the second reversed
   const rings = sd.decodeTopo({
     type: 'Topology', transform: { scale: [0.5, 0.5], translate: [10, 20] },

@@ -14553,7 +14553,7 @@ function buildText(grid) {
     text += '\n';
     const bits = [];
     if (r.supply.dims.zone && r.supply.dims.zone.length) bits.push(`ships: ${dimLine(r.supply.dims.zone, 3)}`);
-    if (r.demand.dims.leg && r.demand.dims.leg.length) bits.push(dimLine(r.demand.dims.leg, 2));
+    if (r.demand.dims.leg && r.demand.dims.leg.length) bits.push(dimLine(r.demand.dims.leg.map(x => Object.assign({}, x, { value: legLabel(r.basin, x.value) })), 2));
     if (r.demand.dims.family && r.demand.dims.family.length) bits.push(dimLine(r.demand.dims.family, 3));
     if (bits.length) text += `  _${bits.join(' · ')}_\n`;
   }
@@ -14619,13 +14619,7 @@ const ZONE_POLYS = {
   'BSEA':   [[27, 48], [42, 48], [42, 41], [27, 41]],
   'WAFR':   [[-20, 27], [15, 27], [15, -19], [-20, -19]],
 };
-// Where a cargo is going, as a point to draw a flow to
-const DEST_POINTS = {
-  'Far East': [122, 30], 'India/PG': [66, 20], 'SE Asia/Oz': [135, -25], 'S Africa': [28, -31],
-  'Med': [14, 38], 'Cont': [3, 54], 'Americas': [-70, 12], 'W Africa': [2, 3],
-};
-// Atlantic viewport, 4 px per degree; destinations beyond it (Far East,
-// India) are drawn to the edge with a label
+// Atlantic viewport, 4 px per degree
 const MAP = { w: 680, h: 464, lonMin: -110, lonMax: 60, latMax: 68, latMin: -48 };
 function project(lon, lat) {
   const x = (lon - MAP.lonMin) / (MAP.lonMax - MAP.lonMin) * MAP.w;
@@ -14690,9 +14684,11 @@ function heat(m) {
   return Math.min(1, Math.max(0, (Math.abs(m.idx - 100) - 12) / 48)) * 0.7 + 0.15;
 }
 
+function legLabel(basin, leg) { return basin === 'ECSA' && leg === 'TA' ? 'BH' : leg; }
+
 function mapSvg(grid, side, land) {
   const landPath = land && land.length ? `<path class="sd-land" d="${land.map(pathOf).join('')}"/>` : '';
-  const polys = [], labels = [], flows = [];
+  const polys = [], labels = [];
   for (const r of grid.rows) {
     const m = r[side];
     const zones = BASIN_ZONES[r.basin];
@@ -14701,39 +14697,48 @@ function mapSvg(grid, side, land) {
     for (const z of zones) {
       const poly = ZONE_POLYS[z]; if (!poly) continue;
       const zm = fillFor(z);
-      polys.push(`<path class="sd-zone sd-fill-${zm.verdict.tone}" style="fill-opacity:${heat(zm).toFixed(2)}" d="${pathOf(poly)}" data-basin="${esc(r.basin)}"><title>${esc(ZONE_LABEL[z] || z)}: ${zm.now}${changeText(zm) ? ' ' + changeText(zm) : ''}</title></path>`);
+      polys.push(`<path class="sd-zone sd-fill-${zm.verdict.tone}" style="fill-opacity:${heat(zm).toFixed(2)}" d="${pathOf(poly)}" data-basin="${esc(r.basin)}" data-zone="${esc(ZONE_LABEL[z] || z)}"/>`);
     }
     const all = zones.flatMap(z => ZONE_POLYS[z] || []);
     if (!all.length) continue;
     const [cx, cy] = project(...centroid(all));
     const ch = changeText(m);
-    labels.push(`<g class="sd-lbl" transform="translate(${cx.toFixed(1)},${cy.toFixed(1)})" data-basin="${esc(r.basin)}">` +
-      `<rect x="-30" y="-14" width="60" height="28" rx="4"/>` +
-      `<text y="-2" class="sd-lbl-n">${m.now}</text><text y="10" class="sd-lbl-c sd-fill-${m.verdict.tone}">${esc(ch || m.verdict.word)}</text></g>`);
+    // Cargo labels carry the leg split: FH vs TA (BH for ECSA, where the
+    // TA runs against the flow) as a two-tone bar under the number
+    let split = '';
     if (side === 'demand') {
-      for (const d of (m.dims.dest || [])) {
-        const to = DEST_POINTS[d.value] || (() => { const z = Object.keys(ZONE_LABEL).find(k => ZONE_LABEL[k] === d.value); return z && ZONE_POLYS[z] ? centroid(ZONE_POLYS[z]) : null; })();
-        if (!to || !d.now) continue;
-        let [tx, ty] = project(to[0], to[1]);
-        const off = tx < 0 || tx > MAP.w || ty < 0 || ty > MAP.h;
-        if (off) {   // clamp along the line to the viewport edge
-          const dx = tx - cx, dy = ty - cy;
-          let k = 1;
-          if (tx > MAP.w) k = Math.min(k, (MAP.w - 6 - cx) / dx);
-          if (tx < 0) k = Math.min(k, (6 - cx) / dx);
-          if (ty > MAP.h) k = Math.min(k, (MAP.h - 6 - cy) / dy);
-          if (ty < 0) k = Math.min(k, (6 - cy) / dy);
-          tx = cx + dx * k; ty = cy + dy * k;
-        }
-        const mx = (cx + tx) / 2, my = Math.min(cy, ty) - Math.abs(tx - cx) * 0.18;
-        flows.push(`<path class="sd-flow" style="stroke-width:${(0.8 + Math.min(d.now, 8) * 0.55).toFixed(1)}" d="M${cx.toFixed(1)} ${cy.toFixed(1)} Q${mx.toFixed(1)} ${my.toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)}"><title>${esc(r.basin)} → ${esc(d.value)}: ${d.now}</title></path>` +
-          `<circle class="sd-flow-end" cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="2.2"/>` +
-          (off ? `<text class="sd-flow-lbl" x="${(tx - 4).toFixed(1)}" y="${(ty - 4).toFixed(1)}">${esc(d.value)} ${d.now}</text>` : ''));
+      const legs = m.dims.leg || [];
+      const fh = (legs.find(x => x.value === 'FH') || {}).now || 0;
+      const ta = (legs.find(x => x.value === 'TA') || {}).now || 0;
+      const tot = fh + ta;
+      if (tot) {
+        const W = 56, fw = Math.round(W * fh / tot);
+        split = `<rect class="sd-split-fh" x="-28" y="12" width="${fw}" height="3"/><rect class="sd-split-ta" x="${-28 + fw}" y="12" width="${W - fw}" height="3"/>` +
+          `<text y="24" class="sd-lbl-s"><tspan class="sd-split-fh-t">${fh} FH</tspan><tspan class="sd-lbl-dot"> · </tspan><tspan class="sd-split-ta-t">${ta} ${legLabel(r.basin, 'TA')}</tspan></text>`;
       }
     }
+    const h = split ? 44 : 28;
+    labels.push(`<g class="sd-lbl" transform="translate(${cx.toFixed(1)},${cy.toFixed(1)})" data-basin="${esc(r.basin)}">` +
+      `<rect x="-32" y="-14" width="64" height="${h}" rx="4"/>` +
+      `<text y="-2" class="sd-lbl-n">${m.now}</text><text y="9" class="sd-lbl-c sd-fill-${m.verdict.tone}">${esc(ch || m.verdict.word)}</text>${split}</g>`);
   }
   return `<svg class="sd-map" viewBox="0 0 ${MAP.w} ${MAP.h}" preserveAspectRatio="xMidYMid meet">` +
-    `<rect class="sd-sea" width="${MAP.w}" height="${MAP.h}"/>${landPath}${polys.join('')}${flows.join('')}${labels.join('')}</svg>`;
+    `<rect class="sd-sea" width="${MAP.w}" height="${MAP.h}"/>${landPath}${polys.join('')}${labels.join('')}</svg>`;
+}
+
+// Hover card: the basin's number, change and every breakdown for that side
+function tipHtml(r, side, zone) {
+  const m = r[side];
+  const kind = side === 'supply' ? 'Tonnage' : 'Cargo';
+  const ch = changeText(m);
+  const zm = zone && m.dims.zone ? m.dims.zone.find(x => x.value === zone) : null;
+  let html = `<div class="sd-tip-h"><b>${esc(r.basin)}</b> <span class="sd-dim">${esc(kind)}</span></div>` +
+    `<div class="sd-tip-n"><span class="sd-now">${m.now}</span> <span class="sd-tip-c">${ch ? `<i class="sd-tone-${m.verdict.tone}">${esc(ch)}</i> vs ${m.avg.toFixed(1)} avg · ` : ''}<span class="sd-tone-${m.verdict.tone}">${esc(m.verdict.word)}</span></span></div>`;
+  if (zm) html += `<div class="sd-tip-z">${esc(zone)}: <b>${zm.now}</b> ${changeText(zm) ? `<i class="sd-tone-${zm.verdict.tone}">${esc(changeText(zm))}</i>` : '<span class="sd-dim">collecting</span>'}</div>`;
+  if (side === 'supply') html += dimLine('zone', m.dims.zone, 4) + dimLine('size', m.dims.size, 2);
+  else html += dimLine('leg', (m.dims.leg || []).map(x => Object.assign({}, x, { value: legLabel(r.basin, x.value) })), 2) + dimLine('cargo', m.dims.family, 4)
+    + dimLine('to', m.dims.dest, 4) + dimLine('chtr', m.dims.charterer, 4);
+  return html;
 }
 
 function renderMaps(grid) {
@@ -14742,12 +14747,31 @@ function renderMaps(grid) {
   if (!ui.map) { el.innerHTML = ''; return; }
   const land = SD.land || [];
   el.innerHTML = `
-    <div class="sd-mapcard"><div class="sd-maptitle">Tonnage <span class="sd-th-sub">open ships vs run rate · blue deep, amber thin</span></div>${mapSvg(grid, 'supply', land)}</div>
-    <div class="sd-mapcard"><div class="sd-maptitle">Cargo <span class="sd-th-sub">live cargoes vs run rate · lines = where they're going</span></div>${mapSvg(grid, 'demand', land)}</div>`;
-  el.querySelectorAll('[data-basin]').forEach(n => n.addEventListener('click', () => {
-    const row = document.getElementById('sd_row_' + n.dataset.basin.replace(/[^a-z0-9]/gi, '_'));
-    if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); row.classList.add('sd-flash'); setTimeout(() => row.classList.remove('sd-flash'), 1600); }
-  }));
+    <div class="sd-mapcard" data-side="supply"><div class="sd-maptitle">Tonnage <span class="sd-th-sub">open ships vs run rate · blue deep, amber thin · hover for detail</span></div>${mapSvg(grid, 'supply', land)}<div class="sd-tip" hidden></div></div>
+    <div class="sd-mapcard" data-side="demand"><div class="sd-maptitle">Cargo <span class="sd-th-sub">live cargoes vs run rate · bar = fronthaul vs TA · hover for detail</span></div>${mapSvg(grid, 'demand', land)}<div class="sd-tip" hidden></div></div>`;
+  const rowOf = b => grid.rows.find(r => r.basin === b);
+  el.querySelectorAll('.sd-mapcard').forEach(card => {
+    const side = card.dataset.side, tip = card.querySelector('.sd-tip');
+    const show = (n, ev) => {
+      const r = rowOf(n.dataset.basin); if (!r) return;
+      tip.innerHTML = tipHtml(r, side, n.dataset.zone || null);
+      tip.hidden = false;
+      const cr = card.getBoundingClientRect();
+      let x = ev.clientX - cr.left + 14, y = ev.clientY - cr.top + 14;
+      if (x + tip.offsetWidth > cr.width - 8) x = ev.clientX - cr.left - tip.offsetWidth - 14;
+      if (y + tip.offsetHeight > cr.height - 8) y = Math.max(8, cr.height - tip.offsetHeight - 8);
+      tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    };
+    card.querySelectorAll('[data-basin]').forEach(n => {
+      n.addEventListener('mouseenter', ev => show(n, ev));
+      n.addEventListener('mousemove', ev => show(n, ev));
+      n.addEventListener('mouseleave', () => { tip.hidden = true; });
+      n.addEventListener('click', () => {
+        const row = document.getElementById('sd_row_' + n.dataset.basin.replace(/[^a-z0-9]/gi, '_'));
+        if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); row.classList.add('sd-flash'); setTimeout(() => row.classList.remove('sd-flash'), 1600); }
+      });
+    });
+  });
   if (!SD.land) loadLand().then(() => renderMaps(grid));
 }
 
@@ -14811,7 +14835,8 @@ function render() {
   const rows = grid.rows.map(r => {
     const s = r.supply, d = r.demand, b = r.balance;
     const sLines = dimLine('zone', s.dims.zone, 3) + dimLine('size', s.dims.size, 2);
-    const dLines = dimLine('zone', d.dims.zone, 3) + dimLine('leg', d.dims.leg, 2) + dimLine('cargo', d.dims.family, 3)
+    const legs = (d.dims.leg || []).map(x => Object.assign({}, x, { value: legLabel(r.basin, x.value) }));
+    const dLines = dimLine('zone', d.dims.zone, 3) + dimLine('leg', legs, 2) + dimLine('cargo', d.dims.family, 3)
       + dimLine('to', d.dims.dest, 3) + dimLine('chtr', d.dims.charterer, 3);
     const bal = b.ratio == null
       ? '<div class="sd-cell"><div class="sd-now sd-dim">—</div><div class="sd-word sd-dim">no ships</div></div>'
@@ -14922,10 +14947,18 @@ function injectCss() {
     .sd-lbl text{text-anchor:middle;font-family:var(--mono);pointer-events:none}
     .sd-lbl-n{font-size:11px;font-weight:700;fill:var(--text-bright)}
     .sd-lbl-c{font-size:7.5px;font-weight:600}
-    .sd-flow-lbl{font-family:var(--mono);font-size:8px;font-weight:600;fill:var(--accent);text-anchor:end}
     text.sd-fill-up{fill:var(--accent)} text.sd-fill-down{fill:var(--amber)} text.sd-fill-flat,text.sd-fill-dim{fill:var(--text-dim)}
-    .sd-flow{fill:none;stroke:var(--accent);stroke-opacity:.55;stroke-linecap:round}
-    .sd-flow-end{fill:var(--accent);fill-opacity:.8}
+    .sd-lbl-s{font-size:7px;font-weight:600}
+    .sd-lbl-dot{fill:var(--text-dim)}
+    .sd-split-fh,.sd-split-fh-t{fill:var(--accent)} .sd-split-ta,.sd-split-ta-t{fill:var(--text-dim)}
+    .sd-mapcard{position:relative}
+    .sd-tip{position:absolute;z-index:5;pointer-events:none;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);box-shadow:0 6px 24px rgba(0,0,0,.14);padding:10px 12px;min-width:220px;max-width:320px}
+    .sd-tip-h{font-size:13px;margin-bottom:4px}
+    .sd-tip-n{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+    .sd-tip-n .sd-now{font-size:20px;grid-row:auto}
+    .sd-tip-c{font-size:12px;color:var(--text-dim)} .sd-tip-c i{font-style:normal;font-family:var(--mono);font-weight:600}
+    .sd-tip-z{font-size:12px;margin-bottom:6px} .sd-tip-z b{font-family:var(--mono)} .sd-tip-z i{font-style:normal;font-family:var(--mono);font-weight:600}
+    .sd-tip .sd-line{white-space:normal}
     .sd-flash td{background:var(--accent-light)!important;transition:background .3s}
   `;
   document.head.appendChild(st);
@@ -14954,7 +14987,7 @@ if (typeof module !== 'undefined' && module.exports) {
     _test: {
       BASINS, BASIN_ZONES, basinOfZone, basinOfStem, sizeClass, commodityFamily, destRegion, laycanStart,
       tonnageNow, cargoSpans, seriesBy, tonnageSeries, indexOf, verdict, mergeDays, computeGrid, headline, buildText, changeText,
-      ZONE_POLYS, DEST_POINTS, project, decodeTopo, heat,
+      ZONE_POLYS, project, decodeTopo, heat, legLabel,
       setUi: u => Object.assign(ui, u),
     },
   };
