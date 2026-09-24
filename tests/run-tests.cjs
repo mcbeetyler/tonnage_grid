@@ -1007,6 +1007,58 @@ section('S&D snapshot');
   delete global.Zones;
 }
 
+// ═══ 5d. feed read integrity ══════════════════════════════════════════════════
+// 2026-09-23: a stray double quote in one sheet cell swallowed every row
+// after it, and the sync auto-withdrew all the Nov-forward ships as
+// "dropped from sheet feed". Three defences, each tested on its own.
+section('feed read integrity');
+{
+  const csvSrc = fs.readFileSync(path.join(ROOT, 'csv-import.js'), 'utf8');
+  const feeds = load('feeds.js');
+  const rows = [['UPDATE', 'VESSEL', 'DWT', 'AGE', 'LAYDAY', 'ETA', 'OWNER', 'STATUS', 'COMMENTS'],
+    ['23-Sep 07:09', 'Alpha', '82,000', 'Jan-2018', '29-Sep', '4-Nov', 'OWNERCO', '1', 'clean'],
+    ['23-Sep 07:09', 'Bravo', '82,000', 'Jan-2018', '1-Oct', '6-Nov', 'OWNERCO', '1', 'owner says "firm'],
+    ['23-Sep 07:09', 'Charlie', '82,000', 'Jan-2018', '2-Oct', '8-Nov', 'OWNERCO', '1', '32" beam'],
+    ['23-Sep 07:09', 'Delta', '82,000', 'Jan-2018', '3-Oct', '9-Nov', 'OWNERCO', '1', '"quoted at start']];
+  // 1. the feed escapes quotes RFC-style
+  const tsv = feeds._test.rowsToTsv(rows);
+  A(tsv.split('\n')[2].includes('"owner says ""firm"'), 'feed wraps a cell holding a quote and doubles it');
+  A(!tsv.split('\n')[1].includes('"'), 'plain cells untouched');
+  const body = `
+    var vessels = [];
+    // 2. tokenizer: stray quotes mid-cell are text; a leading quote opens a field
+    const escaped = parseCSVVessels(TSV_ESCAPED).vessels;
+    A(escaped.map(v => v.vessel_name).join(',') === 'Alpha,Bravo,Charlie,Delta', 'escaped feed: all four rows parse: ' + escaped.map(v => v.vessel_name));
+    A(escaped[1].notes === 'owner says "firm' && escaped[2].notes === '32" beam' && escaped[3].notes === '"quoted at start', 'quotes survive as text');
+    const raw = parseCSVVessels(TSV_RAW).vessels;
+    A(raw.map(v => v.vessel_name).join(',') === 'Alpha,Bravo,Charlie,Delta', 'unescaped stray mid-cell quotes no longer swallow rows: ' + raw.map(v => v.vessel_name));
+    A(raw[1].notes === 'owner says "firm' && raw[2].notes === '32" beam', 'mid-cell quotes are literal');
+    // 3. a read that loses a big share of sheet ships at once withdraws nothing
+    const stamp = '2026-09-23T05:09:00.000Z';
+    vessels.length = 0;
+    for (const n of ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot']) vessels.push({ vessel_name: n, status: 'OPEN', csv_updated: stamp, eta_ecsa: '2026-11-04' });
+    vessels.push({ vessel_name: 'Manual Ship', status: 'OPEN' });
+    const partial = parseCSVVessels(TSV_ESCAPED.split('\\n').slice(0, 3).join('\\n')).vessels;   // Alpha, Bravo only
+    const r1 = syncCSVVessels(partial, { autoWithdraw: true });
+    A(r1.autoWithdrawn === 0 && r1.feedSuspect === 4, 'losing 4 of 6 sheet ships in one read is a partial read: nothing withdrawn, 4 flagged');
+    A(vessels.every(v => v.status === 'OPEN'), 'all still OPEN');
+    // one ship dropping off the sheet is a real withdrawal
+    const five = parseCSVVessels(TSV_ESCAPED).vessels;   // Alpha..Delta; Echo + Foxtrot missing = 2 of 6, under the floor of 3
+    const r2 = syncCSVVessels(five, { autoWithdraw: true });
+    A(r2.autoWithdrawn === 2 && !r2.feedSuspect, 'two of six missing (under the floor) still withdraws: ' + r2.autoWithdrawn);
+    A(vessels.find(v => v.vessel_name === 'Echo').withdrawn_reason === 'dropped from sheet feed', 'reason stamped');
+    A(vessels.find(v => v.vessel_name === 'Manual Ship').status === 'OPEN', 'manual ship never auto-withdrawn');
+    // 4. recovery: a withdrawn ship whose row is back (status 1) reopens, reason cleared
+    vessels.length = 0;
+    vessels.push({ vessel_name: 'Alpha', status: 'WITHDRAWN', withdrawn_reason: 'dropped from sheet feed', withdrawn_at: stamp, csv_updated: stamp, eta_ecsa: '2026-11-04', open_date: '2026-09-29', hire_offer: 19000 });
+    syncCSVVessels(parseCSVVessels(TSV_ESCAPED).vessels, { autoWithdraw: true });
+    const back = vessels.find(v => v.vessel_name === 'Alpha');
+    A(back.status === 'OPEN' && !back.withdrawn_reason && !back.withdrawn_at, 'ship back in a full read reopens with reason cleared');
+  `;
+  const TSV_RAW = rows.map(r => r.join('\t')).join('\n');
+  eval(csvSrc + '\n' + body.replace(/TSV_ESCAPED/g, JSON.stringify(tsv)).replace(/TSV_RAW/g, JSON.stringify(TSV_RAW)));
+}
+
 // ═══ 6. scrubber calc ═════════════════════════════════════════════════════════
 section('scrubber calc');
 {

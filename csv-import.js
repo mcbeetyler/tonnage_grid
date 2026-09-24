@@ -116,12 +116,16 @@ function tokenizeCSV(text, delim) {
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
     if (c === '"') {
-      if (inQuotes && text[i + 1] === '"') {
-        field += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
+      if (inQuotes) {
+        if (text[i + 1] === '"') { field += '"'; i++; }   // escaped quote
+        else inQuotes = false;                            // closing quote
+        continue;
       }
+      // A quote opens a quoted field only at the start of a cell. One in
+      // the middle of a cell (32" beam, says "firm) is just text — before
+      // this it opened a field that swallowed the rest of the sheet.
+      if (field === '') { inQuotes = true; continue; }
+      field += c;
       continue;
     }
     if (!inQuotes && c === delim) {
@@ -551,13 +555,20 @@ function syncCSVVessels(newVessels, opts) {
   //   dropped them, so the board follows. Manually-added ships (WhatsApp /
   //   manual entry — no csv stamp) are NEVER touched automatically.
   // - manual paste: everything stays a candidate for the confirm button.
+  // - guard: if a large share of the sheet's own OPEN ships vanish in ONE
+  //   read, the read is partial (a truncated payload, a parse that stopped
+  //   early), not a mass withdrawal — leave them and say so. The sheet
+  //   dropping ships happens one or two at a time.
   const withdrawCandidates = [];
-  let autoWithdrawn = 0;
+  let autoWithdrawn = 0, feedSuspect = 0;
   const nowIso = new Date().toISOString();
-  for (const v of vessels) {
-    if (v.status !== 'OPEN') continue;
-    if (csvNames.has(norm(v.vessel_name))) continue;
+  const missing = vessels.filter(v => v.status === 'OPEN' && !csvNames.has(norm(v.vessel_name)));
+  const sheetOpen = vessels.filter(v => v.status === 'OPEN' && v.csv_updated).length;
+  const missingSheet = missing.filter(v => v.csv_updated).length;
+  const partialRead = autoWithdraw && missingSheet >= MASS_WITHDRAW_MIN && missingSheet > MASS_WITHDRAW_SHARE * sheetOpen;
+  for (const v of missing) {
     if (autoWithdraw && v.csv_updated) {
+      if (partialRead) { feedSuspect++; continue; }
       v.status = 'WITHDRAWN';
       v.withdrawn_reason = 'dropped from sheet feed';
       v.withdrawn_at = nowIso;
@@ -567,8 +578,9 @@ function syncCSVVessels(newVessels, opts) {
       withdrawCandidates.push({ vessel: v, name: v.vessel_name || '(unnamed)' });
     }
   }
+  if (feedSuspect && typeof console !== 'undefined') console.warn(`[board] feed read missing ${feedSuspect} of ${sheetOpen} sheet ships at once — treated as partial, nothing withdrawn`);
 
-  return { added, updated, unchanged, protectedFields, withdrawCandidates, autoWithdrawn, reopened };
+  return { added, updated, unchanged, protectedFields, withdrawCandidates, autoWithdrawn, reopened, feedSuspect };
 }
 
 // Stale positions: an OPEN ship whose ETA / layday has passed (at all) AND
@@ -581,6 +593,10 @@ function syncCSVVessels(newVessels, opts) {
 // Reversible: a manual status flip stamps an override the sweep respects,
 // and the sync reopens her the moment the sheet touches her row again
 // (coastal trips reopen her inside a couple of weeks).
+// A feed read that loses this many sheet ships at once is a bad read, not
+// a mass withdrawal (see the auto-withdraw block in syncCSVVessels)
+const MASS_WITHDRAW_MIN = 3;
+const MASS_WITHDRAW_SHARE = 0.25;
 const STALE_QUIET_DAYS = 7;
 const STALE_REASON = 'stale — assumed fixed elsewhere';
 function positionRefDate(v) {

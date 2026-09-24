@@ -40,10 +40,18 @@ function setBadge(text, color, title) {
 // 2D array → TSV text (what the manual-paste parsers expect).
 // Cells can contain literal newlines (e.g. the "HIRE\n(offer)" header) —
 // flatten them to spaces or they'd split the row and shift every column.
+// Sheet rows → TSV for the CSV engine. Tabs/newlines inside a cell become
+// spaces; a cell holding a double quote is wrapped and its quotes doubled,
+// RFC-style — an unescaped stray quote (a 32" beam, an unmatched "firm)
+// used to open a quoted field that swallowed every row after it, and the
+// sync then auto-withdrew all those ships as "dropped from sheet feed".
 function rowsToTsv(rows) {
-  return rows.map(r => (r || []).map(c =>
-    c == null ? '' : String(c).replace(/[\t\r\n]+/g, ' ')
-  ).join('\t')).join('\n');
+  const cell = c => {
+    if (c == null) return '';
+    const s = String(c).replace(/[\t\r\n]+/g, ' ');
+    return s.includes('"') ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  return rows.map(r => (r || []).map(cell).join('\t')).join('\n');
 }
 
 async function fetchSource(src) {
@@ -65,7 +73,7 @@ function applyEcsa(data) {
   if (typeof renderTable === 'function') renderTable();
   if (typeof updateStats === 'function') updateStats();
   const suspects = (typeof isFixSuspect === 'function') ? vessels.filter(isFixSuspect).length : 0;
-  return `${parsed.length} rows (${r.added} new, ${r.updated} updated${r.autoWithdrawn ? ', ' + r.autoWithdrawn + ' auto-withdrawn' : ''}${stale ? ', ' + stale + ' stale → withdrawn' : ''}${r.reopened ? ', ' + r.reopened + ' reopened after fixture' : ''})${suspects ? ` · ⚠ ${suspects} FIXED but still trading — review FAILED? flags` : ''}`;
+  return `${parsed.length} rows (${r.added} new, ${r.updated} updated${r.autoWithdrawn ? ', ' + r.autoWithdrawn + ' auto-withdrawn' : ''}${stale ? ', ' + stale + ' stale → withdrawn' : ''}${r.reopened ? ', ' + r.reopened + ' reopened after fixture' : ''})${suspects ? ` · ⚠ ${suspects} FIXED but still trading — review FAILED? flags` : ''}${r.feedSuspect ? ` · ⚠ ${r.feedSuspect} sheet ships missing from this read at once — looks like a partial feed, none withdrawn` : ''}`;
 }
 
 function applyCargo(data) {
