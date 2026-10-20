@@ -744,6 +744,7 @@ section('pairings');
     const bidOnly = { vessel_name: 'BID ONLY', status: 'OPEN', dwt: 80000, eta_ecsa: '2026-07-27', market_colour: [{ p6_bid: 16000 }] };
     const bare = { vessel_name: 'BARE', status: 'OPEN', dwt: 81000, market_colour: [] };
     A(p._test.isRated(rated) && p._test.isRated(taOnly) && !p._test.isRated(bidOnly) && !p._test.isRated(bare), 'rated = any offer incl. TA; a bid alone is unrated');
+    A(!p._test.isRated({ hire_ta: 0, market_colour: [{}] }) && !p._test.isRated({ hire_offer: 0, market_colour: [{ p6_offer: 0 }] }), '$0 rates count as no rate');
     p._test.setGlobals({ vessels: [rated, taOnly, bidOnly, bare], cargoHistory: [], cargoCurrent: [] });
     p._test.setUi({ mode: 'cargo2ship', cargoId: '', manFrom: '', manTo: '', minDwt: '', maxDwt: '', maxAge: '', rated: 'rated' });
     A(p._test.computeCargo2Ship().rows.map(r => r.v.vessel_name).sort().join() === 'RATED,TA ONLY', 'rated filter');

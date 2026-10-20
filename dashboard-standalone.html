@@ -12590,10 +12590,12 @@ function rawOfferOf(v) {
 // Rated = the owner has put a number on her: any offer on the grid (hire,
 // BKI eqvt, P6 offer) or a TA quote. A desk bid alone doesn't rate her.
 // Same idea as the Supply tab's rated/unrated split.
+// A $0 (or negative) figure is a blank cell the sheet sent as zero — no rate.
+const hasRate = x => x != null && Number(x) > 0;
 function isRated(v) {
   const mc = v.market_colour && v.market_colour[0];
-  return v.hire_offer != null || v.bki_eqvt != null || v.hire_ta != null
-    || !!(mc && (mc.offer_usd != null || mc.p6_offer != null));
+  return hasRate(v.hire_offer) || hasRate(v.bki_eqvt) || hasRate(v.hire_ta)
+    || !!(mc && (hasRate(mc.offer_usd) || hasRate(mc.p6_offer)));
 }
 
 // ─── Core ────────────────────────────────────────────────────────────────────
@@ -12651,7 +12653,7 @@ function computeCargo2Ship() {
     const fit = FU.fitStatus(eta, w && w.from, w && w.to, opts);
     const p6 = p6Of(v);
     return { v, eta, p6offer: p6.offer, p6bid: p6.bid, rawOffer: rawOfferOf(v),
-      hireTa: v.hire_ta != null ? v.hire_ta : null,
+      hireTa: hasRate(v.hire_ta) ? v.hire_ta : null,
       spread: (p6.offer != null && p6.bid != null) ? p6.offer - p6.bid : null,
       reason: !v.eta_ecsa ? 'no ETA on board' : (!w && cargo ? 'laycan unparsed' : null),
       ...fit };
