@@ -89,6 +89,8 @@ let ui = Object.assign({
   minDwt: '', maxDwt: '', maxAge: '',
   waitTolDays: 2, tightTolDays: 2, etaAdjDays: 0, autoBasis: true,
   ecsaOnly: true, showAll: false,
+  rated: 'all',             // ships: 'all' | 'rated' (has an offer) | 'unrated'
+  sortC2S: null, sortS2C: null,   // { key, dir: 1|-1 } from a header click; null = default ranking
 }, IS_BROWSER ? JSON.parse(localStorage.getItem(LS_UI) || '{}') : {});
 function saveUi() { if (IS_BROWSER) localStorage.setItem(LS_UI, JSON.stringify(ui)); }
 
@@ -111,6 +113,14 @@ function p6Of(v) {
 function rawOfferOf(v) {
   const mc = v.market_colour && v.market_colour[0];
   return mc ? mc.offer_usd : null;
+}
+// Rated = the owner has put a number on her: any offer on the grid (hire,
+// BKI eqvt, P6 offer) or a TA quote. A desk bid alone doesn't rate her.
+// Same idea as the Supply tab's rated/unrated split.
+function isRated(v) {
+  const mc = v.market_colour && v.market_colour[0];
+  return v.hire_offer != null || v.bki_eqvt != null || v.hire_ta != null
+    || !!(mc && (mc.offer_usd != null || mc.p6_offer != null));
 }
 
 // ─── Core ────────────────────────────────────────────────────────────────────
@@ -161,6 +171,7 @@ function computeCargo2Ship() {
   // TA is declaring interest in going that way.
   const isTa = !!(cargo && /\bta\b/i.test(cargo.stem || ''));
   const rows = openShips().filter(v => (v.dwt || 0) >= minDwt && (v.dwt || 0) <= maxDwt
+    && (ui.rated === 'rated' ? isRated(v) : ui.rated === 'unrated' ? !isRated(v) : true)
     // Age filter: ships with unknown build year stay visible (no false drops)
     && (!isFinite(maxAge) || !v.build_year || (yearNow - v.build_year) <= maxAge)).map(v => {
     const eta = shipEta(v, basis.days || 0);
@@ -259,6 +270,49 @@ function computeShip2Cargo() {
   return { ship, eta, rows };
 }
 
+// ─── Column sorting ──────────────────────────────────────────────────────────
+// Click a header: ascending, again: descending, third time: back to the
+// default ranking (fit tier → price → ETA). Blanks always sort last.
+const firstNum = x => { const m = String(x || '').replace(/,/g, '').match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+const SORT_KEYS = {
+  cargo2ship: {
+    status: r => FU.FIT_ORDER[r.status], vessel: r => r.v.vessel_name, dwt: r => r.v.dwt, dely: r => r.v.delivery_basis,
+    eta: r => r.eta ? r.eta.getTime() : null, owner: r => r.v.owner || r.v.source,
+    bod: r => r.v.bunker || (r.v.bod_ifo != null ? r.v.bod_ifo : null),
+    offer: r => r.p6offer, ta: r => r.hireTa, bid: r => r.p6bid, spread: r => r.spread, margin: r => r.marginDays,
+  },
+  ship2cargo: {
+    status: r => FU.FIT_ORDER[r.status], charterer: r => r.c.charterer, stem: r => r.c.stem, cargo: r => r.c.cargo,
+    size: r => firstNum(r.c.size) ?? r.c.size, load: r => r.c.load, disch: r => r.c.disch,
+    laycan: r => r.window ? r.window.from.getTime() : null, margin: r => r.marginDays,
+  },
+};
+function sortRows(rows, mode, sort) {
+  if (!sort || !SORT_KEYS[mode] || !SORT_KEYS[mode][sort.key]) return rows;
+  const get = SORT_KEYS[mode][sort.key];
+  const blank = x => x == null || x === '' || (typeof x === 'number' && !isFinite(x));
+  return rows.map((r, i) => [r, get(r), i]).sort((a, b) => {
+    const A = a[1], B = b[1];
+    if (blank(A) || blank(B)) return (blank(A) - blank(B)) || (a[2] - b[2]);
+    const c = (typeof A === 'number' && typeof B === 'number') ? A - B
+      : String(A).localeCompare(String(B), undefined, { sensitivity: 'base', numeric: true });
+    return (c * sort.dir) || (a[2] - b[2]);
+  }).map(x => x[0]);
+}
+function nextSort(cur, key) {
+  if (!cur || cur.key !== key) return { key, dir: 1 };
+  if (cur.dir === 1) return { key, dir: -1 };
+  return null;
+}
+// Header cell: clickable, shows ▲/▼ on the active column
+function th(label, key, sort, opts) {
+  const o = opts || {};
+  const on = sort && sort.key === key;
+  const arrow = on ? (sort.dir === 1 ? ' ▲' : ' ▼') : (o.hint || '');
+  const style = [o.right ? 'text-align:right' : '', o.color ? 'color:' + o.color : '', on ? 'color:var(--text-bright)' : ''].filter(Boolean).join(';');
+  return `<th data-sort="${key}" class="pr-sortable${on ? ' pr-sorted' : ''}"${style ? ` style="${style}"` : ''} title="${esc(o.title ? o.title + ' · ' : '')}Click to sort; again to reverse; third click restores the default ranking">${label}${arrow}</th>`;
+}
+
 // ─── Rendering ───────────────────────────────────────────────────────────────
 function esc(x) {
   return String(x == null ? '' : x).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -322,17 +376,20 @@ function render() {
       note.textContent = bits.join(' · ');
       note.style.color = basis && basis.warn ? 'var(--amber)' : 'var(--text-dim)';
     }
-    const shown = rows.filter(r => !w ? true : visible(r));
+    const shown = sortRows(rows.filter(r => !w ? true : visible(r)), 'cargo2ship', ui.sortC2S);
     const taHot = !!isTa;
+    const S = ui.sortC2S;
     const basisDays = basis && basis.days ? basis.days : 0;
     const etaHead = basisDays
       ? `ETA load (+${basisDays}d)`
       : 'ETA ECSA';
-    thead.innerHTML = `<tr><th>Status</th><th>Vessel</th><th>DWT/Blt</th><th>Dely</th><th title="${basisDays ? `Santos-basis ETA shifted +${basisDays}d for the load area — this is her ETA at the load port` : 'Owner-declared ETA bss Santos'}">${etaHead}</th><th>Owner</th>
-      <th title="Bunkers on delivery (IFO/MDO) from the grid">BOD</th>
-      <th style="text-align:right" title="P6-equivalent offer — the universal comparator">Offer P6</th>
-      <th style="text-align:right${taHot ? ';color:var(--accent)' : ''}" title="TA offer from the grid — a ship quoting TA has declared interest in going that way${taHot ? '. TA cargo selected: sorted on this column' : ''}">Hire TA${taHot ? ' ▾' : ''}</th>
-      <th style="text-align:right">Bid P6</th><th style="text-align:right">Spread</th><th style="text-align:right">vs Canc.</th></tr>`;
+    thead.innerHTML = `<tr>${th('Status', 'status', S)}${th('Vessel', 'vessel', S)}${th('DWT/Blt', 'dwt', S)}${th('Dely', 'dely', S)}`
+      + th(etaHead, 'eta', S, { title: basisDays ? `Santos-basis ETA shifted +${basisDays}d for the load area — this is her ETA at the load port` : 'Owner-declared ETA bss Santos' })
+      + th('Owner', 'owner', S) + th('BOD', 'bod', S, { title: 'Bunkers on delivery (IFO/MDO) from the grid' })
+      + th('Offer P6', 'offer', S, { right: true, title: 'P6-equivalent offer — the universal comparator' })
+      + th('Hire TA', 'ta', S, { right: true, color: taHot ? 'var(--accent)' : '', hint: taHot && !S ? ' ▾' : '', title: `TA offer from the grid — a ship quoting TA has declared interest in going that way${taHot ? '. TA cargo selected: default ranking uses this column' : ''}` })
+      + th('Bid P6', 'bid', S, { right: true }) + th('Spread', 'spread', S, { right: true }) + th('vs Canc.', 'margin', S, { right: true })
+      + '</tr>';
     tb.innerHTML = shown.length ? shown.map(r => {
       const v = r.v;
       const onw = v.eta_type === 'ONW' ? ' <span style="color:var(--amber)" title="ONW — owner says onwards, could slip later">›</span>' : '';
@@ -351,16 +408,17 @@ function render() {
         <td style="text-align:right;font-family:var(--mono);font-size:12px;color:${r.spread != null && r.spread <= 1000 ? 'var(--green)' : 'var(--text)'}"
             title="Offer minus bid — how far apart the two sides are">${r.spread == null ? '—' : fmtK(r.spread)}</td>
         ${fitCells(r)}</tr>`;
-    }).join('') : `<tr><td colspan="12" style="padding:18px;color:var(--text-dim)">${cargo ? 'No ships fit — toggle "Show all" to see the misses.' : 'No open ships on the board.'}</td></tr>`;
+    }).join('') : `<tr><td colspan="12" style="padding:18px;color:var(--text-dim)">${ui.rated !== 'all' && openShips().length ? `No ${ui.rated} ships match — switch the filter to All.` : cargo ? 'No ships fit — toggle "Show all" to see the misses.' : 'No open ships on the board.'}</td></tr>`;
     renderStats(w ? rows : []);
   } else {
     const { ship, eta, rows } = computeShip2Cargo();
     if (!ship) note.textContent = 'Pick a ship — live cargoes whose laycan her ETA fits, tightest first.';
     else if (!eta) note.textContent = `${ship.vessel_name} has no ETA on the board — add one on the Tonnage Board.`;
     else note.textContent = `${ship.vessel_name} — ETA ${fmtD(eta)}${ship.eta_type === 'ONW' ? ' (ONW, could slip)' : ''}${(parseFloat(ui.etaAdjDays) || 0) !== 0 ? `, adjusted ${ui.etaAdjDays > 0 ? '+' : ''}${ui.etaAdjDays}d` : ''}`;
-    const shown = rows.filter(r => !eta ? true : visible(r));
-    thead.innerHTML = `<tr><th>Status</th><th>Charterer</th><th>Stem</th><th>Cargo</th><th>Size</th>
-      <th>Load</th><th>Disch</th><th>Laycan</th><th style="text-align:right">vs Canc.</th></tr>`;
+    const shown = sortRows(rows.filter(r => !eta ? true : visible(r)), 'ship2cargo', ui.sortS2C);
+    const S = ui.sortS2C;
+    thead.innerHTML = `<tr>${th('Status', 'status', S)}${th('Charterer', 'charterer', S)}${th('Stem', 'stem', S)}${th('Cargo', 'cargo', S)}${th('Size', 'size', S)}`
+      + `${th('Load', 'load', S)}${th('Disch', 'disch', S)}${th('Laycan', 'laycan', S)}${th('vs Canc.', 'margin', S, { right: true })}</tr>`;
     tb.innerHTML = shown.length ? shown.map(r => {
       const c = r.c;
       const grey = r.reason ? 'opacity:.55' : '';
@@ -422,6 +480,8 @@ function populatePickers() {
 function syncModeUI() {
   document.querySelectorAll('#pr_modeSeg button').forEach(b => b.classList.toggle('active', b.dataset.mode === ui.mode));
   const c2s = ui.mode === 'cargo2ship';
+  const rs = document.getElementById('pr_ratedSeg');
+  if (rs) rs.style.display = c2s ? '' : 'none';   // filters ships — Cargo → Ships only
   document.getElementById('pr_cargoField').style.display = c2s ? '' : 'none';
   document.getElementById('pr_shipField').style.display = c2s ? 'none' : '';
   document.getElementById('pr_ecsaWrap').style.display = c2s ? 'none' : '';
@@ -451,6 +511,9 @@ function buildUI() {
     .pr-table th{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;background:var(--bg2);z-index:1}
     .pr-table td{padding:8px 10px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
     .pr-table tr:hover td{background:var(--bg-hover)}
+    .pr-table th.pr-sortable{cursor:pointer;user-select:none}
+    .pr-table th.pr-sortable:hover{color:var(--text-bright)}
+    .pr-seg.pr-seg-sm button{padding:7px 12px}
   `;
   document.head.appendChild(style);
 
@@ -512,6 +575,11 @@ function buildUI() {
         <span class="pr-check" id="pr_autoBasis" title="Correct Santos-basis ETAs for the cargo's actual load area (leg difference from the Cape fork: N Brazil +2d, Caribbean NCSA +6.5d, Balboa +8.5d...)">Auto basis adj</span>
         <span class="pr-check" id="pr_ecsaWrap" title="Only cargoes loading ECSA">ECSA only</span>
         <span class="pr-check" id="pr_showAll" title="Include misses and rows missing data">Show all</span>
+        <div class="pr-seg pr-seg-sm" id="pr_ratedSeg" title="Rated = the ship has an offer on the grid (hire, BKI eqvt, P6 or TA). A desk bid alone doesn't count.">
+          <button data-rated="all">All ships</button>
+          <button data-rated="rated">Rated</button>
+          <button data-rated="unrated">Unrated</button>
+        </div>
       </div>
 
       <div id="pr_note" style="font-size:12px;color:var(--text-dim);margin-bottom:10px"></div>
@@ -568,6 +636,17 @@ function buildUI() {
     sync();
     el.addEventListener('click', () => { ui[key] = !ui[key]; saveUi(); sync(); render(); });
   }
+  const syncRated = () => document.querySelectorAll('#pr_ratedSeg button').forEach(b => b.classList.toggle('active', b.dataset.rated === ui.rated));
+  syncRated();
+  document.querySelectorAll('#pr_ratedSeg button').forEach(b => b.addEventListener('click', () => {
+    ui.rated = b.dataset.rated; saveUi(); syncRated(); render();
+  }));
+  document.getElementById('pr_thead').addEventListener('click', e => {
+    const h = e.target.closest('th[data-sort]');
+    if (!h) return;
+    const k = ui.mode === 'cargo2ship' ? 'sortC2S' : 'sortS2C';
+    ui[k] = nextSort(ui[k], h.dataset.sort); saveUi(); render();
+  });
   syncModeUI();
 }
 
@@ -607,7 +686,7 @@ if (typeof module !== 'undefined' && module.exports) {
         if (g.cargoHistory) global.cargoHistory = g.cargoHistory;
         if (g.cargoCurrent) global.cargoCurrent = g.cargoCurrent;
       },
-      computeCargo2Ship, computeShip2Cargo, isEcsa, loadBasisAdj, buildPairingsText,
+      computeCargo2Ship, computeShip2Cargo, isEcsa, loadBasisAdj, buildPairingsText, isRated, sortRows, nextSort,
     },
   };
 }

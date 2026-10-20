@@ -737,6 +737,35 @@ section('pairings');
   A(r.rows[2].status === 'MISSES', 'late ship misses');
   A(p._test.isEcsa({ stem: 'ECSA Fronthaul', load: '' }) && !p._test.isEcsa({ stem: 'USG Fronthaul', load: 'Nola' }), 'ecsa detector');
 
+  // Rated / unrated filter + column sort
+  {
+    const rated = { vessel_name: 'RATED', status: 'OPEN', dwt: 82000, eta_ecsa: '2026-07-25', hire_offer: 19000, market_colour: [{ p6_offer: 18500 }] };
+    const taOnly = { vessel_name: 'TA ONLY', status: 'OPEN', dwt: 76000, eta_ecsa: '2026-07-26', hire_ta: 21000, market_colour: [{}] };
+    const bidOnly = { vessel_name: 'BID ONLY', status: 'OPEN', dwt: 80000, eta_ecsa: '2026-07-27', market_colour: [{ p6_bid: 16000 }] };
+    const bare = { vessel_name: 'BARE', status: 'OPEN', dwt: 81000, market_colour: [] };
+    A(p._test.isRated(rated) && p._test.isRated(taOnly) && !p._test.isRated(bidOnly) && !p._test.isRated(bare), 'rated = any offer incl. TA; a bid alone is unrated');
+    p._test.setGlobals({ vessels: [rated, taOnly, bidOnly, bare], cargoHistory: [], cargoCurrent: [] });
+    p._test.setUi({ mode: 'cargo2ship', cargoId: '', manFrom: '', manTo: '', minDwt: '', maxDwt: '', maxAge: '', rated: 'rated' });
+    A(p._test.computeCargo2Ship().rows.map(r => r.v.vessel_name).sort().join() === 'RATED,TA ONLY', 'rated filter');
+    p._test.setUi({ rated: 'unrated' });
+    A(p._test.computeCargo2Ship().rows.map(r => r.v.vessel_name).sort().join() === 'BARE,BID ONLY', 'unrated filter');
+    p._test.setUi({ rated: 'all' });
+    const rows = p._test.computeCargo2Ship().rows;
+    const names = rs => rs.map(r => r.v.vessel_name).join();
+    A(names(p._test.sortRows(rows, 'cargo2ship', { key: 'dwt', dir: 1 })) === 'TA ONLY,BID ONLY,BARE,RATED', 'sort by DWT ascending');
+    A(names(p._test.sortRows(rows, 'cargo2ship', { key: 'dwt', dir: -1 })) === 'RATED,BARE,BID ONLY,TA ONLY', 'descending');
+    const byEta = p._test.sortRows(rows, 'cargo2ship', { key: 'eta', dir: -1 });
+    A(names(byEta) === 'BID ONLY,TA ONLY,RATED,BARE', 'ETA descending, blank ETA still last: ' + names(byEta));
+    A(names(p._test.sortRows(rows, 'cargo2ship', { key: 'offer', dir: 1 })).startsWith('RATED'), 'offer sort, blanks last');
+    A(names(p._test.sortRows(rows, 'cargo2ship', { key: 'vessel', dir: 1 })) === 'BARE,BID ONLY,RATED,TA ONLY', 'name sort');
+    A(p._test.sortRows(rows, 'cargo2ship', null) === rows, 'no sort = default ranking untouched');
+    const ns = p._test.nextSort;
+    A(JSON.stringify(ns(null, 'eta')) === '{"key":"eta","dir":1}' && ns({ key: 'eta', dir: 1 }, 'eta').dir === -1 && ns({ key: 'eta', dir: -1 }, 'eta') === null && ns({ key: 'eta', dir: -1 }, 'dwt').key === 'dwt', 'click cycle: asc → desc → default; new column starts asc');
+    const cRows = [{ c: { size: '66,000', charterer: 'b' }, status: 'FIT' }, { c: { size: 'pmx', charterer: 'a' }, status: 'FIT' }, { c: { size: '55000', charterer: 'c' }, status: 'FIT' }];
+    A(p._test.sortRows(cRows, 'ship2cargo', { key: 'size', dir: 1 }).map(r => r.c.charterer).join() === 'c,b,a', 'cargo size sorts numerically, text after');
+    p._test.setUi({ rated: 'all' });
+  }
+
   // Load-basis adjustment: Santos-basis ETA corrected for the actual load
   A(p._test.loadBasisAdj({ load: 'santos' }).days === 0, 'santos basis 0');
   A(p._test.loadBasisAdj({ load: 'itaqui' }).days === 2, 'n brazil +2');
